@@ -147,7 +147,10 @@ export default function App() {
       </nav>
       <main className="main-area">
         <div className="plan-heading"><div><span className="eyebrow">TAGESANSICHT</span><h2>{selectedDay?.date ?? 'Programm'}</h2><p>{selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
-          {selectedDay && rooms.length > 0 && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+          <div className="plan-actions">
+            {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
+            {selectedDay && rooms.length > 0 && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+          </div>
         </div>
         {loading && <p className="state-message">Lade Programm …</p>}
         {!loading && schedule && <Schedule schedule={schedule} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onChange={changeSlot} />}

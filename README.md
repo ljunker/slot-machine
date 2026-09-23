@@ -39,6 +39,8 @@ Veranstaltung, Tage und Räume links anlegen. Slots über **+ Slot** anlegen ode
 
 Beim Löschen einer Veranstaltung, eines Tages oder Raums werden zugehörige Slots mitgelöscht. Eine Änderung der Event- oder Tagesgrenzen, die vorhandene Daten ausschließen würde, liefert HTTP `409`. Ungültige Zeiträume oder Beziehungen liefern `400`, fehlende Objekte `404`.
 
+Über **Besucherprogramm ansehen** öffnet sich die öffentliche Tagesansicht unter `/programm/<event_id>`. Besucher können Tage wechseln und Slot-Beschreibungen lesen. Auf Smartphones wechseln Raum-Tabs zwischen den Programmen. Die Oberfläche bietet keine Bearbeitung; die API hat weiterhin keine Anmeldung oder Veröffentlichungsfreigabe.
+
 ## Tests
 
 ```bash
