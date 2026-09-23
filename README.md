@@ -45,6 +45,8 @@ Fotos können als JPEG, PNG oder WebP bis 5 MB hochgeladen werden. Lokal liegen 
 
 Über **Besucherprogramm ansehen** öffnet sich die öffentliche Tagesansicht unter `/programm/<event_id>`. Besucher können Tage wechseln und Slot-Beschreibungen lesen. Auf Smartphones wechseln Raum-Tabs zwischen den Programmen. Die Oberfläche bietet keine Bearbeitung; die API hat weiterhin keine Anmeldung oder Veröffentlichungsfreigabe.
 
+Über **PDF-Programm herunterladen** lässt sich das aktuelle Gesamtprogramm aus Planungsansicht und Besucherprogramm laden. Jeder Veranstaltungstag belegt eine A4-Querseite mit Zeit-Raum-Raster. Slot-Karten zeigen auch Rednernamen; bei dichten Plänen werden Texte gekürzt.
+
 ## Tests
 
 ```bash

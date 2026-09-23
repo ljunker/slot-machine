@@ -81,6 +81,7 @@ export default function PublicProgram({ eventId }: { eventId: number | null }) {
         {days.length === 0 ? <p className="public-state">Für diese Veranstaltung sind noch keine Tage angelegt.</p> : <>
           <div className="public-day-heading">
             <div><span className="eyebrow">TAGESPROGRAMM</span><h2>{selectedDay?.date}</h2></div>
+            <a className="program-link" href={`/api/events/${event.id}/program.pdf`} download>PDF-Programm herunterladen</a>
             <label>Veranstaltungstag
               <select value={dayId ?? ''} onChange={change => setDayId(Number(change.target.value))}>
                 {days.map(day => <option key={day.id} value={day.id}>{day.date}</option>)}

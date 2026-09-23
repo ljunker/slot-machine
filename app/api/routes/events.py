@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.event import EventCreate, EventResponse, EventUpdate
 from app.services.event_service import EventService
+from app.services.program_pdf import build_program_pdf
 
 router = APIRouter(
     prefix="/events",
@@ -24,6 +25,19 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
 @router.get("/{event_id}", response_model=EventResponse)
 def get_event(event_id: int, db: Session = Depends(get_db)):
     return EventService(db).get(event_id)
+
+
+@router.get("/{event_id}/program.pdf")
+def get_program_pdf(event_id: int, db: Session = Depends(get_db)):
+    data = build_program_pdf(db, event_id)
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="programm-{event_id}.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.patch("/{event_id}", response_model=EventResponse)

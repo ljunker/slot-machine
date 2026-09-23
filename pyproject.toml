@@ -11,11 +11,13 @@ dependencies = [
     "pydantic-settings",
     "pillow",
     "python-multipart",
+    "reportlab>=5.0.1",
 ]
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pypdf>=6.19.0",
     "pytest",
     "ruff",
 ]

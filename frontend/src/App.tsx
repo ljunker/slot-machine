@@ -185,6 +185,7 @@ export default function App() {
         <div className="plan-heading"><div><span className="eyebrow">TAGESANSICHT</span><h2>{selectedDay?.date ?? 'Programm'}</h2><p>{selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
+            {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
             {selectedDay && rooms.length > 0 && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
