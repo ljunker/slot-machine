@@ -12,7 +12,9 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   expect(roomAResponse.ok()).toBeTruthy()
   expect(roomBResponse.ok()).toBeTruthy()
   const roomA = await roomAResponse.json() as { id: number }
-  const slotResponse = await request.post('/api/slots', { data: { day_id: day.id, room_id: roomA.id, topic: 'Eröffnung', speaker: 'Ada', description: 'Willkommen zur Konferenz.', start_time: '10:00', end_time: '11:00' } })
+  const speakerResponse = await request.post(`/api/events/${event.id}/speakers`, { data: { name: 'Ada' } })
+  const speaker = await speakerResponse.json()
+  const slotResponse = await request.post('/api/slots', { data: { day_id: day.id, room_id: roomA.id, topic: 'Eröffnung', speaker_ids: [speaker.id], description: 'Willkommen zur Konferenz.', start_time: '10:00', end_time: '11:00' } })
   expect(slotResponse.ok()).toBeTruthy()
 
   await page.setViewportSize({ width: 390, height: 844 })

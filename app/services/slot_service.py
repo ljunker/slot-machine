@@ -1,8 +1,10 @@
 from datetime import date, datetime, time
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.slot import Slot
+from app.models.speaker import Speaker
 from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.room_repository import RoomRepository
 from app.repositories.slot_repository import SlotRepository
@@ -39,9 +41,12 @@ class SlotService:
 
     def create(self, data: SlotCreate) -> Slot:
         self._validate(data.day_id, data.room_id, data.start_time, data.end_time)
+        event_id = self.days.get_by_id(data.day_id).event_id
+        speakers = self._speakers(event_id, data.speaker_ids)
         slot = self.repository.create(
             data.model_copy(update={"topic": name(data.topic)})
         )
+        slot.speakers = speakers
         self.db.commit()
         return slot
 
@@ -57,11 +62,35 @@ class SlotService:
         start = changes.get("start_time", slot.start_time)
         end = changes.get("end_time", slot.end_time)
         self._validate(slot.day_id, room_id, start, end)
+        speakers = None
+        if "speaker_ids" in changes:
+            speakers = self._speakers(
+                self.days.get_by_id(slot.day_id).event_id, changes["speaker_ids"]
+            )
         if "topic" in changes:
             changes["topic"] = name(changes["topic"])
         slot = self.repository.update(slot, SlotUpdate(**changes))
+        if speakers is not None:
+            slot.speakers = speakers
         self.db.commit()
         return slot
+
+    def _speakers(self, event_id: int, speaker_ids: list[int] | None) -> list[Speaker]:
+        if speaker_ids is None:
+            raise DomainError("Rednerliste darf nicht null sein")
+        if len(speaker_ids) != len(set(speaker_ids)):
+            raise DomainError("Redner dürfen nur einmal zugeordnet werden")
+        if not speaker_ids:
+            return []
+        speakers = list(
+            self.db.scalars(select(Speaker).where(Speaker.id.in_(speaker_ids))).all()
+        )
+        if len(speakers) != len(speaker_ids) or any(
+            speaker.event_id != event_id for speaker in speakers
+        ):
+            raise DomainError("Redner gehören nicht zur Veranstaltung")
+        by_id = {speaker.id: speaker for speaker in speakers}
+        return [by_id[speaker_id] for speaker_id in speaker_ids]
 
     def delete(self, slot_id: int) -> None:
         self.repository.delete(self.get(slot_id))

@@ -1,17 +1,18 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Event, EventDay, Room, Slot } from './types'
+import type { Event, EventDay, Room, Slot, Speaker } from './types'
 import { toMinutes, toTime } from './time'
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
-export default function Editor({ kind, event, day, room, slot, rooms, onSave, onDelete, onClose }: {
+export default function Editor({ kind, event, day, room, slot, rooms, speakers, onSave, onDelete, onClose }: {
   kind: EditorKind
   event?: Event
   day?: EventDay
   room?: Room
   slot?: Slot
   rooms: Room[]
+  speakers: Speaker[]
   onSave: (body: Record<string, unknown>) => Promise<boolean>
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
@@ -25,7 +26,7 @@ export default function Editor({ kind, event, day, room, slot, rooms, onSave, on
     ? slot?.end_time.slice(0, 5) ?? (day ? toTime(Math.min(toMinutes(day.end_time), toMinutes(day.start_time) + 60)) : '10:00')
     : day?.end_time.slice(0, 5) ?? '18:00')
   const [topic, setTopic] = useState(slot?.topic ?? '')
-  const [speaker, setSpeaker] = useState(slot?.speaker ?? '')
+  const [speakerIds, setSpeakerIds] = useState<number[]>(slot?.speaker_ids ?? [])
   const [description, setDescription] = useState(slot?.description ?? '')
   const [roomId, setRoomId] = useState(slot?.room_id ?? rooms[0]?.id ?? 0)
   const existing = kind === 'event' ? !!event : kind === 'day' ? !!day : kind === 'room' ? !!room : !!slot
@@ -37,7 +38,7 @@ export default function Editor({ kind, event, day, room, slot, rooms, onSave, on
     if (kind === 'event') body = { name, start_date: startDate, end_date: endDate }
     else if (kind === 'day') body = { date, start_time: start, end_time: end }
     else if (kind === 'room') body = { name }
-    else body = { topic, speaker: speaker || null, description: description || null, start_time: start, end_time: end, room_id: roomId }
+    else body = { topic, speaker_ids: speakerIds, description: description || null, start_time: start, end_time: end, room_id: roomId }
     if (await onSave(body)) onClose()
   }
 
@@ -54,7 +55,10 @@ export default function Editor({ kind, event, day, room, slot, rooms, onSave, on
       {kind === 'day' && <label>Datum<input required type="date" value={date} min={event?.start_date} max={event?.end_date} onChange={e => setDate(e.target.value)} /></label>}
       {kind === 'slot' && <>
         <label>Thema<input required maxLength={255} value={topic} onChange={e => setTopic(e.target.value)} /></label>
-        <label>Redner<input maxLength={255} value={speaker} onChange={e => setSpeaker(e.target.value)} /></label>
+        <fieldset className="speaker-picker"><legend>Redner</legend>
+          {speakers.length === 0 && <p className="muted">Lege zuerst ein Rednerprofil an.</p>}
+          {speakers.map(person => <label key={person.id}><input type="checkbox" checked={speakerIds.includes(person.id)} onChange={e => setSpeakerIds(current => e.target.checked ? [...current, person.id] : current.filter(id => id !== person.id))} />{person.name}</label>)}
+        </fieldset>
         <label>Beschreibung<textarea value={description} onChange={e => setDescription(e.target.value)} /></label>
         <label>Raum<select value={roomId} onChange={e => setRoomId(Number(e.target.value))}>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       </>}

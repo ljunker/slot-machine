@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.backend
     environment:
       DATABASE_URL: sqlite:////data/schedule.db
+      SPEAKER_UPLOAD_DIR: /data/speaker_uploads
     volumes:
       - schedule_data:/data
     ports:

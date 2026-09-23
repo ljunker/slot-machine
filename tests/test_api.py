@@ -117,12 +117,10 @@ def test_full_crud_and_cascade(client, db):
         ).status_code
         == 200
     )
-    assert (
-        client.patch(f"/api/slots/{slot['id']}", json={"speaker": "Alex"}).json()[
-            "speaker"
-        ]
-        == "Alex"
-    )
+    speaker = client.post(f"/api/events/{event['id']}/speakers", json={"name": "Alex"}).json()
+    assert client.patch(f"/api/slots/{slot['id']}", json={"speaker_ids": [speaker["id"]]}).json()["speakers"] == [
+        {"id": speaker["id"], "name": "Alex"}
+    ]
     assert client.delete(f"/api/events/{event['id']}").status_code == 204
     assert db.scalars(select(Event)).all() == []
     assert db.scalars(select(EventDay)).all() == []

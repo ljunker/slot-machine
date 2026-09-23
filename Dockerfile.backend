@@ -20,6 +20,7 @@ RUN useradd --uid 10001 --create-home appuser \
 
 ENV PATH="/app/.venv/bin:$PATH" \
     DATABASE_URL="sqlite:////data/schedule.db" \
+    SPEAKER_UPLOAD_DIR="/data/speaker_uploads" \
     PYTHONUNBUFFERED=1
 
 USER appuser

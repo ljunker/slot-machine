@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { request, write } from './api'
+import { request, uploadPhoto, write } from './api'
 import Editor from './Editor'
 import type { EditorKind } from './Editor'
 import Schedule from './Schedule'
-import type { DaySchedule, Event, EventDay, Room, Slot } from './types'
+import SpeakerEditor from './SpeakerEditor'
+import type { DaySchedule, Event, EventDay, Room, Slot, Speaker } from './types'
 
-type Panel = { kind: EditorKind; id: number | null }
+type Panel = { kind: EditorKind | 'speaker'; id: number | null }
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>([])
@@ -13,6 +14,7 @@ export default function App() {
   const [days, setDays] = useState<EventDay[]>([])
   const [dayId, setDayId] = useState<number | null>(null)
   const [rooms, setRooms] = useState<Room[]>([])
+  const [speakers, setSpeakers] = useState<Speaker[]>([])
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
   const [panel, setPanel] = useState<Panel | null>(null)
   const [error, setError] = useState('')
@@ -25,11 +27,12 @@ export default function App() {
     try {
       const eventList = await request<Event[]>('/events')
       const selectedEvent = eventList.find(item => item.id === preferredEvent)?.id ?? eventList[0]?.id ?? null
-      const [dayList, roomList] = selectedEvent === null
-        ? [[], []] as [EventDay[], Room[]]
+      const [dayList, roomList, speakerList] = selectedEvent === null
+        ? [[], [], []] as [EventDay[], Room[], Speaker[]]
         : await Promise.all([
           request<EventDay[]>(`/events/${selectedEvent}/days`),
           request<Room[]>(`/events/${selectedEvent}/rooms`),
+          request<Speaker[]>(`/events/${selectedEvent}/speakers`),
         ])
       const selectedDay = dayList.find(item => item.id === preferredDay)?.id ?? dayList[0]?.id ?? null
       const daySchedule = selectedDay === null ? null : await request<DaySchedule>(`/schedule/days/${selectedDay}`)
@@ -39,6 +42,7 @@ export default function App() {
       setDays(dayList)
       setDayId(selectedDay)
       setRooms(roomList)
+      setSpeakers(speakerList)
       setSchedule(daySchedule)
       setError('')
     } catch (cause) {
@@ -54,6 +58,7 @@ export default function App() {
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot' ? schedule?.rooms.flatMap(item => item.slots).find(item => item.id === panel.id) : undefined
+  const selectedSpeaker = panel?.kind === 'speaker' ? speakers.find(item => item.id === panel.id) : undefined
 
   async function save(body: Record<string, unknown>): Promise<boolean> {
     if (!panel) return false
@@ -80,7 +85,7 @@ export default function App() {
 
   async function remove(): Promise<boolean> {
     if (!panel || panel.id === null) return false
-    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}` }[panel.kind]
+    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}` }[panel.kind]
     try {
       await write<void>('DELETE', path)
       await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
@@ -89,6 +94,30 @@ export default function App() {
       setError((cause as Error).message)
       return false
     }
+  }
+
+  async function saveSpeaker(body: { name: string; bio: string | null; website: string | null }, photo: File | null): Promise<boolean> {
+    if (!panel || panel.kind !== 'speaker' || eventId === null) return false
+    let saved: Speaker | null = null
+    try {
+      saved = await write<Speaker>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/speakers` : `/speakers/${panel.id}`, body)
+      if (photo) await uploadPhoto(`/speakers/${saved.id}/photo`, photo)
+      await loadAll(eventId, dayId)
+      return true
+    } catch (cause) {
+      if (saved) await loadAll(eventId, dayId)
+      if (saved && panel.id === null) setPanel({ kind: 'speaker', id: saved.id })
+      setError((cause as Error).message)
+      return false
+    }
+  }
+
+  async function deleteSpeakerPhoto() {
+    if (panel?.kind !== 'speaker' || panel.id === null) return
+    try {
+      await write<Speaker>('DELETE', `/speakers/${panel.id}/photo`)
+      await loadAll(eventId, dayId)
+    } catch (cause) { setError((cause as Error).message) }
   }
 
   async function reorder(roomId: number, direction: -1 | 1) {
@@ -144,6 +173,13 @@ export default function App() {
             <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>
           </div>)}</div>
         </section>}
+        {selectedEvent && <section>
+          <div className="section-heading"><h2>Redner</h2><button className="text-button" onClick={() => setPanel({ kind: 'speaker', id: null })}>+ Redner</button></div>
+          {speakers.length === 0 && <p className="muted">Noch keine Redner</p>}
+          <div className="room-list">{speakers.map(person => <div className="room-row" key={person.id}>
+            <button type="button" className="room-name" onClick={() => setPanel({ kind: 'speaker', id: person.id })}>{person.name}</button>
+          </div>)}</div>
+        </section>}
       </nav>
       <main className="main-area">
         <div className="plan-heading"><div><span className="eyebrow">TAGESANSICHT</span><h2>{selectedDay?.date ?? 'Programm'}</h2><p>{selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
@@ -155,9 +191,17 @@ export default function App() {
         {loading && <p className="state-message">Lade Programm …</p>}
         {!loading && schedule && <Schedule schedule={schedule} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onChange={changeSlot} />}
         {!loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot markierte Slots überschneiden sich.</p>}
+        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelb: Rednerkonflikt.</p>}
       </main>
-      {panel && <Editor
+      {panel?.kind === 'speaker' && <SpeakerEditor
+        key={`speaker-${panel.id ?? 'new'}`}
+        speaker={selectedSpeaker}
+        onSave={saveSpeaker}
+        onDelete={panel.id === null ? null : remove}
+        onDeletePhoto={panel.id === null ? null : deleteSpeakerPhoto}
+        onClose={() => setPanel(null)}
+      />}
+      {panel && panel.kind !== 'speaker' && <Editor
         key={`${panel.kind}-${panel.id ?? 'new'}`}
         kind={panel.kind}
         event={panel.kind === 'event' ? events.find(item => item.id === panel.id) : selectedEvent}
@@ -165,6 +209,7 @@ export default function App() {
         room={selectedRoom}
         slot={selectedSlot}
         rooms={rooms}
+        speakers={speakers}
         onSave={save}
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(null)}

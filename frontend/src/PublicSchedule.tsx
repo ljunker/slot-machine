@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { layoutSlots, PX_PER_MINUTE, toMinutes, toTime } from './time'
 import type { DaySchedule, Slot } from './types'
 
+function speakerNames(slot: Slot): string {
+  return slot.speakers.map(speaker => speaker.name).join(', ')
+}
+
 export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) {
   const [roomId, setRoomId] = useState<number | null>(schedule.rooms[0]?.id ?? null)
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
@@ -30,7 +34,7 @@ export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) 
       <button type="button" className="public-detail-close" onClick={() => setSelectedSlot(null)}>Schließen</button>
       <h3>{selectedSlot.topic}</h3>
       <p>{selectedSlot.start_time.slice(0, 5)}–{selectedSlot.end_time.slice(0, 5)} Uhr · {schedule.rooms.find(item => item.id === selectedSlot.room_id)?.name}</p>
-      {selectedSlot.speaker && <p>{selectedSlot.speaker}</p>}
+      {selectedSlot.speakers.length > 0 && <p>{speakerNames(selectedSlot)}</p>}
       {selectedSlot.description && <p className="public-description">{selectedSlot.description}</p>}
     </section>}
     <div className="public-desktop-program schedule-scroll" aria-label="Tagesplan">
@@ -53,7 +57,7 @@ export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) 
           >
             <strong>{slot.topic}</strong>
             <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
-            {slot.speaker && <small>{slot.speaker}</small>}
+            {slot.speakers.length > 0 && <small>{speakerNames(slot)}</small>}
           </button>)}
         </div>)}
       </div>
@@ -81,9 +85,9 @@ export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) 
         {room.slots.length === 0 ? <p className="public-state">In diesem Raum sind keine Programmpunkte geplant.</p> :
           [...room.slots].sort((a, b) => toMinutes(a.start_time) - toMinutes(b.start_time) || a.id - b.id).map(slot => <article className="public-mobile-slot" key={slot.id}>
             {slot.description ? <details>
-              <summary><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speaker && <span>{slot.speaker}</span>}</summary>
+              <summary><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}</summary>
               <p className="public-description">{slot.description}</p>
-            </details> : <div className="public-mobile-summary"><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speaker && <span>{slot.speaker}</span>}</div>}
+            </details> : <div className="public-mobile-summary"><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}</div>}
           </article>)}
       </section>}
     </div>

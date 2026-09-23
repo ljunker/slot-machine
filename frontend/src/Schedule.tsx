@@ -17,6 +17,11 @@ export default function Schedule({ schedule, onEdit, onChange }: {
   const end = toMinutes(schedule.end_time)
   const height = (end - start) * PX_PER_MINUTE
   const collisionIds = new Set(schedule.collisions.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
+  const speakerConflictIds = new Set(schedule.speaker_conflicts.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
+  const slots = schedule.rooms.flatMap(room => room.slots)
+  const slotById = new Map(slots.map(slot => [slot.id, slot]))
+  const roomById = new Map(schedule.rooms.map(room => [room.id, room.name]))
+  const speakerById = new Map(slots.flatMap(slot => slot.speakers).map(speaker => [speaker.id, speaker.name]))
   const hours: number[] = []
   for (let minute = Math.ceil(start / 60) * 60; minute <= end; minute += 60) hours.push(minute)
 
@@ -81,7 +86,7 @@ export default function Schedule({ schedule, onEdit, onChange }: {
     return <article
       key={slot.id}
       data-slot-id={slot.id}
-      className={`slot-card${collisionIds.has(slot.id) ? ' collision' : ''}${ghost ? ' ghost' : ''}`}
+      className={`slot-card${collisionIds.has(slot.id) ? ' collision' : ''}${speakerConflictIds.has(slot.id) ? ' speaker-conflict' : ''}${ghost ? ' ghost' : ''}`}
       style={{ top, height: cardHeight, left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
       tabIndex={ghost ? undefined : 0}
       onDoubleClick={ghost ? undefined : () => onEdit(slot)}
@@ -91,7 +96,8 @@ export default function Schedule({ schedule, onEdit, onChange }: {
         <strong>{slot.topic}</strong>
         <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
       </div>
-      {slot.speaker && <small>{slot.speaker}</small>}
+      {slot.speakers.length > 0 && <small>{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
+      {!ghost && speakerConflictIds.has(slot.id) && <span className="slot-conflict-badge">Rednerkonflikt</span>}
       {!ghost && <button className="slot-edit" type="button" onClick={() => onEdit(slot)} aria-label={`${slot.topic} bearbeiten`}>Bearbeiten</button>}
       {!ghost && <div className="slot-resize" onPointerDown={event => begin(event, slot, 'resize')} aria-label={`${slot.topic} verlängern oder verkürzen`} />}
     </article>
@@ -104,6 +110,15 @@ export default function Schedule({ schedule, onEdit, onChange }: {
   const previewEnd = drag && toMinutes(preview!.end_time)
 
   return <div className="schedule-scroll" aria-label="Tagesplan">
+    {schedule.speaker_conflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Rednerkonflikte">
+      <h3>Rednerkonflikte</h3>
+      <ul>{schedule.speaker_conflicts.map(conflict => {
+        const first = slotById.get(conflict.first_slot_id)
+        const second = slotById.get(conflict.second_slot_id)
+        if (!first || !second) return null
+        return <li key={`${first.id}-${second.id}`}>{conflict.speaker_ids.map(id => speakerById.get(id)).filter(Boolean).join(', ')}: {first.topic} ({roomById.get(first.room_id)}, {first.start_time.slice(0, 5)}–{first.end_time.slice(0, 5)}) und {second.topic} ({roomById.get(second.room_id)}, {second.start_time.slice(0, 5)}–{second.end_time.slice(0, 5)})</li>
+      })}</ul>
+    </section>}
     <div className="schedule-grid" style={{ gridTemplateColumns: `72px repeat(${schedule.rooms.length}, minmax(240px, 1fr))` }}>
       <div className="time-head">Zeit</div>
       {schedule.rooms.map(room => <div className="room-head" key={room.id}>{room.name}</div>)}

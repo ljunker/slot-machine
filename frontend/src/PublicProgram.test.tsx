@@ -10,9 +10,9 @@ const days = [
   { id: 12, event_id: 7, date: '2099-06-02', start_time: '09:00:00', end_time: '18:00:00' },
 ]
 const schedule: DaySchedule = {
-  day_id: 11, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00', collisions: [],
+  day_id: 11, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00', collisions: [], speaker_conflicts: [],
   rooms: [
-    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker: 'Ada', description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00' }] },
+    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker_ids: [1], speakers: [{ id: 1, name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00' }] },
     { id: 2, event_id: 7, name: 'Saal B', sort_order: 1, slots: [] },
   ],
 }

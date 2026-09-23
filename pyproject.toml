@@ -9,6 +9,8 @@ dependencies = [
     "uvicorn[standard]",
     "sqlalchemy",
     "pydantic-settings",
+    "pillow",
+    "python-multipart",
 ]
 
 [dependency-groups]

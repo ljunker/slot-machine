@@ -5,7 +5,12 @@ from sqlalchemy.orm import Session
 from app.models.slot import Slot
 from app.repositories.room_repository import RoomRepository
 from app.repositories.slot_repository import SlotRepository
-from app.schemas.schedule import CollisionPair, DaySchedule, ScheduleRoom
+from app.schemas.schedule import (
+    CollisionPair,
+    DaySchedule,
+    ScheduleRoom,
+    SpeakerConflict,
+)
 from app.schemas.slot import SlotResponse
 from app.services.event_day_service import EventDayService
 
@@ -56,7 +61,31 @@ class ScheduleService:
                 CollisionPair(first_slot_id=first.id, second_slot_id=second.id)
                 for first, second in self.check_collisions(day_id)
             ],
+            speaker_conflicts=self.check_speaker_conflicts(slots),
         )
+
+    def check_speaker_conflicts(self, slots: list[Slot]) -> list[SpeakerConflict]:
+        conflicts = []
+        ordered = sorted(slots, key=lambda slot: (slot.start_time, slot.id))
+        for index, first in enumerate(ordered):
+            first_ids = set(first.speaker_ids)
+            if not first_ids:
+                continue
+            for second in ordered[index + 1 :]:
+                if second.start_time >= first.end_time:
+                    break
+                if first.room_id == second.room_id:
+                    continue
+                shared = sorted(first_ids.intersection(second.speaker_ids))
+                if shared:
+                    conflicts.append(
+                        SpeakerConflict(
+                            first_slot_id=first.id,
+                            second_slot_id=second.id,
+                            speaker_ids=shared,
+                        )
+                    )
+        return conflicts
 
     def check_collisions(
         self,

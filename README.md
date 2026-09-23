@@ -39,6 +39,10 @@ Veranstaltung, Tage und Räume links anlegen. Slots über **+ Slot** anlegen ode
 
 Beim Löschen einer Veranstaltung, eines Tages oder Raums werden zugehörige Slots mitgelöscht. Eine Änderung der Event- oder Tagesgrenzen, die vorhandene Daten ausschließen würde, liefert HTTP `409`. Ungültige Zeiträume oder Beziehungen liefern `400`, fehlende Objekte `404`.
 
+Rednerprofile werden pro Veranstaltung angelegt. Ein Slot kann mehrere Profile erhalten. Gleichzeitige Einsätze eines Redners in verschiedenen Räumen erscheinen als Warnung im Tagesplan; Speichern bleibt möglich. Bestehende Freitextnamen werden beim ersten Start mit der neuen Version einmalig als Profile übernommen. Der gesamte bisherige Feldinhalt wird dabei als ein Name behandelt. Neue Slot-Schreibzugriffe verwenden `speaker_ids` statt `speaker`.
+
+Fotos können als JPEG, PNG oder WebP bis 5 MB hochgeladen werden. Lokal liegen sie standardmäßig in `./uploads`, konfigurierbar mit `SPEAKER_UPLOAD_DIR`. Im Docker-Betrieb liegen sie zusammen mit der Datenbank im Volume `schedule_data`. Die Profil-API hat wie die übrige Planungs-API keine Anmeldung; die Besucheroberfläche zeigt nur Rednernamen.
+
 Über **Besucherprogramm ansehen** öffnet sich die öffentliche Tagesansicht unter `/programm/<event_id>`. Besucher können Tage wechseln und Slot-Beschreibungen lesen. Auf Smartphones wechseln Raum-Tabs zwischen den Programmen. Die Oberfläche bietet keine Bearbeitung; die API hat weiterhin keine Anmeldung oder Veröffentlichungsfreigabe.
 
 ## Tests

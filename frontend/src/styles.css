@@ -52,6 +52,12 @@ button:disabled { cursor: default; opacity: .35; }
 .empty-room { display: block; text-align: center; margin-top: 24px; font-size: 12px; color: #a8b2c2; }
 .slot-card { position: absolute; padding: 7px 9px 11px; background: #e7efff; border: 1px solid #b9cdfb; border-left: 4px solid #5c7fe2; border-radius: 7px; overflow: hidden; z-index: 2; box-shadow: 0 2px 6px #24396116; min-height: 22px; }
 .slot-card.collision { background: #fff1ef; border-color: #ffc3bb; border-left-color: #df5b4b; }
+.slot-card.speaker-conflict { box-shadow: inset 0 0 0 2px #e8a527, 0 2px 6px #24396116; }
+.slot-conflict-badge { display: block; width: fit-content; margin-top: 3px; color: #765000; font-size: 10px; font-weight: 800; }
+.speaker-conflict-list { padding: 12px 16px; background: #fff7df; border-bottom: 1px solid #ead399; color: #654800; font-size: 12px; }
+.speaker-conflict-list h3 { margin: 0 0 5px; font-size: 13px; }
+.speaker-conflict-list ul { margin: 0; padding-left: 18px; }
+.speaker-conflict-list li + li { margin-top: 4px; }
 .slot-card.ghost { opacity: .7; pointer-events: none; z-index: 4; }
 .slot-grip { display: flex; flex-wrap: wrap; gap: 3px 8px; justify-content: space-between; cursor: grab; touch-action: none; user-select: none; font-size: 11px; }
 .slot-grip:active { cursor: grabbing; }
@@ -73,6 +79,15 @@ button:disabled { cursor: default; opacity: .35; }
 .editor textarea { min-height: 80px; resize: vertical; }
 .two-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .editor-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.speaker-picker { border: 1px solid #dce2ed; border-radius: 7px; padding: 8px 10px; max-height: 160px; overflow: auto; }
+.speaker-picker legend { color: #596783; font-size: 12px; font-weight: 700; }
+.speaker-picker label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.speaker-picker input { width: auto; }
+.speaker-photo { display: grid; justify-items: start; gap: 6px; }
+.speaker-photo img { display: block; max-width: 100%; max-height: 160px; border-radius: 7px; }
+.speaker-sessions { margin-top: 24px; border-top: 1px solid #ebedf3; }
+.speaker-sessions h3 { font-size: 14px; }
+.speaker-sessions ul { padding-left: 18px; color: #596783; font-size: 12px; line-height: 1.6; }
 .danger { border: 0; background: transparent; color: #c24439; font-weight: 700; font-size: 13px; padding: 8px; }
 .public-page { min-height: 100vh; }
 .public-header { background: #15213c; color: white; padding: 30px 0; }

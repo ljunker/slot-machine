@@ -18,6 +18,10 @@ class CollisionPair(BaseModel):
     second_slot_id: int
 
 
+class SpeakerConflict(CollisionPair):
+    speaker_ids: list[int]
+
+
 class DaySchedule(BaseModel):
     day_id: int
     date: date
@@ -27,3 +31,4 @@ class DaySchedule(BaseModel):
 
     rooms: list[ScheduleRoom]
     collisions: list[CollisionPair]
+    speaker_conflicts: list[SpeakerConflict]

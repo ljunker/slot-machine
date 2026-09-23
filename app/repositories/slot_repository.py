@@ -37,7 +37,7 @@ class SlotRepository:
         return list(self.db.scalars(statement).all())
 
     def create(self, data: SlotCreate) -> Slot:
-        slot = Slot(**data.model_dump())
+        slot = Slot(**data.model_dump(exclude={"speaker_ids"}))
 
         self.db.add(slot)
         self.db.flush()
@@ -49,7 +49,7 @@ class SlotRepository:
         slot: Slot,
         data: SlotUpdate,
     ) -> Slot:
-        update_data = data.model_dump(exclude_unset=True)
+        update_data = data.model_dump(exclude_unset=True, exclude={"speaker_ids"})
 
         for field, value in update_data.items():
             setattr(slot, field, value)

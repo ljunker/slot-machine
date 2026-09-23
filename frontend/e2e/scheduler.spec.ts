@@ -21,8 +21,14 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   }
   await expect(page.locator('[data-room-column]')).toHaveCount(2)
 
+  await page.getByRole('button', { name: '+ Redner' }).click()
+  await page.getByLabel('Name').fill('Ada')
+  await page.getByLabel('Kurzbeschreibung').fill('Spricht über Planung.')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+
   await page.getByRole('button', { name: '+ Slot' }).click()
   await page.getByLabel('Thema').fill('Eröffnung')
+  await page.getByRole('checkbox', { name: 'Ada' }).check()
   await page.getByLabel('Beginn').fill('10:00')
   await page.getByLabel('Ende').fill('11:00')
   await page.getByRole('button', { name: 'Speichern' }).click()
@@ -47,5 +53,17 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.mouse.move(edge!.x + edge!.width / 2, edge!.y + edge!.height / 2 + 24, { steps: 4 })
   await page.mouse.up()
   await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:45')
+
+  await page.getByRole('button', { name: '+ Slot' }).click()
+  await page.getByLabel('Thema').fill('Paralleler Vortrag')
+  await page.getByRole('checkbox', { name: 'Ada' }).check()
+  await page.getByLabel('Beginn').fill('11:00')
+  await page.getByLabel('Ende').fill('12:00')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByRole('region', { name: 'Rednerkonflikte' })).toContainText('Ada')
+  await expect(page.locator('.slot-card.speaker-conflict')).toHaveCount(2)
+  await page.getByRole('button', { name: 'Ada' }).click()
+  await expect(page.getByText('Sessions')).toBeVisible()
+  await expect(page.locator('.speaker-sessions li')).toHaveCount(2)
   if (process.env.SCHEDULER_SCREENSHOT) await page.screenshot({ path: process.env.SCHEDULER_SCREENSHOT, fullPage: true })
 })

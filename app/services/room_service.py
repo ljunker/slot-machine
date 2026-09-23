@@ -1,8 +1,9 @@
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.room import Room
 from app.models.slot import Slot
+from app.models.speaker import slot_speakers
 from app.repositories.event_repository import EventRepository
 from app.repositories.room_repository import RoomRepository
 from app.schemas.room import RoomCreate, RoomUpdate
@@ -51,6 +52,9 @@ class RoomService:
     def delete(self, room_id: int) -> None:
         room = self.get(room_id)
         event_id = room.event_id
+        self.db.execute(delete(slot_speakers).where(
+            slot_speakers.c.slot_id.in_(select(Slot.id).where(Slot.room_id == room_id))
+        ))
         self.db.execute(delete(Slot).where(Slot.room_id == room_id))
         self.repository.delete(room)
         for index, remaining in enumerate(self.repository.get_for_event(event_id)):

@@ -11,15 +11,18 @@ from app.api.routes import (
     rooms,
     schedule,
     slots,
+    speakers,
 )
 from app.db.base import Base
 from app.db.database import engine
+from app.db.migrate_speakers import migrate_legacy_speakers
 from app.services.errors import DomainError
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_legacy_speakers(engine)
     yield
 
 
@@ -65,3 +68,5 @@ app.include_router(
     schedule.router,
     prefix="/api",
 )
+
+app.include_router(speakers.router, prefix="/api")

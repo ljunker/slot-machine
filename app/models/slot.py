@@ -1,7 +1,7 @@
 from datetime import time
 
 from sqlalchemy import ForeignKey, String, Text, Time
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -26,11 +26,6 @@ class Slot(Base):
         nullable=False,
     )
 
-    speaker: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-
     description: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -45,3 +40,9 @@ class Slot(Base):
         Time,
         nullable=False,
     )
+
+    speakers = relationship("Speaker", secondary="slot_speakers", back_populates="slots", order_by="Speaker.id")
+
+    @property
+    def speaker_ids(self) -> list[int]:
+        return [speaker.id for speaker in self.speakers]
