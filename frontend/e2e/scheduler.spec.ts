@@ -1,0 +1,51 @@
+import { expect, test } from '@playwright/test'
+
+test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '+ Veranstaltung' }).click()
+  await page.getByLabel('Name').fill('Browserkonferenz')
+  await page.getByLabel('Startdatum').fill('2026-10-01')
+  await page.getByLabel('Enddatum').fill('2026-10-02')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' })).toHaveValue(/\d+/)
+
+  await page.getByRole('button', { name: '+ Tag' }).click()
+  await page.getByLabel('Datum').fill('2026-10-01')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByText('09:00–18:00 Uhr · 0 Räume')).toBeVisible()
+
+  for (const name of ['Saal A', 'Saal B']) {
+    await page.getByRole('button', { name: '+ Raum' }).click()
+    await page.getByLabel('Name').fill(name)
+    await page.getByRole('button', { name: 'Speichern' }).click()
+  }
+  await expect(page.locator('[data-room-column]')).toHaveCount(2)
+
+  await page.getByRole('button', { name: '+ Slot' }).click()
+  await page.getByLabel('Thema').fill('Eröffnung')
+  await page.getByLabel('Beginn').fill('10:00')
+  await page.getByLabel('Ende').fill('11:00')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.locator('[data-room-column]').first().locator('[data-slot-id]')).toHaveCount(1)
+
+  const grip = page.getByLabel('Eröffnung verschieben')
+  const first = await grip.boundingBox()
+  const target = await page.locator('[data-room-column]').nth(1).boundingBox()
+  expect(first).not.toBeNull()
+  expect(target).not.toBeNull()
+  await page.mouse.move(first!.x + 20, first!.y + 10)
+  await page.mouse.down()
+  await page.mouse.move(target!.x + 50, first!.y + 58, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toHaveCount(1)
+  await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:30')
+  const resize = page.getByLabel('Eröffnung verlängern oder verkürzen')
+  const edge = await resize.boundingBox()
+  expect(edge).not.toBeNull()
+  await page.mouse.move(edge!.x + edge!.width / 2, edge!.y + edge!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(edge!.x + edge!.width / 2, edge!.y + edge!.height / 2 + 24, { steps: 4 })
+  await page.mouse.up()
+  await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:45')
+  if (process.env.SCHEDULER_SCREENSHOT) await page.screenshot({ path: process.env.SCHEDULER_SCREENSHOT, fullPage: true })
+})

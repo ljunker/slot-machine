@@ -1,7 +1,22 @@
 [project]
-name = "slot-machine"
+name = "event-scheduler"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "Small multi-room event scheduling service"
 requires-python = ">=3.13"
-dependencies = []
+
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "pydantic-settings",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"app/api/routes/*.py" = ["B008"]
