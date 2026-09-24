@@ -34,7 +34,12 @@ def _register_fonts() -> None:
 
 
 def _seconds(value: time) -> float:
-    return value.hour * 3600 + value.minute * 60 + value.second + value.microsecond / 1_000_000
+    return (
+        value.hour * 3600
+        + value.minute * 60
+        + value.second
+        + value.microsecond / 1_000_000
+    )
 
 
 def _fit(text: str, width: float, font: str, size: float) -> str:
@@ -86,12 +91,32 @@ def _slot_lanes(slots: list[SlotResponse]) -> list[tuple[SlotResponse, int, int]
     return result
 
 
-def _draw_slot(pdf: canvas.Canvas, slot: SlotResponse, x: float, y: float, width: float, height: float) -> None:
+def _draw_slot(
+    pdf: canvas.Canvas,
+    slot: SlotResponse,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+) -> None:
     if width <= 0 or height <= 0:
         return
-    pdf.setFillColor(colors.HexColor("#E7EFFF"))
-    pdf.setStrokeColor(colors.HexColor("#7B9BE8"))
-    pdf.roundRect(x, y, width, height, min(2.5, height / 3, width / 3), fill=1, stroke=1)
+    notice = slot.change_notice
+    palette = {
+        "rescheduled": ("#FFF1D6", "#B96F0D"),
+        "updated": ("#F2E7FF", "#8C5ABA"),
+        "cancelled": ("#E7E9ED", "#596579"),
+    }
+    fill, stroke = (
+        palette.get(notice.type, ("#E7EFFF", "#7B9BE8"))
+        if notice
+        else ("#E7EFFF", "#7B9BE8")
+    )
+    pdf.setFillColor(colors.HexColor(fill))
+    pdf.setStrokeColor(colors.HexColor(stroke))
+    pdf.roundRect(
+        x, y, width, height, min(2.5, height / 3, width / 3), fill=1, stroke=1
+    )
 
     # Clip text to its own card. Very short slots remain visible as cards.
     pdf.saveState()
@@ -103,18 +128,52 @@ def _draw_slot(pdf: canvas.Canvas, slot: SlotResponse, x: float, y: float, width
         lines: list[tuple[str, str, float]] = []
         interval = f"{slot.start_time:%H:%M}-{slot.end_time:%H:%M}"
         speakers = ", ".join(speaker.name for speaker in slot.speakers)
+        status = (
+            {
+                "rescheduled": "Verschoben",
+                "updated": "Geändert",
+                "cancelled": "Abgesagt",
+            }.get(notice.type, "")
+            if notice
+            else ""
+        )
+        previous = ""
+        if (
+            notice
+            and notice.type == "rescheduled"
+            and notice.previous_start_time
+            and notice.previous_end_time
+        ):
+            previous = f"Vorher: {notice.previous_start_time:%H:%M}-{notice.previous_end_time:%H:%M}"
+            if notice.previous_room_name:
+                previous += f", {notice.previous_room_name}"
         if height >= 30:
             lines = [(interval, FONT, 6.2), (slot.topic, BOLD_FONT, 7.2)]
+            if status:
+                lines.append((status, BOLD_FONT, 6.2))
+            if previous and height >= 45:
+                lines.append((previous, FONT, 5.8))
             if speakers:
                 lines.append((speakers, FONT, 6))
         elif height >= 18:
-            if speakers:
-                lines = [(f"{interval} {slot.topic}", BOLD_FONT, 6.3), (speakers, FONT, 6)]
+            if status:
+                lines = [(f"{status}: {slot.topic}", BOLD_FONT, 6.3)]
+                if speakers:
+                    lines.append((speakers, FONT, 6))
+            elif speakers:
+                lines = [
+                    (f"{interval} {slot.topic}", BOLD_FONT, 6.3),
+                    (speakers, FONT, 6),
+                ]
             else:
                 lines = [(interval, FONT, 5.8), (slot.topic, BOLD_FONT, 6.5)]
         elif height >= 9:
             lines = [
-                (f"{speakers} - {slot.topic}", FONT, 6) if speakers else (slot.topic, BOLD_FONT, 6)
+                (f"{status}: {slot.topic}", BOLD_FONT, 6)
+                if status
+                else (f"{speakers} - {slot.topic}", FONT, 6)
+                if speakers
+                else (slot.topic, BOLD_FONT, 6)
             ]
         baseline = y + height - 8
         pdf.setFillColor(colors.HexColor("#24324D"))
@@ -129,10 +188,14 @@ def _draw_slot(pdf: canvas.Canvas, slot: SlotResponse, x: float, y: float, width
     pdf.restoreState()
 
 
-def _draw_day(pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: int, pages: int) -> None:
+def _draw_day(
+    pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: int, pages: int
+) -> None:
     pdf.setFillColor(colors.HexColor("#172039"))
     pdf.setFont(BOLD_FONT, 18)
-    pdf.drawString(27, PAGE_HEIGHT - 40, _fit(event_name, PAGE_WIDTH - 54, BOLD_FONT, 18))
+    pdf.drawString(
+        27, PAGE_HEIGHT - 40, _fit(event_name, PAGE_WIDTH - 54, BOLD_FONT, 18)
+    )
     pdf.setFont(FONT, 10)
     pdf.drawString(27, PAGE_HEIGHT - 61, f"Programm - {schedule.date:%d.%m.%Y}")
     pdf.setFont(FONT, 7)
@@ -140,7 +203,9 @@ def _draw_day(pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: 
 
     if not schedule.rooms:
         pdf.setFont(FONT, 11)
-        pdf.drawString(27, PAGE_HEIGHT - 115, "Für diesen Tag sind keine Räume angelegt.")
+        pdf.drawString(
+            27, PAGE_HEIGHT - 115, "Für diesen Tag sind keine Räume angelegt."
+        )
         return
 
     room_width = (GRID_RIGHT - GRID_LEFT) / len(schedule.rooms)
@@ -148,7 +213,14 @@ def _draw_day(pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: 
     end = _seconds(schedule.end_time)
     scale = (GRID_TOP - GRID_BOTTOM) / (end - start)
     pdf.setFillColor(colors.HexColor("#F7F9FD"))
-    pdf.rect(GRID_LEFT, GRID_BOTTOM, GRID_RIGHT - GRID_LEFT, GRID_TOP - GRID_BOTTOM, fill=1, stroke=0)
+    pdf.rect(
+        GRID_LEFT,
+        GRID_BOTTOM,
+        GRID_RIGHT - GRID_LEFT,
+        GRID_TOP - GRID_BOTTOM,
+        fill=1,
+        stroke=0,
+    )
 
     pdf.setStrokeColor(colors.HexColor("#D8E0ED"))
     pdf.setLineWidth(0.5)
@@ -162,14 +234,20 @@ def _draw_day(pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: 
             pdf.drawString(room_x + 3, GRID_TOP + 9, room_name)
     pdf.line(GRID_RIGHT, GRID_BOTTOM, GRID_RIGHT, GRID_TOP)
 
-    ticks = sorted({start, end} | set(range((int(start) // 3600 + 1) * 3600, int(end), 3600)))
+    ticks = sorted(
+        {start, end} | set(range((int(start) // 3600 + 1) * 3600, int(end), 3600))
+    )
     for second in ticks:
         y = GRID_TOP - (second - start) * scale
         pdf.setStrokeColor(colors.HexColor("#CDD7E7"))
         pdf.line(GRID_LEFT, y, GRID_RIGHT, y)
         pdf.setFont(FONT, 7)
         pdf.setFillColor(colors.HexColor("#536887"))
-        pdf.drawRightString(GRID_LEFT - 5, max(GRID_BOTTOM, min(GRID_TOP - 6, y - 2)), f"{int(second) // 3600:02d}:{int(second) // 60 % 60:02d}")
+        pdf.drawRightString(
+            GRID_LEFT - 5,
+            max(GRID_BOTTOM, min(GRID_TOP - 6, y - 2)),
+            f"{int(second) // 3600:02d}:{int(second) // 60 % 60:02d}",
+        )
 
     for index, room in enumerate(schedule.rooms):
         room_x = GRID_LEFT + index * room_width
@@ -178,7 +256,14 @@ def _draw_day(pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: 
             padding = min(1, lane_width / 10)
             top = GRID_TOP - (_seconds(slot.start_time) - start) * scale
             bottom = GRID_TOP - (_seconds(slot.end_time) - start) * scale
-            _draw_slot(pdf, slot, room_x + lane * lane_width + padding, bottom + 0.5, lane_width - 2 * padding, max(0.5, top - bottom - 1))
+            _draw_slot(
+                pdf,
+                slot,
+                room_x + lane * lane_width + padding,
+                bottom + 0.5,
+                lane_width - 2 * padding,
+                max(0.5, top - bottom - 1),
+            )
 
 
 def build_program_pdf(db: Session, event_id: int) -> bytes:
@@ -193,7 +278,9 @@ def build_program_pdf(db: Session, event_id: int) -> bytes:
     pdf.setTitle(f"Programm - {event.name}")
     pdf.setAuthor("Event Scheduler")
     for index, day in enumerate(days, start=1):
-        _draw_day(pdf, event.name, schedule_service.get_day_schedule(day.id), index, len(days))
+        _draw_day(
+            pdf, event.name, schedule_service.get_day_schedule(day.id), index, len(days)
+        )
         pdf.showPage()
     pdf.save()
     return output.getvalue()

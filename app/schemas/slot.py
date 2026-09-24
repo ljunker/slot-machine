@@ -1,4 +1,5 @@
 from datetime import time
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +34,16 @@ class SlotUpdate(BaseModel):
     end_time: time | None = None
 
     room_id: int | None = None
+    is_cancelled: bool | None = None
+
+
+class ChangeNotice(BaseModel):
+    type: Literal["rescheduled", "updated", "cancelled"]
+    # Unix time in seconds; null for permanent cancellation notices.
+    expires_at: int | None = None
+    previous_start_time: time | None = None
+    previous_end_time: time | None = None
+    previous_room_name: str | None = None
 
 
 class SlotResponse(SlotBase):
@@ -41,3 +52,5 @@ class SlotResponse(SlotBase):
     id: int
     day_id: int
     speakers: list[SpeakerSummary]
+    is_cancelled: bool = False
+    change_notice: ChangeNotice | None = None

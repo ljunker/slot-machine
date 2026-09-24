@@ -12,10 +12,12 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   expect(roomAResponse.ok()).toBeTruthy()
   expect(roomBResponse.ok()).toBeTruthy()
   const roomA = await roomAResponse.json() as { id: number }
+  const roomB = await roomBResponse.json() as { id: number }
   const speakerResponse = await request.post(`/api/events/${event.id}/speakers`, { data: { name: 'Ada' } })
   const speaker = await speakerResponse.json()
   const slotResponse = await request.post('/api/slots', { data: { day_id: day.id, room_id: roomA.id, topic: 'Eröffnung', speaker_ids: [speaker.id], description: 'Willkommen zur Konferenz.', start_time: '10:00', end_time: '11:00' } })
   expect(slotResponse.ok()).toBeTruthy()
+  const slot = await slotResponse.json() as { id: number }
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
@@ -43,4 +45,25 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   await expect(page.locator('.public-mobile-program')).toBeHidden()
   await page.getByRole('button', { name: 'Eröffnung, 10:00 bis 11:00 Uhr, Details anzeigen' }).click()
   await expect(page.getByRole('region', { name: 'Session-Details' })).toContainText('Willkommen zur Konferenz.')
+
+  await page.getByRole('combobox', { name: 'Darstellung' }).selectOption('dark')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)).toBe('rgb(14, 22, 38)')
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await request.patch(`/api/slots/${slot.id}`, { data: { room_id: roomB.id, start_time: '11:00', end_time: '12:00' } })
+  await page.reload()
+  await expect(page.locator(`.public-slot.notice-rescheduled`)).toContainText('Verschoben')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('tab', { name: 'Saal B' }).click()
+  await expect(page.getByRole('tabpanel', { name: 'Saal B' })).toContainText('Vorher: 10:00–11:00 Uhr · Saal A')
+
+  await page.goto('/')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.getByRole('combobox', { name: 'Veranstaltung wählen' }).selectOption(String(event.id))
+  await page.getByRole('button', { name: 'Eröffnung bearbeiten' }).click()
+  await expect(page.getByRole('complementary', { name: 'Slot bearbeiten' })).toContainText('Vorher: 10:00–11:00 Uhr · Saal A')
+  await page.getByRole('checkbox', { name: 'Session abgesagt' }).check()
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.locator(`[data-slot-id="${slot.id}"]`)).toContainText('Abgesagt')
 })

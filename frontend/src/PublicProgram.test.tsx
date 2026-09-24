@@ -12,7 +12,7 @@ const days = [
 const schedule: DaySchedule = {
   day_id: 11, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00', collisions: [], speaker_conflicts: [],
   rooms: [
-    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker_ids: [1], speakers: [{ id: 1, name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00' }] },
+    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker_ids: [1], speakers: [{ id: 1, name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null }] },
     { id: 2, event_id: 7, name: 'Saal B', sort_order: 1, slots: [] },
   ],
 }
@@ -62,5 +62,21 @@ describe('public program', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ detail: 'Nicht gefunden' }), { status: 404 })))
     rerender(<PublicProgram eventId={8} />)
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('Programm konnte nicht geladen werden'))
+  })
+
+  it('shows previous planning and cancellation in public views', () => {
+    const changed: DaySchedule = {
+      ...schedule,
+      rooms: [{ ...schedule.rooms[0], slots: [
+        { ...schedule.rooms[0].slots[0], change_notice: { type: 'rescheduled', expires_at: Math.floor(Date.now() / 1000) + 3600, previous_start_time: '09:00:00', previous_end_time: '10:00:00', previous_room_name: 'Saal B' } },
+        { ...schedule.rooms[0].slots[0], id: 22, topic: 'Pause', is_cancelled: true, change_notice: { type: 'cancelled', expires_at: null, previous_start_time: null, previous_end_time: null, previous_room_name: null } },
+      ] }, schedule.rooms[1]],
+    }
+    render(<PublicSchedule schedule={changed} />)
+    const panel = screen.getByRole('tabpanel', { name: 'Saal A' })
+    expect(within(panel).getByText('Vorher: 09:00–10:00 Uhr · Saal B')).toBeTruthy()
+    expect(within(panel).getByText('Abgesagt')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Eröffnung.*Verschoben.*Details anzeigen/ }))
+    expect(screen.getByRole('region', { name: 'Session-Details' }).textContent).toContain('Vorher: 09:00–10:00 Uhr · Saal B')
   })
 })

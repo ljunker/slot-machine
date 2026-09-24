@@ -47,6 +47,10 @@ Fotos können als JPEG, PNG oder WebP bis 5 MB hochgeladen werden. Lokal liegen 
 
 Über **PDF-Programm herunterladen** lässt sich das aktuelle Gesamtprogramm aus Planungsansicht und Besucherprogramm laden. Jeder Veranstaltungstag belegt eine A4-Querseite mit Zeit-Raum-Raster. Slot-Karten zeigen auch Rednernamen; bei dichten Plänen werden Texte gekürzt.
 
+Die Auswahl **Darstellung** bietet System, Hell und Dunkel. Sie gilt für Planungsansicht und Besucherprogramm und wird im Browser gespeichert. Das PDF bleibt hell.
+
+Änderungen an Zeit oder Raum markieren eine Session 24 Stunden als **Verschoben**; die vorherige Planung steht in den Details. Änderungen an Thema, Beschreibung oder Rednern erscheinen 24 Stunden als **Geändert**. Über **Session abgesagt** bleibt eine Session dauerhaft als **Abgesagt** im Programm, zählt aber nicht zu Konflikten. Nach Aufheben der Absage erscheint sie 24 Stunden als geändert. Im PDF stehen frühere Angaben nur, wenn die Karte genug Platz bietet. Offene Seiten laden neue Änderungen weiterhin erst nach Neuladen.
+
 ## Tests
 
 ```bash

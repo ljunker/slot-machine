@@ -5,6 +5,13 @@ export type SpeakerSummary = { id: number; name: string }
 export type Speaker = SpeakerSummary & { event_id: number; bio: string | null; website: string | null; photo_url: string | null }
 export type SpeakerSession = { id: number; day_id: number; date: string; room_id: number; room_name: string; topic: string; start_time: string; end_time: string }
 export type SpeakerDetail = Speaker & { sessions: SpeakerSession[] }
+export type ChangeNotice = {
+  type: 'rescheduled' | 'updated' | 'cancelled'
+  expires_at: number | null
+  previous_start_time: string | null
+  previous_end_time: string | null
+  previous_room_name: string | null
+}
 export type Slot = {
   id: number
   day_id: number
@@ -15,6 +22,8 @@ export type Slot = {
   description: string | null
   start_time: string
   end_time: string
+  is_cancelled: boolean
+  change_notice: ChangeNotice | null
 }
 export type ScheduleRoom = Room & { slots: Slot[] }
 export type CollisionPair = { first_slot_id: number; second_slot_id: number }

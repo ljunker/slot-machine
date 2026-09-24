@@ -15,6 +15,7 @@ from app.api.routes import (
 )
 from app.db.base import Base
 from app.db.database import engine
+from app.db.migrate_slot_changes import migrate_slot_changes
 from app.db.migrate_speakers import migrate_legacy_speakers
 from app.services.errors import DomainError
 
@@ -22,6 +23,7 @@ from app.services.errors import DomainError
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_slot_changes(engine)
     migrate_legacy_speakers(engine)
     yield
 

@@ -66,7 +66,10 @@ class ScheduleService:
 
     def check_speaker_conflicts(self, slots: list[Slot]) -> list[SpeakerConflict]:
         conflicts = []
-        ordered = sorted(slots, key=lambda slot: (slot.start_time, slot.id))
+        ordered = sorted(
+            (slot for slot in slots if not slot.is_cancelled),
+            key=lambda slot: (slot.start_time, slot.id),
+        )
         for index, first in enumerate(ordered):
             first_ids = set(first.speaker_ids)
             if not first_ids:
@@ -98,6 +101,8 @@ class ScheduleService:
         slots_by_room: dict[int, list[Slot]] = defaultdict(list)
 
         for slot in slots:
+            if slot.is_cancelled:
+                continue
             slots_by_room[slot.room_id].append(slot)
 
         collisions: list[tuple[Slot, Slot]] = []

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import type { DaySchedule, Slot } from './types'
 import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
+import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
 
 type SlotPatch = { room_id?: number; start_time?: string; end_time?: string }
 type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number }
@@ -19,6 +20,7 @@ export default function Schedule({ schedule, onEdit, onChange }: {
   const collisionIds = new Set(schedule.collisions.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
   const speakerConflictIds = new Set(schedule.speaker_conflicts.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
   const slots = schedule.rooms.flatMap(room => room.slots)
+  const now = useNoticeNow(slots)
   const slotById = new Map(slots.map(slot => [slot.id, slot]))
   const roomById = new Map(schedule.rooms.map(room => [room.id, room.name]))
   const speakerById = new Map(slots.flatMap(slot => slot.speakers).map(speaker => [speaker.id, speaker.name]))
@@ -83,20 +85,23 @@ export default function Schedule({ schedule, onEdit, onChange }: {
   }
 
   function card(slot: Slot, top: number, cardHeight: number, lane: number, lanes: number, ghost = false) {
+    const notice = activeNotice(slot, now)
+    const compactNotice = notice && cardHeight < 45
     return <article
       key={slot.id}
       data-slot-id={slot.id}
-      className={`slot-card${collisionIds.has(slot.id) ? ' collision' : ''}${speakerConflictIds.has(slot.id) ? ' speaker-conflict' : ''}${ghost ? ' ghost' : ''}`}
+      className={`slot-card${collisionIds.has(slot.id) ? ' collision' : ''}${speakerConflictIds.has(slot.id) ? ' speaker-conflict' : ''}${notice ? ` notice-${notice.type}` : ''}${ghost ? ' ghost' : ''}`}
       style={{ top, height: cardHeight, left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
       tabIndex={ghost ? undefined : 0}
       onDoubleClick={ghost ? undefined : () => onEdit(slot)}
       onKeyDown={ghost ? undefined : event => { if (event.key === 'Enter') onEdit(slot) }}
     >
       <div className="slot-grip" onPointerDown={ghost ? undefined : event => begin(event, slot, 'move')} aria-label={`${slot.topic} verschieben`}>
-        <strong>{slot.topic}</strong>
+        <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}</strong>
         <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
       </div>
       {slot.speakers.length > 0 && <small>{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
+      {!ghost && notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
       {!ghost && speakerConflictIds.has(slot.id) && <span className="slot-conflict-badge">Rednerkonflikt</span>}
       {!ghost && <button className="slot-edit" type="button" onClick={() => onEdit(slot)} aria-label={`${slot.topic} bearbeiten`}>Bearbeiten</button>}
       {!ghost && <div className="slot-resize" onPointerDown={event => begin(event, slot, 'resize')} aria-label={`${slot.topic} verlängern oder verkürzen`} />}

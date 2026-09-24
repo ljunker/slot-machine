@@ -4,6 +4,7 @@ import Editor from './Editor'
 import type { EditorKind } from './Editor'
 import Schedule from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
+import ThemeControl from './ThemeControl'
 import type { DaySchedule, Event, EventDay, Room, Slot, Speaker } from './types'
 
 type Panel = { kind: EditorKind | 'speaker'; id: number | null }
@@ -143,7 +144,7 @@ export default function App() {
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
-      <button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>
+      <div className="header-actions"><ThemeControl /><button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button></div>
     </header>
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError('')}>Schließen</button></div>}
     <div className="workspace">
@@ -192,7 +193,7 @@ export default function App() {
         {loading && <p className="state-message">Lade Programm …</p>}
         {!loading && schedule && <Schedule schedule={schedule} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onChange={changeSlot} />}
         {!loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelb: Rednerkonflikt.</p>}
+        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Beschriftete Karten zeigen Änderungen und Absagen.</p>}
       </main>
       {panel?.kind === 'speaker' && <SpeakerEditor
         key={`speaker-${panel.id ?? 'new'}`}

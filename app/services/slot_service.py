@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from time import time as epoch_time
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -57,7 +58,9 @@ class SlotService:
     ) -> Slot:
         slot = self.get(slot_id)
         changes = data.model_dump(exclude_unset=True)
-        required_patch(changes, {"topic", "room_id", "start_time", "end_time"})
+        required_patch(
+            changes, {"topic", "room_id", "start_time", "end_time", "is_cancelled"}
+        )
         room_id = changes.get("room_id", slot.room_id)
         start = changes.get("start_time", slot.start_time)
         end = changes.get("end_time", slot.end_time)
@@ -69,6 +72,29 @@ class SlotService:
             )
         if "topic" in changes:
             changes["topic"] = name(changes["topic"])
+        schedule_changed = any(
+            field in changes and changes[field] != getattr(slot, field)
+            for field in ("room_id", "start_time", "end_time")
+        )
+        content_changed = any(
+            field in changes and changes[field] != getattr(slot, field)
+            for field in ("topic", "description", "is_cancelled")
+        ) or (
+            speakers is not None
+            and {speaker.id for speaker in speakers} != set(slot.speaker_ids)
+        )
+        if schedule_changed:
+            slot.previous_room_name = self.rooms.get_by_id(slot.room_id).name
+            slot.previous_start_time = slot.start_time
+            slot.previous_end_time = slot.end_time
+            slot.schedule_changed_at = int(epoch_time())
+        if content_changed:
+            slot.content_changed_at = int(epoch_time())
+        if changes.get("is_cancelled") is False and slot.is_cancelled:
+            slot.schedule_changed_at = None
+            slot.previous_room_name = None
+            slot.previous_start_time = None
+            slot.previous_end_time = None
         slot = self.repository.update(slot, SlotUpdate(**changes))
         if speakers is not None:
             slot.speakers = speakers
@@ -125,8 +151,11 @@ class SlotService:
         self,
         slot: Slot,
     ) -> bool:
+        if slot.is_cancelled:
+            return False
         return any(
             other.id != slot.id
+            and not other.is_cancelled
             and slot.start_time < other.end_time
             and other.start_time < slot.end_time
             for other in self.repository.get_for_room(slot.day_id, slot.room_id)
