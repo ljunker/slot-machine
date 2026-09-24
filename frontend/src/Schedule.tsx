@@ -7,8 +7,9 @@ import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
 type SlotPatch = { room_id?: number; start_time?: string; end_time?: string }
 type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number }
 
-export default function Schedule({ schedule, onEdit, onChange }: {
+export default function Schedule({ schedule, backlogPreview, onEdit, onChange }: {
   schedule: DaySchedule
+  backlogPreview?: { roomId: number; start: number; topic: string } | null
   onEdit: (slot: Slot) => void
   onChange: (slotId: number, patch: SlotPatch) => Promise<void>
 }) {
@@ -131,7 +132,7 @@ export default function Schedule({ schedule, onEdit, onChange }: {
         {hours.map(minute => <div className="hour-label" key={minute} style={{ top: Math.max(9, Math.min(height - 9, (minute - start) * PX_PER_MINUTE)) }}>{toTime(minute)}</div>)}
       </div>
       {schedule.rooms.map(room => <div
-        className={`room-column${drag?.roomId === room.id ? ' drop-target' : ''}`}
+        className={`room-column${drag?.roomId === room.id || backlogPreview?.roomId === room.id ? ' drop-target' : ''}`}
         data-room-column={room.id}
         key={room.id}
         style={{ height }}
@@ -146,6 +147,7 @@ export default function Schedule({ schedule, onEdit, onChange }: {
           (previewEnd - previewStart) * PX_PER_MINUTE,
           0, 1, true,
         )}
+        {backlogPreview?.roomId === room.id && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * PX_PER_MINUTE, height: 60 * PX_PER_MINUTE }}><strong>{backlogPreview.topic}</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
       </div>)}
     </div>
   </div>

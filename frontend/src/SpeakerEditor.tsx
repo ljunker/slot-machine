@@ -56,7 +56,7 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
     </form>
     {speaker && <section className="speaker-sessions"><h3>Sessions</h3>
       {detailError && <p role="alert">{detailError}</p>}
-      {detail && (detail.sessions.length ? <ul>{detail.sessions.map(session => <li key={session.id}>{session.date} · {session.start_time.slice(0, 5)}–{session.end_time.slice(0, 5)} · {session.room_name}: {session.topic}</li>)}</ul> : <p className="muted">Noch keine Sessions</p>)}
+      {detail && (detail.sessions.length ? <ul>{detail.sessions.map(session => <li key={session.id}>{session.day_id === null ? 'Ungeplant' : `${session.date} · ${session.start_time?.slice(0, 5)}–${session.end_time?.slice(0, 5)} · ${session.room_name}`}: {session.topic}</li>)}</ul> : <p className="muted">Noch keine Sessions</p>)}
     </section>}
   </aside>
 }

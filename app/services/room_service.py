@@ -1,9 +1,8 @@
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.room import Room
 from app.models.slot import Slot
-from app.models.speaker import slot_speakers
 from app.repositories.event_repository import EventRepository
 from app.repositories.room_repository import RoomRepository
 from app.schemas.room import RoomCreate, RoomUpdate
@@ -52,10 +51,18 @@ class RoomService:
     def delete(self, room_id: int) -> None:
         room = self.get(room_id)
         event_id = room.event_id
-        self.db.execute(delete(slot_speakers).where(
-            slot_speakers.c.slot_id.in_(select(Slot.id).where(Slot.room_id == room_id))
-        ))
-        self.db.execute(delete(Slot).where(Slot.room_id == room_id))
+        for slot in self.db.scalars(select(Slot).where(Slot.room_id == room_id)):
+            slot.day_id = None
+            slot.room_id = None
+            slot.start_time = None
+            slot.end_time = None
+            slot.is_cancelled = False
+            slot.schedule_changed_at = None
+            slot.content_changed_at = None
+            slot.previous_start_time = None
+            slot.previous_end_time = None
+            slot.previous_room_name = None
+        self.db.flush()
         self.repository.delete(room)
         for index, remaining in enumerate(self.repository.get_for_event(event_id)):
             remaining.sort_order = index

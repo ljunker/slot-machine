@@ -37,7 +37,9 @@ docker compose down
 
 Veranstaltung, Tage und Räume links anlegen. Slots über **+ Slot** anlegen oder per Formular bearbeiten. Am Kopf einer Slot-Karte ziehen, um Zeit und Raum zu ändern; an der unteren Kante ziehen, um die Endzeit zu ändern. Ziehen rastet in 15-Minuten-Schritten ein. Die API nimmt auch andere gültige Uhrzeiten an.
 
-Beim Löschen einer Veranstaltung, eines Tages oder Raums werden zugehörige Slots mitgelöscht. Eine Änderung der Event- oder Tagesgrenzen, die vorhandene Daten ausschließen würde, liefert HTTP `409`. Ungültige Zeiträume oder Beziehungen liefern `400`, fehlende Objekte `404`.
+Über **+ Session** in der Seitenleiste entstehen ungeplante Sessions ohne Tag, Raum und Uhrzeit. Sie gehören zur gewählten Veranstaltung und erscheinen noch nicht im Besucherprogramm oder PDF. Zum Einplanen eine Session in eine Raumspalte des gewählten Tages ziehen; der Beginn rastet in 15-Minuten-Schritten ein und die erste Dauer beträgt 60 Minuten. Alternativ im Editor Tag, Raum und Zeiten wählen. **Planung entfernen** legt eine geplante Session zurück in die Liste. Ist im Tagesplan kein Platz für 60 Minuten, kann im Editor eine kürzere Dauer gewählt werden.
+
+Beim Löschen eines Tages oder Raums bleiben zugehörige Sessions samt Inhalten und Rednern erhalten und werden ungeplant. Beim Löschen einer Veranstaltung werden alle ihre Sessions mitgelöscht. Eine Änderung der Event- oder Tagesgrenzen, die vorhandene Daten ausschließen würde, liefert HTTP `409`. Ungültige Zeiträume oder Beziehungen liefern `400`, fehlende Objekte `404`.
 
 Rednerprofile werden pro Veranstaltung angelegt. Ein Slot kann mehrere Profile erhalten. Gleichzeitige Einsätze eines Redners in verschiedenen Räumen erscheinen als Warnung im Tagesplan; Speichern bleibt möglich. Bestehende Freitextnamen werden beim ersten Start mit der neuen Version einmalig als Profile übernommen. Der gesamte bisherige Feldinhalt wird dabei als ein Name behandelt. Neue Slot-Schreibzugriffe verwenden `speaker_ids` statt `speaker`.
 

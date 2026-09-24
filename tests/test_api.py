@@ -128,17 +128,17 @@ def test_full_crud_and_cascade(client, db):
     assert db.scalars(select(Slot)).all() == []
 
 
-def test_day_and_room_delete_cascade(client, db):
+def test_day_and_room_delete_return_slots_to_backlog(client, db):
     event = create_event(client)
     day = create_day(client, event["id"])
     room = create_room(client, event["id"])
-    create_slot(client, day["id"], room["id"])
+    first = create_slot(client, day["id"], room["id"])
     assert client.delete(f"/api/rooms/{room['id']}").status_code == 204
-    assert db.scalars(select(Slot)).all() == []
+    assert client.get(f"/api/events/{event['id']}/unplanned-sessions").json()[0]["id"] == first["id"]
     room = create_room(client, event["id"])
-    create_slot(client, day["id"], room["id"])
+    second = create_slot(client, day["id"], room["id"])
     assert client.delete(f"/api/days/{day['id']}").status_code == 204
-    assert db.scalars(select(Slot)).all() == []
+    assert {slot["id"] for slot in client.get(f"/api/events/{event['id']}/unplanned-sessions").json()} == {first["id"], second["id"]}
 
 
 def test_schedule_collisions_and_empty_rooms(client):

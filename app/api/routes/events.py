@@ -3,8 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.schemas.event import EventCreate, EventResponse, EventUpdate
+from app.schemas.slot import SlotResponse
 from app.services.event_service import EventService
 from app.services.program_pdf import build_program_pdf
+from app.services.slot_service import SlotService
 
 router = APIRouter(
     prefix="/events",
@@ -25,6 +27,11 @@ def create_event(data: EventCreate, db: Session = Depends(get_db)):
 @router.get("/{event_id}", response_model=EventResponse)
 def get_event(event_id: int, db: Session = Depends(get_db)):
     return EventService(db).get(event_id)
+
+
+@router.get("/{event_id}/unplanned-sessions", response_model=list[SlotResponse])
+def get_unplanned_sessions(event_id: int, db: Session = Depends(get_db)):
+    return SlotService(db).get_unplanned_for_event(event_id)
 
 
 @router.get("/{event_id}/program.pdf")

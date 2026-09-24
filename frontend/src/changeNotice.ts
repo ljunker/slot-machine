@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { ChangeNotice, Slot } from './types'
+import type { ChangeNotice } from './types'
 
-export function activeNotice(slot: Slot, now: number): ChangeNotice | null {
+type NoticeSlot = { change_notice: ChangeNotice | null }
+
+export function activeNotice(slot: NoticeSlot, now: number): ChangeNotice | null {
   const notice = slot.change_notice
   return notice && (notice.expires_at === null || notice.expires_at * 1000 > now) ? notice : null
 }
@@ -18,7 +20,7 @@ export function previousPlanning(notice: ChangeNotice): string | null {
   return [time, notice.previous_room_name].filter(Boolean).join(' · ') || null
 }
 
-export function useNoticeNow(slots: Slot[]): number {
+export function useNoticeNow(slots: NoticeSlot[]): number {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const next = slots.map(slot => slot.change_notice?.expires_at).filter((value): value is number => value !== null && value !== undefined)

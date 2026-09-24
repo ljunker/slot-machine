@@ -12,7 +12,7 @@ const days = [
 const schedule: DaySchedule = {
   day_id: 11, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00', collisions: [], speaker_conflicts: [],
   rooms: [
-    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker_ids: [1], speakers: [{ id: 1, name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null }] },
+    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, event_id: 7, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker_ids: [1], speakers: [{ id: 1, name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null }] },
     { id: 2, event_id: 7, name: 'Saal B', sort_order: 1, slots: [] },
   ],
 }

@@ -1,4 +1,4 @@
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.event_day import EventDay
@@ -58,18 +58,12 @@ class EventService:
 
     def delete(self, event_id: int) -> None:
         event = self.get(event_id)
-        day_ids = select(EventDay.id).where(EventDay.event_id == event_id)
-        room_ids = select(Room.id).where(Room.event_id == event_id)
-        slot_ids = select(Slot.id).where(or_(Slot.day_id.in_(day_ids), Slot.room_id.in_(room_ids)))
+        slot_ids = select(Slot.id).where(Slot.event_id == event_id)
         photos = list(self.db.scalars(
             select(Speaker.photo_filename).where(Speaker.event_id == event_id)
         ).all())
         self.db.execute(delete(slot_speakers).where(slot_speakers.c.slot_id.in_(slot_ids)))
-        self.db.execute(
-            delete(Slot).where(
-                or_(Slot.day_id.in_(day_ids), Slot.room_id.in_(room_ids))
-            )
-        )
+        self.db.execute(delete(Slot).where(Slot.event_id == event_id))
         self.db.execute(delete(Speaker).where(Speaker.event_id == event_id))
         self.db.execute(delete(EventDay).where(EventDay.event_id == event_id))
         self.db.execute(delete(Room).where(Room.event_id == event_id))

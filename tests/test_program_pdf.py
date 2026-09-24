@@ -121,6 +121,7 @@ def test_pdf_days_rooms_speakers_and_fresh_data(client):
 def test_overlapping_slots_use_distinct_lanes():
     def item(identifier, start, end):
         return SlotResponse(
+            event_id=1,
             id=identifier,
             day_id=1,
             room_id=1,

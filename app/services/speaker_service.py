@@ -143,8 +143,8 @@ class SpeakerService:
         rows = self.db.execute(
             select(Slot, EventDay.date, Room.name)
             .join(slot_speakers, slot_speakers.c.slot_id == Slot.id)
-            .join(EventDay, EventDay.id == Slot.day_id)
-            .join(Room, Room.id == Slot.room_id)
+            .outerjoin(EventDay, EventDay.id == Slot.day_id)
+            .outerjoin(Room, Room.id == Slot.room_id)
             .where(slot_speakers.c.speaker_id == speaker_id)
             .order_by(EventDay.date, Slot.start_time, Slot.id)
         ).all()

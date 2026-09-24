@@ -1,8 +1,5 @@
-from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models.slot import Slot
-from app.models.speaker import slot_speakers
 from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.slot_repository import SlotRepository
@@ -72,9 +69,17 @@ class EventDayService:
 
     def delete(self, day_id: int) -> None:
         day = self.get(day_id)
-        self.db.execute(delete(slot_speakers).where(
-            slot_speakers.c.slot_id.in_(select(Slot.id).where(Slot.day_id == day_id))
-        ))
-        self.db.execute(delete(Slot).where(Slot.day_id == day_id))
+        for slot in self.slots.get_for_day(day_id):
+            slot.day_id = None
+            slot.room_id = None
+            slot.start_time = None
+            slot.end_time = None
+            slot.is_cancelled = False
+            slot.schedule_changed_at = None
+            slot.content_changed_at = None
+            slot.previous_start_time = None
+            slot.previous_end_time = None
+            slot.previous_room_name = None
+        self.db.flush()
         self.repository.delete(day)
         self.db.commit()

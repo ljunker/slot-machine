@@ -1,7 +1,16 @@
 from datetime import time
 from time import time as epoch_time
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, Time, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    String,
+    Text,
+    Time,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -9,17 +18,26 @@ from app.db.base import Base
 
 class Slot(Base):
     __tablename__ = "slots"
+    __table_args__ = (
+        CheckConstraint(
+            "(day_id IS NULL AND room_id IS NULL AND start_time IS NULL AND end_time IS NULL) "
+            "OR (day_id IS NOT NULL AND room_id IS NOT NULL AND start_time IS NOT NULL AND end_time IS NOT NULL)",
+            name="slot_planning_complete",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    day_id: Mapped[int] = mapped_column(
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), nullable=False)
+
+    day_id: Mapped[int | None] = mapped_column(
         ForeignKey("event_days.id"),
-        nullable=False,
+        nullable=True,
     )
 
-    room_id: Mapped[int] = mapped_column(
+    room_id: Mapped[int | None] = mapped_column(
         ForeignKey("rooms.id"),
-        nullable=False,
+        nullable=True,
     )
 
     topic: Mapped[str] = mapped_column(
@@ -32,14 +50,14 @@ class Slot(Base):
         nullable=True,
     )
 
-    start_time: Mapped[time] = mapped_column(
+    start_time: Mapped[time | None] = mapped_column(
         Time,
-        nullable=False,
+        nullable=True,
     )
 
-    end_time: Mapped[time] = mapped_column(
+    end_time: Mapped[time | None] = mapped_column(
         Time,
-        nullable=False,
+        nullable=True,
     )
 
     is_cancelled: Mapped[bool] = mapped_column(
@@ -64,6 +82,8 @@ class Slot(Base):
 
     @property
     def change_notice(self) -> dict | None:
+        if self.day_id is None:
+            return None
         if self.is_cancelled:
             return {"type": "cancelled", "expires_at": None}
         now = int(epoch_time())

@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.event_day import EventDay
 from app.models.slot import Slot
 from app.schemas.slot import SlotCreate, SlotUpdate
 
@@ -23,6 +24,14 @@ class SlotRepository:
 
         return list(self.db.scalars(statement).all())
 
+    def get_unplanned_for_event(self, event_id: int) -> list[Slot]:
+        statement = (
+            select(Slot)
+            .where(Slot.event_id == event_id, Slot.day_id.is_(None))
+            .order_by(Slot.topic, Slot.id)
+        )
+        return list(self.db.scalars(statement).all())
+
     def get_for_room(
         self,
         day_id: int,
@@ -37,7 +46,11 @@ class SlotRepository:
         return list(self.db.scalars(statement).all())
 
     def create(self, data: SlotCreate) -> Slot:
-        slot = Slot(**data.model_dump(exclude={"speaker_ids"}))
+        values = data.model_dump(exclude={"speaker_ids"})
+        if values["event_id"] is None and values["day_id"] is not None:
+            day = self.db.get(EventDay, values["day_id"])
+            values["event_id"] = day.event_id if day else None
+        slot = Slot(**values)
 
         self.db.add(slot)
         self.db.flush()

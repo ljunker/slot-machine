@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
 import { request, uploadPhoto, write } from './api'
 import Editor from './Editor'
 import type { EditorKind } from './Editor'
 import Schedule from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
 import ThemeControl from './ThemeControl'
-import type { DaySchedule, Event, EventDay, Room, Slot, Speaker } from './types'
+import type { DaySchedule, Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
+import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 
-type Panel = { kind: EditorKind | 'speaker'; id: number | null }
+type Panel = { kind: EditorKind | 'speaker'; id: number | null; createUnplanned?: boolean }
+type BacklogPreview = { roomId: number; start: number; topic: string }
 
 export default function App() {
   const [events, setEvents] = useState<Event[]>([])
@@ -17,6 +20,8 @@ export default function App() {
   const [rooms, setRooms] = useState<Room[]>([])
   const [speakers, setSpeakers] = useState<Speaker[]>([])
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
+  const [unplanned, setUnplanned] = useState<UnplannedSession[]>([])
+  const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
   const [panel, setPanel] = useState<Panel | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -28,12 +33,13 @@ export default function App() {
     try {
       const eventList = await request<Event[]>('/events')
       const selectedEvent = eventList.find(item => item.id === preferredEvent)?.id ?? eventList[0]?.id ?? null
-      const [dayList, roomList, speakerList] = selectedEvent === null
-        ? [[], [], []] as [EventDay[], Room[], Speaker[]]
+      const [dayList, roomList, speakerList, unplannedList] = selectedEvent === null
+        ? [[], [], [], []] as [EventDay[], Room[], Speaker[], UnplannedSession[]]
         : await Promise.all([
           request<EventDay[]>(`/events/${selectedEvent}/days`),
           request<Room[]>(`/events/${selectedEvent}/rooms`),
           request<Speaker[]>(`/events/${selectedEvent}/speakers`),
+          request<UnplannedSession[]>(`/events/${selectedEvent}/unplanned-sessions`),
         ])
       const selectedDay = dayList.find(item => item.id === preferredDay)?.id ?? dayList[0]?.id ?? null
       const daySchedule = selectedDay === null ? null : await request<DaySchedule>(`/schedule/days/${selectedDay}`)
@@ -45,6 +51,7 @@ export default function App() {
       setRooms(roomList)
       setSpeakers(speakerList)
       setSchedule(daySchedule)
+      setUnplanned(unplannedList)
       setError('')
     } catch (cause) {
       if (number === loadNumber.current) setError((cause as Error).message)
@@ -58,7 +65,9 @@ export default function App() {
   const selectedEvent = events.find(item => item.id === eventId)
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
-  const selectedSlot = panel?.kind === 'slot' ? schedule?.rooms.flatMap(item => item.slots).find(item => item.id === panel.id) : undefined
+  const selectedSlot = panel?.kind === 'slot'
+    ? schedule?.rooms.flatMap(item => item.slots).find(item => item.id === panel.id) ?? unplanned.find(item => item.id === panel.id)
+    : undefined
   const selectedSpeaker = panel?.kind === 'speaker' ? speakers.find(item => item.id === panel.id) : undefined
 
   async function save(body: Record<string, unknown>): Promise<boolean> {
@@ -73,8 +82,8 @@ export default function App() {
       } else if (panel.kind === 'room' && eventId !== null) {
         await write<Room>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/rooms' : `/rooms/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
         await loadAll(eventId, dayId)
-      } else if (panel.kind === 'slot' && dayId !== null) {
-        await write<Slot>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/slots' : `/slots/${panel.id}`, panel.id === null ? { ...body, day_id: dayId } : body)
+      } else if (panel.kind === 'slot' && eventId !== null) {
+        await write<Slot>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/slots' : `/slots/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
         await loadAll(eventId, dayId)
       }
       return true
@@ -141,6 +150,48 @@ export default function App() {
     } catch (cause) { setError((cause as Error).message) }
   }
 
+  function beginBacklogDrag(event: PointerEvent, session: UnplannedSession) {
+    if (event.button !== 0 || !schedule || dayId === null) return
+    event.preventDefault()
+    const dayStart = toMinutes(schedule.start_time)
+    const dayEnd = toMinutes(schedule.end_time)
+
+    function position(pointer: globalThis.PointerEvent): BacklogPreview | null {
+      const scroll = document.querySelector<HTMLElement>('.schedule-scroll')
+      if (!scroll) return null
+      const visible = scroll.getBoundingClientRect()
+      if (pointer.clientX < visible.left || pointer.clientX > visible.right || pointer.clientY < visible.top || pointer.clientY > visible.bottom) return null
+      for (const column of document.querySelectorAll<HTMLElement>('[data-room-column]')) {
+        const rect = column.getBoundingClientRect()
+        if (pointer.clientX < rect.left || pointer.clientX > rect.right || pointer.clientY < rect.top || pointer.clientY > rect.bottom) continue
+        const start = dayStart + Math.round((pointer.clientY - rect.top) / (SNAP_MINUTES * PX_PER_MINUTE)) * SNAP_MINUTES
+        if (start < dayStart || start + 60 > dayEnd) return null
+        return { roomId: Number(column.dataset.roomColumn), start, topic: session.topic }
+      }
+      return null
+    }
+
+    function move(pointer: globalThis.PointerEvent) { setBacklogPreview(position(pointer)) }
+    function cleanup() {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+      setBacklogPreview(null)
+    }
+    function finish(pointer: globalThis.PointerEvent) {
+      const target = position(pointer)
+      cleanup()
+      if (target) void changeSlot(session.id, {
+        day_id: dayId, room_id: target.roomId,
+        start_time: toTime(target.start), end_time: toTime(target.start + 60),
+      })
+    }
+    function cancel() { cleanup() }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', cancel)
+  }
+
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
@@ -175,6 +226,15 @@ export default function App() {
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
+          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2><button className="text-button" onClick={() => setPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button></div>
+          {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
+          <div className="unplanned-list">{unplanned.map(session => <div className="unplanned-row" key={session.id}>
+            <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} onPointerDown={event => beginBacklogDrag(event, session)}>⠿</button>
+            <button type="button" className="unplanned-name" onClick={() => setPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small></button>
+          </div>)}</div>
+          {unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
+        </section>}
+        {selectedEvent && <section>
           <div className="section-heading"><h2>Redner</h2><button className="text-button" onClick={() => setPanel({ kind: 'speaker', id: null })}>+ Redner</button></div>
           {speakers.length === 0 && <p className="muted">Noch keine Redner</p>}
           <div className="room-list">{speakers.map(person => <div className="room-row" key={person.id}>
@@ -191,7 +251,7 @@ export default function App() {
           </div>
         </div>
         {loading && <p className="state-message">Lade Programm …</p>}
-        {!loading && schedule && <Schedule schedule={schedule} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onChange={changeSlot} />}
+        {!loading && schedule && <Schedule schedule={schedule} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onChange={changeSlot} />}
         {!loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
         {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Beschriftete Karten zeigen Änderungen und Absagen.</p>}
       </main>
@@ -201,20 +261,22 @@ export default function App() {
         onSave={saveSpeaker}
         onDelete={panel.id === null ? null : remove}
         onDeletePhoto={panel.id === null ? null : deleteSpeakerPhoto}
-        onClose={() => setPanel(null)}
+        onClose={() => setPanel(current => current === panel ? null : current)}
       />}
       {panel && panel.kind !== 'speaker' && <Editor
-        key={`${panel.kind}-${panel.id ?? 'new'}`}
+        key={`${panel.kind}-${panel.id ?? 'new'}-${panel.createUnplanned ? 'unplanned' : 'planned'}`}
         kind={panel.kind}
         event={panel.kind === 'event' ? events.find(item => item.id === panel.id) : selectedEvent}
         day={panel.kind === 'day' ? days.find(item => item.id === panel.id) : selectedDay}
+        days={days}
         room={selectedRoom}
         slot={selectedSlot}
         rooms={rooms}
         speakers={speakers}
+        createUnplanned={panel.createUnplanned}
         onSave={save}
         onDelete={panel.id === null ? null : remove}
-        onClose={() => setPanel(null)}
+        onClose={() => setPanel(current => current === panel ? null : current)}
       />}
     </div>
   </div>

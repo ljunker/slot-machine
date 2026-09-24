@@ -2,7 +2,7 @@ from datetime import date, time
 
 from pydantic import BaseModel
 
-from app.schemas.slot import SlotResponse
+from app.schemas.slot import PlannedSlotResponse
 
 
 class ScheduleRoom(BaseModel):
@@ -10,7 +10,7 @@ class ScheduleRoom(BaseModel):
     name: str
     sort_order: int
 
-    slots: list[SlotResponse]
+    slots: list[PlannedSlotResponse]
 
 
 class CollisionPair(BaseModel):

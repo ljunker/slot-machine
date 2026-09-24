@@ -3,7 +3,7 @@ import type { Slot } from './types'
 import { layoutSlots, movePatch, resizePatch, snappedDelta, toMinutes } from './time'
 
 const slot = (id: number, start_time: string, end_time: string): Slot => ({
-  id, day_id: 1, room_id: 1, topic: `Slot ${id}`, speaker_ids: [], speakers: [], description: null, start_time, end_time, is_cancelled: false, change_notice: null,
+  id, event_id: 1, day_id: 1, room_id: 1, topic: `Slot ${id}`, speaker_ids: [], speakers: [], description: null, start_time, end_time, is_cancelled: false, change_notice: null,
 })
 
 describe('timeline calculations', () => {

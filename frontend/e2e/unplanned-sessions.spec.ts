@@ -1,0 +1,47 @@
+import { expect, test } from '@playwright/test'
+
+test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: '+ Veranstaltung' }).click()
+  await page.getByLabel('Name').fill('Backlog-Konferenz')
+  await page.getByLabel('Startdatum').fill('2026-10-01')
+  await page.getByLabel('Enddatum').fill('2026-10-01')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+
+  await page.getByRole('button', { name: '+ Session' }).click()
+  await page.getByLabel('Thema').fill('Ungeplanter Vortrag')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByRole('button', { name: 'Ungeplanter Vortrag einplanen' })).toBeVisible()
+
+  await page.getByRole('button', { name: '+ Tag' }).click()
+  await page.getByLabel('Datum').fill('2026-10-01')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await page.getByRole('button', { name: '+ Raum' }).click()
+  await page.getByLabel('Name').fill('Saal')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+
+  const grip = page.getByRole('button', { name: 'Ungeplanter Vortrag einplanen' })
+  const source = await grip.boundingBox()
+  const target = await page.locator('[data-room-column]').boundingBox()
+  expect(source).not.toBeNull()
+  expect(target).not.toBeNull()
+  await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(target!.x + 50, target!.y + 96, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.locator('[data-room-column] [data-slot-id]')).toContainText('10:00–11:00')
+  await expect(grip).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Ungeplanter Vortrag bearbeiten' }).click()
+  await page.getByRole('button', { name: 'Planung entfernen' }).click()
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByRole('button', { name: 'Ungeplanter Vortrag einplanen' })).toBeVisible()
+  await expect(page.locator('[data-room-column] [data-slot-id]')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Ungeplanter Vortrag', exact: true }).click()
+  await page.getByRole('button', { name: 'Einplanen', exact: true }).click()
+  await page.getByLabel('Beginn').fill('11:00')
+  await page.getByLabel('Ende').fill('11:45')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.locator('[data-room-column] [data-slot-id]')).toContainText('11:00–11:45')
+})

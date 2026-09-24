@@ -31,13 +31,13 @@ class SpeakerResponse(SpeakerSummary):
 
 class SpeakerSession(BaseModel):
     id: int
-    day_id: int
-    date: date
-    room_id: int
-    room_name: str
+    day_id: int | None
+    date: date | None
+    room_id: int | None
+    room_name: str | None
     topic: str
-    start_time: time
-    end_time: time
+    start_time: time | None
+    end_time: time | None
 
 
 class SpeakerDetail(SpeakerResponse):

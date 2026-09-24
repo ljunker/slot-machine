@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.slot import Slot
 from app.models.speaker import Speaker
 from app.repositories.event_day_repository import EventDayRepository
+from app.repositories.event_repository import EventRepository
 from app.repositories.room_repository import RoomRepository
 from app.repositories.slot_repository import SlotRepository
 from app.schemas.slot import SlotCreate, SlotUpdate
@@ -19,6 +20,7 @@ class SlotService:
         self.db = db
         self.repository = SlotRepository(db)
         self.days = EventDayRepository(db)
+        self.events = EventRepository(db)
         self.rooms = RoomRepository(db)
 
     def get(self, slot_id: int) -> Slot:
@@ -27,25 +29,43 @@ class SlotService:
             raise NotFound("Slot nicht gefunden")
         return slot
 
-    def _validate(self, day_id: int, room_id: int, start: time, end: time) -> None:
+    def _validate(
+        self,
+        event_id: int,
+        day_id: int | None,
+        room_id: int | None,
+        start: time | None,
+        end: time | None,
+    ) -> None:
+        if all(value is None for value in (day_id, room_id, start, end)):
+            return
+        if any(value is None for value in (day_id, room_id, start, end)):
+            raise DomainError("Tag, Raum, Beginn und Ende müssen gemeinsam gesetzt sein")
         day = self.days.get_by_id(day_id)
         room = self.rooms.get_by_id(room_id)
         if day is None:
             raise NotFound("Veranstaltungstag nicht gefunden")
         if room is None:
             raise NotFound("Raum nicht gefunden")
-        if day.event_id != room.event_id:
+        if day.event_id != event_id or room.event_id != event_id:
             raise DomainError("Raum und Tag gehören zu verschiedenen Veranstaltungen")
         time_range(start, end)
         if start < day.start_time or end > day.end_time:
             raise DomainError("Slot liegt außerhalb der Tageszeiten")
 
     def create(self, data: SlotCreate) -> Slot:
-        self._validate(data.day_id, data.room_id, data.start_time, data.end_time)
-        event_id = self.days.get_by_id(data.day_id).event_id
+        day = self.days.get_by_id(data.day_id) if data.day_id is not None else None
+        if data.day_id is not None and day is None:
+            raise NotFound("Veranstaltungstag nicht gefunden")
+        event_id = data.event_id if data.event_id is not None else day.event_id if day else None
+        if event_id is None:
+            raise DomainError("Ungeplante Sessions brauchen eine Veranstaltung")
+        if self.events.get_by_id(event_id) is None:
+            raise NotFound("Veranstaltung nicht gefunden")
+        self._validate(event_id, data.day_id, data.room_id, data.start_time, data.end_time)
         speakers = self._speakers(event_id, data.speaker_ids)
         slot = self.repository.create(
-            data.model_copy(update={"topic": name(data.topic)})
+            data.model_copy(update={"event_id": event_id, "topic": name(data.topic)})
         )
         slot.speakers = speakers
         self.db.commit()
@@ -59,22 +79,27 @@ class SlotService:
         slot = self.get(slot_id)
         changes = data.model_dump(exclude_unset=True)
         required_patch(
-            changes, {"topic", "room_id", "start_time", "end_time", "is_cancelled"}
+            changes, {"topic", "is_cancelled"}
         )
+        day_id = changes.get("day_id", slot.day_id)
         room_id = changes.get("room_id", slot.room_id)
         start = changes.get("start_time", slot.start_time)
         end = changes.get("end_time", slot.end_time)
-        self._validate(slot.day_id, room_id, start, end)
+        self._validate(slot.event_id, day_id, room_id, start, end)
+        was_planned = slot.day_id is not None
+        will_be_planned = day_id is not None
+        if not will_be_planned and changes.get("is_cancelled") is True:
+            raise DomainError("Ungeplante Sessions können nicht abgesagt sein")
         speakers = None
         if "speaker_ids" in changes:
             speakers = self._speakers(
-                self.days.get_by_id(slot.day_id).event_id, changes["speaker_ids"]
+                slot.event_id, changes["speaker_ids"]
             )
         if "topic" in changes:
             changes["topic"] = name(changes["topic"])
-        schedule_changed = any(
+        schedule_changed = was_planned and will_be_planned and any(
             field in changes and changes[field] != getattr(slot, field)
-            for field in ("room_id", "start_time", "end_time")
+            for field in ("day_id", "room_id", "start_time", "end_time")
         )
         content_changed = any(
             field in changes and changes[field] != getattr(slot, field)
@@ -84,12 +109,25 @@ class SlotService:
             and {speaker.id for speaker in speakers} != set(slot.speaker_ids)
         )
         if schedule_changed:
-            slot.previous_room_name = self.rooms.get_by_id(slot.room_id).name
-            slot.previous_start_time = slot.start_time
-            slot.previous_end_time = slot.end_time
+            if day_id == slot.day_id:
+                slot.previous_room_name = self.rooms.get_by_id(slot.room_id).name
+                slot.previous_start_time = slot.start_time
+                slot.previous_end_time = slot.end_time
+            else:
+                slot.previous_room_name = None
+                slot.previous_start_time = None
+                slot.previous_end_time = None
             slot.schedule_changed_at = int(epoch_time())
-        if content_changed:
+        if content_changed and will_be_planned:
             slot.content_changed_at = int(epoch_time())
+        if not will_be_planned or not was_planned:
+            slot.schedule_changed_at = None
+            slot.content_changed_at = None
+            slot.previous_room_name = None
+            slot.previous_start_time = None
+            slot.previous_end_time = None
+        if not will_be_planned:
+            changes["is_cancelled"] = False
         if changes.get("is_cancelled") is False and slot.is_cancelled:
             slot.schedule_changed_at = None
             slot.previous_room_name = None
@@ -122,6 +160,11 @@ class SlotService:
         self.repository.delete(self.get(slot_id))
         self.db.commit()
 
+    def get_unplanned_for_event(self, event_id: int) -> list[Slot]:
+        if self.events.get_by_id(event_id) is None:
+            raise NotFound("Veranstaltung nicht gefunden")
+        return self.repository.get_unplanned_for_event(event_id)
+
     def move(
         self,
         slot_id: int,
@@ -129,6 +172,8 @@ class SlotService:
         start_time: time,
     ) -> Slot:
         slot = self.get(slot_id)
+        if slot.day_id is None:
+            raise DomainError("Ungeplante Session hat keine Startzeit")
         duration = datetime.combine(date.min, slot.end_time) - datetime.combine(
             date.min, slot.start_time
         )
@@ -151,7 +196,7 @@ class SlotService:
         self,
         slot: Slot,
     ) -> bool:
-        if slot.is_cancelled:
+        if slot.is_cancelled or slot.day_id is None:
             return False
         return any(
             other.id != slot.id

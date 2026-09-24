@@ -17,6 +17,7 @@ from app.db.base import Base
 from app.db.database import engine
 from app.db.migrate_slot_changes import migrate_slot_changes
 from app.db.migrate_speakers import migrate_legacy_speakers
+from app.db.migrate_unplanned_sessions import migrate_unplanned_sessions
 from app.services.errors import DomainError
 
 
@@ -25,6 +26,7 @@ async def lifespan(application: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_slot_changes(engine)
     migrate_legacy_speakers(engine)
+    migrate_unplanned_sessions(engine)
     yield
 
 

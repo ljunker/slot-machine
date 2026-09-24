@@ -11,7 +11,7 @@ from app.schemas.schedule import (
     ScheduleRoom,
     SpeakerConflict,
 )
-from app.schemas.slot import SlotResponse
+from app.schemas.slot import PlannedSlotResponse
 from app.services.event_day_service import EventDayService
 
 
@@ -43,7 +43,7 @@ class ScheduleService:
                 name=room.name,
                 sort_order=room.sort_order,
                 slots=[
-                    SlotResponse.model_validate(slot) for slot in slots_by_room[room.id]
+                    PlannedSlotResponse.model_validate(slot) for slot in slots_by_room[room.id]
                 ],
             )
             for room in rooms

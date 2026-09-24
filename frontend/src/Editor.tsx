@@ -1,19 +1,21 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Event, EventDay, Room, Slot, Speaker } from './types'
+import type { Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
 import { toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
-export default function Editor({ kind, event, day, room, slot, rooms, speakers, onSave, onDelete, onClose }: {
+export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, createUnplanned = false, onSave, onDelete, onClose }: {
   kind: EditorKind
   event?: Event
   day?: EventDay
+  days: EventDay[]
   room?: Room
-  slot?: Slot
+  slot?: Slot | UnplannedSession
   rooms: Room[]
   speakers: Speaker[]
+  createUnplanned?: boolean
   onSave: (body: Record<string, unknown>) => Promise<boolean>
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
@@ -22,19 +24,21 @@ export default function Editor({ kind, event, day, room, slot, rooms, speakers, 
   const [startDate, setStartDate] = useState(event?.start_date ?? '')
   const [endDate, setEndDate] = useState(event?.end_date ?? '')
   const [date, setDate] = useState(day?.date ?? event?.start_date ?? '')
-  const [start, setStart] = useState(kind === 'slot' ? slot?.start_time.slice(0, 5) ?? day?.start_time.slice(0, 5) ?? '09:00' : day?.start_time.slice(0, 5) ?? '09:00')
+  const [start, setStart] = useState(kind === 'slot' ? slot?.start_time?.slice(0, 5) ?? day?.start_time.slice(0, 5) ?? '09:00' : day?.start_time.slice(0, 5) ?? '09:00')
   const [end, setEnd] = useState(kind === 'slot'
-    ? slot?.end_time.slice(0, 5) ?? (day ? toTime(Math.min(toMinutes(day.end_time), toMinutes(day.start_time) + 60)) : '10:00')
+    ? slot?.end_time?.slice(0, 5) ?? (day ? toTime(Math.min(toMinutes(day.end_time), toMinutes(day.start_time) + 60)) : '10:00')
     : day?.end_time.slice(0, 5) ?? '18:00')
   const [topic, setTopic] = useState(slot?.topic ?? '')
   const [speakerIds, setSpeakerIds] = useState<number[]>(slot?.speaker_ids ?? [])
   const [description, setDescription] = useState(slot?.description ?? '')
   const [roomId, setRoomId] = useState(slot?.room_id ?? rooms[0]?.id ?? 0)
+  const [dayId, setDayId] = useState(slot?.day_id ?? day?.id ?? days[0]?.id ?? 0)
+  const [planned, setPlanned] = useState(slot ? slot.day_id !== null : !createUnplanned)
   const [slotCancelled, setSlotCancelled] = useState(slot?.is_cancelled ?? false)
   const now = useNoticeNow(slot ? [slot] : [])
   const notice = slot ? activeNotice(slot, now) : null
   const existing = kind === 'event' ? !!event : kind === 'day' ? !!day : kind === 'room' ? !!room : !!slot
-  const title = { event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot' }[kind]
+  const title = kind === 'slot' && (createUnplanned || slot?.day_id === null) ? 'Session' : { event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot' }[kind]
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -42,8 +46,14 @@ export default function Editor({ kind, event, day, room, slot, rooms, speakers, 
     if (kind === 'event') body = { name, start_date: startDate, end_date: endDate }
     else if (kind === 'day') body = { date, start_time: start, end_time: end }
     else if (kind === 'room') body = { name }
-    else body = { topic, speaker_ids: speakerIds, description: description || null, start_time: start, end_time: end, room_id: roomId }
-    if (kind === 'slot' && existing) body.is_cancelled = slotCancelled
+    else body = {
+      topic, speaker_ids: speakerIds, description: description || null,
+      day_id: planned ? dayId : null,
+      room_id: planned ? roomId : null,
+      start_time: planned ? start : null,
+      end_time: planned ? end : null,
+    }
+    if (kind === 'slot' && existing && planned) body.is_cancelled = slotCancelled
     if (await onSave(body)) onClose()
   }
 
@@ -66,10 +76,16 @@ export default function Editor({ kind, event, day, room, slot, rooms, speakers, 
           {speakers.map(person => <label key={person.id}><input type="checkbox" checked={speakerIds.includes(person.id)} onChange={e => setSpeakerIds(current => e.target.checked ? [...current, person.id] : current.filter(id => id !== person.id))} />{person.name}</label>)}
         </fieldset>
         <label>Beschreibung<textarea value={description} onChange={e => setDescription(e.target.value)} /></label>
-        <label>Raum<select value={roomId} onChange={e => setRoomId(Number(e.target.value))}>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        {planned && <>
+          <label>Veranstaltungstag<select value={dayId} onChange={e => setDayId(Number(e.target.value))}>{days.map(item => <option key={item.id} value={item.id}>{item.date}</option>)}</select></label>
+          <label>Raum<select value={roomId} onChange={e => setRoomId(Number(e.target.value))}>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        </>}
+        {!planned && days.length > 0 && rooms.length > 0 && <button type="button" className="text-button planning-toggle" onClick={() => setPlanned(true)}>Einplanen</button>}
+        {planned && <button type="button" className="text-button planning-toggle" onClick={() => setPlanned(false)}>{slot ? 'Planung entfernen' : 'Nicht einplanen'}</button>}
+        {!planned && (days.length === 0 || rooms.length === 0) && <p className="muted">Zum Einplanen zuerst Tag und Raum anlegen.</p>}
       </>}
-      {(kind === 'day' || kind === 'slot') && <div className="two-fields"><label>Beginn<input required type="time" value={start} onChange={e => setStart(e.target.value)} /></label><label>Ende<input required type="time" value={end} onChange={e => setEnd(e.target.value)} /></label></div>}
-      {kind === 'slot' && existing && <label className="cancel-checkbox"><input type="checkbox" checked={slotCancelled} onChange={e => setSlotCancelled(e.target.checked)} />Session abgesagt</label>}
+      {(kind === 'day' || (kind === 'slot' && planned)) && <div className="two-fields"><label>Beginn<input required type="time" value={start} onChange={e => setStart(e.target.value)} /></label><label>Ende<input required type="time" value={end} onChange={e => setEnd(e.target.value)} /></label></div>}
+      {kind === 'slot' && existing && planned && <label className="cancel-checkbox"><input type="checkbox" checked={slotCancelled} onChange={e => setSlotCancelled(e.target.checked)} />Session abgesagt</label>}
       <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={remove}>Löschen</button>}</div>
     </form>
   </aside>

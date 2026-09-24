@@ -9,8 +9,8 @@ const schedule: DaySchedule = {
   speaker_conflicts: [],
   rooms: [
     { id: 1, event_id: 1, name: 'A', sort_order: 0, slots: [
-      { id: 1, day_id: 1, room_id: 1, topic: 'Erster', speaker_ids: [], speakers: [], description: null, start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null },
-      { id: 2, day_id: 1, room_id: 1, topic: 'Zweiter', speaker_ids: [], speakers: [], description: null, start_time: '10:30:00', end_time: '11:30:00', is_cancelled: false, change_notice: null },
+      { id: 1, event_id: 1, day_id: 1, room_id: 1, topic: 'Erster', speaker_ids: [], speakers: [], description: null, start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null },
+      { id: 2, event_id: 1, day_id: 1, room_id: 1, topic: 'Zweiter', speaker_ids: [], speakers: [], description: null, start_time: '10:30:00', end_time: '11:30:00', is_cancelled: false, change_notice: null },
     ] },
     { id: 2, event_id: 1, name: 'B', sort_order: 1, slots: [] },
   ],

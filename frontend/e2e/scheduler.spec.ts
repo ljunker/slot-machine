@@ -63,7 +63,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Rednerkonflikte' })).toContainText('Ada')
   await expect(page.locator('.slot-card.speaker-conflict')).toHaveCount(2)
   await page.getByRole('button', { name: 'Ada' }).click()
-  await expect(page.getByText('Sessions')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible()
   await expect(page.locator('.speaker-sessions li')).toHaveCount(2)
   if (process.env.SCHEDULER_SCREENSHOT) await page.screenshot({ path: process.env.SCHEDULER_SCREENSHOT, fullPage: true })
 })
