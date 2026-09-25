@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
 import { toMinutes, toTime } from './time'
@@ -6,7 +6,7 @@ import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './cha
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
-export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, createUnplanned = false, onSave, onDelete, onClose }: {
+export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, createUnplanned = false, onSave, onDeleteLogo, onDelete, onClose }: {
   kind: EditorKind
   event?: Event
   day?: EventDay
@@ -16,13 +16,18 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   rooms: Room[]
   speakers: Speaker[]
   createUnplanned?: boolean
-  onSave: (body: Record<string, unknown>) => Promise<boolean>
+  onSave: (body: Record<string, unknown>, logo?: File | null) => Promise<boolean>
+  onDeleteLogo?: (() => Promise<void>) | null
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
 }) {
   const [name, setName] = useState(kind === 'event' ? event?.name ?? '' : room?.name ?? '')
   const [startDate, setStartDate] = useState(event?.start_date ?? '')
   const [endDate, setEndDate] = useState(event?.end_date ?? '')
+  const [accentEnabled, setAccentEnabled] = useState(event?.accent_color !== null && event?.accent_color !== undefined)
+  const [accentColor, setAccentColor] = useState(event?.accent_color ?? '#4569DD')
+  const [logo, setLogo] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [date, setDate] = useState(day?.date ?? event?.start_date ?? '')
   const [start, setStart] = useState(kind === 'slot' ? slot?.start_time?.slice(0, 5) ?? day?.start_time.slice(0, 5) ?? '09:00' : day?.start_time.slice(0, 5) ?? '09:00')
   const [end, setEnd] = useState(kind === 'slot'
@@ -40,10 +45,21 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   const existing = kind === 'event' ? !!event : kind === 'day' ? !!day : kind === 'room' ? !!room : !!slot
   const title = kind === 'slot' && (createUnplanned || slot?.day_id === null) ? 'Session' : { event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot' }[kind]
 
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreview(null)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => setLogoPreview(typeof reader.result === 'string' ? reader.result : null)
+    reader.readAsDataURL(logo)
+    return () => { reader.abort() }
+  }, [logo])
+
   async function submit(e: FormEvent) {
     e.preventDefault()
     let body: Record<string, unknown>
-    if (kind === 'event') body = { name, start_date: startDate, end_date: endDate }
+    if (kind === 'event') body = { name, start_date: startDate, end_date: endDate, accent_color: accentEnabled ? accentColor : null }
     else if (kind === 'day') body = { date, start_time: start, end_time: end }
     else if (kind === 'room') body = { name }
     else body = {
@@ -54,7 +70,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
       end_time: planned ? end : null,
     }
     if (kind === 'slot' && existing && planned) body.is_cancelled = slotCancelled
-    if (await onSave(body)) onClose()
+    if (await (kind === 'event' ? onSave(body, logo) : onSave(body))) onClose()
   }
 
   async function remove() {
@@ -67,7 +83,18 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     <form onSubmit={submit}>
       {kind === 'slot' && notice && <p className={`editor-notice notice-${notice.type}`}><strong>{noticeLabel(notice)}</strong>{previousPlanning(notice) && <span>Vorher: {previousPlanning(notice)}</span>}</p>}
       {(kind === 'event' || kind === 'room') && <label>Name<input required maxLength={255} value={name} onChange={e => setName(e.target.value)} /></label>}
-      {kind === 'event' && <><label>Startdatum<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label><label>Enddatum<input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label></>}
+      {kind === 'event' && <>
+        <label>Startdatum<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+        <label>Enddatum<input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <fieldset className="branding-fields"><legend>Branding</legend>
+          <label className="cancel-checkbox"><input type="checkbox" checked={accentEnabled} onChange={e => setAccentEnabled(e.target.checked)} />Eigene Akzentfarbe verwenden</label>
+          {accentEnabled && <label>Akzentfarbe<input type="color" value={accentColor} onChange={e => setAccentColor(e.target.value)} /></label>}
+          {event ? <>
+            <label>Logo (JPEG, PNG oder WebP; maximal 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setLogo(e.target.files?.[0] ?? null)} /></label>
+            {(logoPreview || event.logo_url) && <div className="event-logo-preview"><img src={logoPreview ?? event.logo_url ?? ''} alt={`Logo von ${event.name}`} />{event.logo_url && <button type="button" className="text-button" onClick={() => void onDeleteLogo?.()}>Logo entfernen</button>}</div>}
+          </> : <p className="muted">Logo nach dem Anlegen der Veranstaltung hochladen.</p>}
+        </fieldset>
+      </>}
       {kind === 'day' && <label>Datum<input required type="date" value={date} min={event?.start_date} max={event?.end_date} onChange={e => setDate(e.target.value)} /></label>}
       {kind === 'slot' && <>
         <label>Thema<input required maxLength={255} value={topic} onChange={e => setTopic(e.target.value)} /></label>

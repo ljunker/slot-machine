@@ -53,6 +53,8 @@ Fotos können als JPEG, PNG oder WebP bis 5 MB hochgeladen werden. Lokal liegen 
 
 Die Auswahl **Darstellung** bietet System, Hell und Dunkel. Sie gilt für Planungsansicht und Besucherprogramm und wird im Browser gespeichert. Das PDF bleibt hell.
 
+Im Veranstaltungseditor kann eine Akzentfarbe gewählt und für bestehende Veranstaltungen ein Logo hochgeladen werden. Der Veranstaltungsname gilt auch im Besucherprogramm und PDF. Logo und Akzentfarbe erscheinen nur dort; die Planungsoberfläche behält ihre Bedienfarben. Logos können JPEG, PNG oder WebP bis 5 MB sein. Lokal liegen sie standardmäßig in `./uploads/logos`, konfigurierbar mit `EVENT_LOGO_DIR`. Im Docker-Betrieb liegen sie im Volume `schedule_data`. Das Logo kann ersetzt oder entfernt werden.
+
 Änderungen an Zeit oder Raum markieren eine Session 24 Stunden als **Verschoben**; die vorherige Planung steht in den Details. Änderungen an Thema, Beschreibung oder Rednern erscheinen 24 Stunden als **Geändert**. Über **Session abgesagt** bleibt eine Session dauerhaft als **Abgesagt** im Programm, zählt aber nicht zu Konflikten. Nach Aufheben der Absage erscheint sie 24 Stunden als geändert. Im PDF stehen frühere Angaben nur, wenn die Karte genug Platz bietet. Offene Seiten laden neue Änderungen weiterhin erst nach Neuladen.
 
 ## Tests

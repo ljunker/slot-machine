@@ -5,6 +5,7 @@ from pathlib import Path
 import reportlab
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
@@ -12,7 +13,9 @@ from sqlalchemy.orm import Session
 
 from app.schemas.schedule import DaySchedule
 from app.schemas.slot import SlotResponse
+from app.models.event import Event
 from app.services.errors import Conflict
+from app.services.event_branding import logo_path
 from app.services.event_day_service import EventDayService
 from app.services.event_service import EventService
 from app.services.schedule_service import ScheduleService
@@ -189,15 +192,30 @@ def _draw_slot(
 
 
 def _draw_day(
-    pdf: canvas.Canvas, event_name: str, schedule: DaySchedule, page: int, pages: int
+    pdf: canvas.Canvas, event: Event, schedule: DaySchedule, page: int, pages: int
 ) -> None:
+    title_x = 27
+    path = logo_path(event)
+    if path is not None and path.is_file():
+        image = ImageReader(str(path))
+        image_width, image_height = image.getSize()
+        width = min(88, 44 * image_width / image_height)
+        height = min(44, 88 * image_height / image_width)
+        pdf.drawImage(
+            image, 27, PAGE_HEIGHT - 69 + (44 - height) / 2,
+            width=width, height=height, mask="auto",
+        )
+        title_x = 27 + 100
     pdf.setFillColor(colors.HexColor("#172039"))
     pdf.setFont(BOLD_FONT, 18)
     pdf.drawString(
-        27, PAGE_HEIGHT - 40, _fit(event_name, PAGE_WIDTH - 54, BOLD_FONT, 18)
+        title_x, PAGE_HEIGHT - 40, _fit(event.name, PAGE_WIDTH - title_x - 27, BOLD_FONT, 18)
     )
     pdf.setFont(FONT, 10)
-    pdf.drawString(27, PAGE_HEIGHT - 61, f"Programm - {schedule.date:%d.%m.%Y}")
+    pdf.drawString(title_x, PAGE_HEIGHT - 61, f"Programm - {schedule.date:%d.%m.%Y}")
+    if event.accent_color:
+        pdf.setFillColor(colors.HexColor(event.accent_color))
+        pdf.rect(27, PAGE_HEIGHT - 80, PAGE_WIDTH - 54, 3, fill=1, stroke=0)
     pdf.setFont(FONT, 7)
     pdf.drawRightString(PAGE_WIDTH - 27, 19, f"Seite {page}/{pages}")
 
@@ -279,7 +297,7 @@ def build_program_pdf(db: Session, event_id: int) -> bytes:
     pdf.setAuthor("Event Scheduler")
     for index, day in enumerate(days, start=1):
         _draw_day(
-            pdf, event.name, schedule_service.get_day_schedule(day.id), index, len(days)
+            pdf, event, schedule_service.get_day_schedule(day.id), index, len(days)
         )
         pdf.showPage()
     pdf.save()

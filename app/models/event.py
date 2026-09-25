@@ -25,3 +25,10 @@ class Event(Base):
         Date,
         nullable=False,
     )
+
+    accent_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    logo_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    @property
+    def logo_url(self) -> str | None:
+        return f"/api/events/{self.id}/logo" if self.logo_filename else None

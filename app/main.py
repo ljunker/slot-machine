@@ -16,6 +16,7 @@ from app.api.routes import (
 )
 from app.db.base import Base
 from app.db.database import engine
+from app.db.migrate_event_branding import migrate_event_branding
 from app.db.migrate_slot_changes import migrate_slot_changes
 from app.db.migrate_speakers import migrate_legacy_speakers
 from app.db.migrate_unplanned_sessions import migrate_unplanned_sessions
@@ -25,6 +26,7 @@ from app.services.errors import DomainError
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_event_branding(engine)
     migrate_slot_changes(engine)
     migrate_legacy_speakers(engine)
     migrate_unplanned_sessions(engine)

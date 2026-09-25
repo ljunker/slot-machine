@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { request } from './api'
+import { brandingStyle } from './branding'
 import PublicSchedule from './PublicSchedule'
 import ThemeControl from './ThemeControl'
 import { defaultDay } from './publicDay'
@@ -64,12 +65,15 @@ export default function PublicProgram({ eventId }: { eventId: number | null }) {
 
   const selectedDay = days.find(day => day.id === dayId)
 
-  return <div className="public-page">
+  return <div className={`public-page${event?.accent_color ? ' branding-active' : ''}`} style={brandingStyle(event?.accent_color)}>
     <header className="public-header">
       <div className="public-container public-header-content">
-        <div><span className="eyebrow">VERANSTALTUNGSPROGRAMM</span>
-          <h1>{event?.name ?? 'Programm'}</h1>
-          {event && <p>{event.start_date === event.end_date ? event.start_date : `${event.start_date} bis ${event.end_date}`}</p>}
+        <div className="public-title">
+          {event?.logo_url && <span className="public-logo"><img src={event.logo_url} alt={`Logo von ${event.name}`} /></span>}
+          <div><span className="eyebrow">VERANSTALTUNGSPROGRAMM</span>
+            <h1>{event?.name ?? 'Programm'}</h1>
+            {event && <p>{event.start_date === event.end_date ? event.start_date : `${event.start_date} bis ${event.end_date}`}</p>}
+          </div>
         </div>
         <ThemeControl />
       </div>

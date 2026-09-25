@@ -1,4 +1,4 @@
-export type Event = { id: number; name: string; start_date: string; end_date: string }
+export type Event = { id: number; name: string; start_date: string; end_date: string; accent_color: string | null; logo_url: string | null }
 export type EventDay = { id: number; event_id: number; date: string; start_time: string; end_time: string }
 export type Room = { id: number; event_id: number; name: string; sort_order: number }
 export type SpeakerSummary = { id: number; name: string }

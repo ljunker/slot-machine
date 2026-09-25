@@ -19,9 +19,9 @@ export function write<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body
   return request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })
 }
 
-export async function uploadPhoto(path: string, file: File): Promise<void> {
+export async function uploadImage(path: string, field: 'photo' | 'logo', file: File): Promise<void> {
   const body = new FormData()
-  body.append('photo', file)
+  body.append(field, file)
   const response = await fetch(`/api${path}`, { method: 'POST', body })
   if (!response.ok) {
     const data = await response.json().catch(() => null)

@@ -7,12 +7,14 @@ class EventCreate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    accent_color: str | None = None
 
 
 class EventUpdate(BaseModel):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    accent_color: str | None = None
 
 
 class EventResponse(BaseModel):
@@ -22,3 +24,5 @@ class EventResponse(BaseModel):
     name: str
     start_date: date
     end_date: date
+    accent_color: str | None
+    logo_url: str | None

@@ -1,10 +1,18 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.schemas.event import EventCreate, EventResponse, EventUpdate
 from app.schemas.slot import SlotResponse
 from app.services.event_service import EventService
+from app.services.event_branding import (
+    LOGO_MIME,
+    MAX_LOGO_BYTES,
+    EventBrandingService,
+    logo_path,
+)
+from app.services.errors import NotFound
 from app.services.program_pdf import build_program_pdf
 from app.services.slot_service import SlotService
 
@@ -45,6 +53,31 @@ def get_program_pdf(event_id: int, db: Session = Depends(get_db)):
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.post("/{event_id}/logo", response_model=EventResponse)
+async def upload_logo(
+    event_id: int, logo: UploadFile = File(...), db: Session = Depends(get_db)
+):
+    content = await logo.read(MAX_LOGO_BYTES + 1)
+    return EventBrandingService(db).upload_logo(event_id, content)
+
+
+@router.get("/{event_id}/logo")
+def get_logo(event_id: int, db: Session = Depends(get_db)):
+    event = EventService(db).get(event_id)
+    path = logo_path(event)
+    if path is None or not path.is_file():
+        raise NotFound("Logo nicht gefunden")
+    return FileResponse(
+        path, media_type=LOGO_MIME[path.suffix.lstrip(".")],
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.delete("/{event_id}/logo", response_model=EventResponse)
+def delete_logo(event_id: int, db: Session = Depends(get_db)):
+    return EventBrandingService(db).delete_logo(event_id)
 
 
 @router.patch("/{event_id}", response_model=EventResponse)

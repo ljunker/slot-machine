@@ -10,6 +10,7 @@ from app.models.speaker import Speaker, slot_speakers
 from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.event_repository import EventRepository
 from app.schemas.event import EventCreate, EventUpdate
+from app.services.event_branding import accent_color, remove_logo_file
 from app.services.errors import Conflict, NotFound
 from app.services.speaker_service import SpeakerService
 from app.services.validation import date_range, name, required_patch
@@ -33,7 +34,7 @@ class EventService:
     def create(self, data: EventCreate):
         date_range(data.start_date, data.end_date)
         event = self.repository.create(
-            data.model_copy(update={"name": name(data.name)})
+            data.model_copy(update={"name": name(data.name), "accent_color": accent_color(data.accent_color)})
         )
         self.db.commit()
         return event
@@ -54,12 +55,15 @@ class EventService:
             )
         if "name" in changes:
             changes["name"] = name(changes["name"])
+        if "accent_color" in changes:
+            changes["accent_color"] = accent_color(changes["accent_color"])
         event = self.repository.update(event, EventUpdate(**changes))
         self.db.commit()
         return event
 
     def delete(self, event_id: int) -> None:
         event = self.get(event_id)
+        logo_filename = event.logo_filename
         slot_ids = select(Slot.id).where(Slot.event_id == event_id)
         photos = list(self.db.scalars(
             select(Speaker.photo_filename).where(Speaker.event_id == event_id)
@@ -77,3 +81,4 @@ class EventService:
         self.db.commit()
         for photo in photos:
             SpeakerService._remove_file(photo)
+        remove_logo_file(logo_filename)
