@@ -78,5 +78,6 @@ describe('public program', () => {
     expect(within(panel).getByText('Abgesagt')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Eröffnung.*Verschoben.*Details anzeigen/ }))
     expect(screen.getByRole('region', { name: 'Session-Details' }).textContent).toContain('Vorher: 09:00–10:00 Uhr · Saal B')
+    expect(screen.getAllByRole('link', { name: 'Session-Seite öffnen' })[0].getAttribute('href')).toBe('/programm/7/sessions/21')
   })
 })

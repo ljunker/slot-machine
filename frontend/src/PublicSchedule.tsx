@@ -40,6 +40,7 @@ export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) 
       <p>{selectedSlot.start_time.slice(0, 5)}–{selectedSlot.end_time.slice(0, 5)} Uhr · {schedule.rooms.find(item => item.id === selectedSlot.room_id)?.name}</p>
       {selectedSlot.speakers.length > 0 && <p>{speakerNames(selectedSlot)}</p>}
       {selectedSlot.description && <p className="public-description">{selectedSlot.description}</p>}
+      <a className="program-link" href={`/programm/${selectedSlot.event_id}/sessions/${selectedSlot.id}`}>Session-Seite öffnen</a>
     </section>}
     <div className="public-desktop-program schedule-scroll" aria-label="Tagesplan">
       <div className="schedule-grid" style={{ gridTemplateColumns: `72px repeat(${schedule.rooms.length}, minmax(240px, 1fr))` }}>
@@ -99,6 +100,7 @@ export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) 
               <summary><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}{notice && <span className="change-badge">{noticeLabel(notice)}</span>}{previous && <span className="previous-planning">Vorher: {previous}</span>}</summary>
               <p className="public-description">{slot.description}</p>
             </details> : <div className="public-mobile-summary"><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}{notice && <span className="change-badge">{noticeLabel(notice)}</span>}{previous && <span className="previous-planning">Vorher: {previous}</span>}</div>}
+            <a className="program-link public-session-link" href={`/programm/${slot.event_id}/sessions/${slot.id}`}>Session-Seite öffnen</a>
           </article>})}
       </section>}
     </div>

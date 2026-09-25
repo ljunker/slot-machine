@@ -52,6 +52,7 @@ export type UnplannedSession = Omit<Slot, 'day_id' | 'room_id' | 'start_time' | 
   start_time: null
   end_time: null
 }
+export type PublicSession = Slot & { date: string; room_name: string }
 export type ScheduleRoom = Room & { slots: Slot[] }
 export type CollisionPair = { first_slot_id: number; second_slot_id: number }
 export type SpeakerConflict = CollisionPair & { speaker_ids: number[] }

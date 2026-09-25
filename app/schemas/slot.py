@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import date, time
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -62,3 +62,8 @@ class PlannedSlotResponse(SlotResponse):
     room_id: int
     start_time: time
     end_time: time
+
+
+class PublicSessionResponse(PlannedSlotResponse):
+    date: date
+    room_name: str

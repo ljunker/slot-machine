@@ -188,6 +188,10 @@ button:disabled { cursor: default; opacity: .35; }
 .public-detail p { margin: 5px 0; }
 .public-description { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .public-detail-close { position: absolute; right: 16px; top: 15px; border: 0; background: transparent; color: var(--link); font-weight: 700; }
+.public-session-page { max-width: 760px; margin-top: 20px; padding: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 3px 15px var(--shadow); }
+.public-session-page h2 { margin: 6px 0 16px; overflow-wrap: anywhere; }
+.public-session-page p { color: var(--subtext); }
+.public-session-link { display: block; margin: 0 14px 14px; }
 .public-mobile-program { display: none; }
 @media (max-width: 900px) { .workspace, .workspace:has(.editor) { grid-template-columns: 210px minmax(0, 1fr); } .editor { position: fixed; right: 0; top: 0; bottom: 0; width: min(340px, 90vw); z-index: 10; overflow: auto; } .main-area { padding: 20px; } }
 @media (max-width: 700px) {

@@ -12,7 +12,12 @@ from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.room_repository import RoomRepository
 from app.repositories.slot_repository import SlotRepository
-from app.schemas.slot import SlotCreate, SlotUpdate
+from app.schemas.slot import (
+    PlannedSlotResponse,
+    PublicSessionResponse,
+    SlotCreate,
+    SlotUpdate,
+)
 from app.services.errors import DomainError, NotFound
 from app.services.validation import name, required_patch, time_range
 
@@ -30,6 +35,18 @@ class SlotService:
         if slot is None:
             raise NotFound("Slot nicht gefunden")
         return slot
+
+    def get_public_session(self, event_id: int, slot_id: int) -> PublicSessionResponse:
+        slot = self.repository.get_by_id(slot_id)
+        if slot is None or slot.event_id != event_id or slot.day_id is None:
+            raise NotFound("Session nicht gefunden")
+        day = self.days.get_by_id(slot.day_id)
+        room = self.rooms.get_by_id(slot.room_id)
+        return PublicSessionResponse.model_validate({
+            **PlannedSlotResponse.model_validate(slot).model_dump(),
+            "date": day.date,
+            "room_name": room.name,
+        })
 
     def _validate(
         self,

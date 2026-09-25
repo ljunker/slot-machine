@@ -49,6 +49,8 @@ Fotos können als JPEG, PNG oder WebP bis 5 MB hochgeladen werden. Lokal liegen 
 
 Über **Besucherprogramm ansehen** öffnet sich die öffentliche Tagesansicht unter `/programm/<event_id>`. Besucher können Tage wechseln und Slot-Beschreibungen lesen. Auf Smartphones wechseln Raum-Tabs zwischen den Programmen. Die Oberfläche bietet keine Bearbeitung; die API hat weiterhin keine Anmeldung oder Veröffentlichungsfreigabe.
 
+Geplante Sessions haben eine eigene Seite unter `/programm/<event_id>/sessions/<session_id>`. Der Link steht in den Session-Details und auf Smartphones direkt an der Session. Er bleibt bei Zeit- und Raumänderungen gleich. Abgesagte Sessions bleiben erreichbar; ungeplante oder gelöschte Sessions haben keine öffentliche Detailseite.
+
 Über **PDF-Programm herunterladen** lässt sich das aktuelle Gesamtprogramm aus Planungsansicht und Besucherprogramm laden. Jeder Veranstaltungstag belegt eine A4-Querseite mit Zeit-Raum-Raster. Slot-Karten zeigen auch Rednernamen; bei dichten Plänen werden Texte gekürzt.
 
 Die Auswahl **Darstellung** bietet System, Hell und Dunkel. Sie gilt für Planungsansicht und Besucherprogramm und wird im Browser gespeichert. Das PDF bleibt hell.
