@@ -6,10 +6,11 @@ services:
     environment:
       DATABASE_URL: sqlite:////data/schedule.db
       SPEAKER_UPLOAD_DIR: /data/speaker_uploads
+      EVENT_LOGO_DIR: /data/event_logos
     volumes:
       - schedule_data:/data
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
       interval: 10s
@@ -23,7 +24,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "127.0.0.1:5173:80"
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
 
 volumes:
   schedule_data:
