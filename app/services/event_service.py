@@ -1,7 +1,9 @@
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.models.duty import Duty
 from app.models.event_day import EventDay
+from app.models.helper import Helper, duty_helpers
 from app.models.room import Room
 from app.models.slot import Slot
 from app.models.speaker import Speaker, slot_speakers
@@ -62,6 +64,10 @@ class EventService:
         photos = list(self.db.scalars(
             select(Speaker.photo_filename).where(Speaker.event_id == event_id)
         ).all())
+        duty_ids = select(Duty.id).where(Duty.event_id == event_id)
+        self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
+        self.db.execute(delete(Duty).where(Duty.event_id == event_id))
+        self.db.execute(delete(Helper).where(Helper.event_id == event_id))
         self.db.execute(delete(slot_speakers).where(slot_speakers.c.slot_id.in_(slot_ids)))
         self.db.execute(delete(Slot).where(Slot.event_id == event_id))
         self.db.execute(delete(Speaker).where(Speaker.event_id == event_id))

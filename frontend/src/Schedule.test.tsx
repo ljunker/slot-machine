@@ -47,6 +47,10 @@ describe('schedule interactions', () => {
       fireEvent.pointerMove(window, { clientY: 124, clientX: 100 })
       fireEvent.pointerUp(window)
       expect(onChange).toHaveBeenCalledWith(1, { end_time: '11:15' })
+      fireEvent.pointerDown(screen.getByLabelText('Erster verschieben'), { button: 0, clientY: 100 })
+      fireEvent.pointerMove(window, { clientY: 148, clientX: 700 })
+      fireEvent.pointerUp(window)
+      expect(onChange).toHaveBeenCalledTimes(2)
     } finally { Element.prototype.getBoundingClientRect = original }
   })
 

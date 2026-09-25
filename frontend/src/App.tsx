@@ -3,13 +3,15 @@ import type { PointerEvent } from 'react'
 import { request, uploadPhoto, write } from './api'
 import Editor from './Editor'
 import type { EditorKind } from './Editor'
+import DutyEditor from './DutyEditor'
+import HelperEditor from './HelperEditor'
 import Schedule from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
 import ThemeControl from './ThemeControl'
-import type { DaySchedule, Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
+import type { DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 
-type Panel = { kind: EditorKind | 'speaker'; id: number | null; createUnplanned?: boolean }
+type Panel = { kind: EditorKind | 'speaker' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number; start: number; topic: string }
 
 export default function App() {
@@ -19,6 +21,8 @@ export default function App() {
   const [dayId, setDayId] = useState<number | null>(null)
   const [rooms, setRooms] = useState<Room[]>([])
   const [speakers, setSpeakers] = useState<Speaker[]>([])
+  const [helpers, setHelpers] = useState<Helper[]>([])
+  const [helperPlan, setHelperPlan] = useState<HelperPlan>({ duties: [], conflicts: [] })
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
   const [unplanned, setUnplanned] = useState<UnplannedSession[]>([])
   const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
@@ -33,13 +37,15 @@ export default function App() {
     try {
       const eventList = await request<Event[]>('/events')
       const selectedEvent = eventList.find(item => item.id === preferredEvent)?.id ?? eventList[0]?.id ?? null
-      const [dayList, roomList, speakerList, unplannedList] = selectedEvent === null
-        ? [[], [], [], []] as [EventDay[], Room[], Speaker[], UnplannedSession[]]
+      const [dayList, roomList, speakerList, unplannedList, helperList, loadedHelperPlan] = selectedEvent === null
+        ? [[], [], [], [], [], { duties: [], conflicts: [] }] as [EventDay[], Room[], Speaker[], UnplannedSession[], Helper[], HelperPlan]
         : await Promise.all([
           request<EventDay[]>(`/events/${selectedEvent}/days`),
           request<Room[]>(`/events/${selectedEvent}/rooms`),
           request<Speaker[]>(`/events/${selectedEvent}/speakers`),
           request<UnplannedSession[]>(`/events/${selectedEvent}/unplanned-sessions`),
+          request<Helper[]>(`/events/${selectedEvent}/helpers`),
+          request<HelperPlan>(`/events/${selectedEvent}/helper-plan`),
         ])
       const selectedDay = dayList.find(item => item.id === preferredDay)?.id ?? dayList[0]?.id ?? null
       const daySchedule = selectedDay === null ? null : await request<DaySchedule>(`/schedule/days/${selectedDay}`)
@@ -50,6 +56,8 @@ export default function App() {
       setDayId(selectedDay)
       setRooms(roomList)
       setSpeakers(speakerList)
+      setHelpers(helperList)
+      setHelperPlan(loadedHelperPlan)
       setSchedule(daySchedule)
       setUnplanned(unplannedList)
       setError('')
@@ -69,6 +77,8 @@ export default function App() {
     ? schedule?.rooms.flatMap(item => item.slots).find(item => item.id === panel.id) ?? unplanned.find(item => item.id === panel.id)
     : undefined
   const selectedSpeaker = panel?.kind === 'speaker' ? speakers.find(item => item.id === panel.id) : undefined
+  const selectedHelper = panel?.kind === 'helper' ? helpers.find(item => item.id === panel.id) : undefined
+  const selectedDuty = panel?.kind === 'duty' ? helperPlan.duties.find(item => item.id === panel.id) : undefined
 
   async function save(body: Record<string, unknown>): Promise<boolean> {
     if (!panel) return false
@@ -95,7 +105,7 @@ export default function App() {
 
   async function remove(): Promise<boolean> {
     if (!panel || panel.id === null) return false
-    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}` }[panel.kind]
+    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, helper: `/helpers/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
     try {
       await write<void>('DELETE', path)
       await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
@@ -128,6 +138,24 @@ export default function App() {
       await write<Speaker>('DELETE', `/speakers/${panel.id}/photo`)
       await loadAll(eventId, dayId)
     } catch (cause) { setError((cause as Error).message) }
+  }
+
+  async function saveHelper(name: string): Promise<boolean> {
+    if (panel?.kind !== 'helper' || eventId === null) return false
+    try {
+      await write<Helper>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/helpers` : `/helpers/${panel.id}`, { name })
+      await loadAll(eventId, dayId)
+      return true
+    } catch (cause) { setError((cause as Error).message); return false }
+  }
+
+  async function saveDuty(body: Record<string, unknown>): Promise<boolean> {
+    if (panel?.kind !== 'duty' || eventId === null) return false
+    try {
+      await write<Duty>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/duties` : `/duties/${panel.id}`, body)
+      await loadAll(eventId, dayId)
+      return true
+    } catch (cause) { setError((cause as Error).message); return false }
   }
 
   async function reorder(roomId: number, direction: -1 | 1) {
@@ -241,19 +269,35 @@ export default function App() {
             <button type="button" className="room-name" onClick={() => setPanel({ kind: 'speaker', id: person.id })}>{person.name}</button>
           </div>)}</div>
         </section>}
+        {selectedEvent && <section>
+          <div className="section-heading"><h2>Helfer</h2><button className="text-button" onClick={() => setPanel({ kind: 'helper', id: null })}>+ Helfer</button></div>
+          {helpers.length === 0 && <p className="muted">Noch keine Helfer</p>}
+          <div className="room-list">{helpers.map(person => <div className="room-row" key={person.id}>
+            <button type="button" className="room-name" onClick={() => setPanel({ kind: 'helper', id: person.id })}>{person.name}</button>
+          </div>)}</div>
+        </section>}
+        {selectedEvent && <section>
+          <div className="section-heading"><h2>Dienste ({helperPlan.duties.length})</h2></div>
+          {helperPlan.duties.length === 0 && <p className="muted">Noch keine Dienste</p>}
+          <div className="duty-list">{helperPlan.duties.map(duty => <button type="button" key={duty.id} onClick={() => setPanel({ kind: 'duty', id: duty.id })}>
+            <strong>{duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}</strong>
+            <small>{duty.date ?? 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small>
+          </button>)}</div>
+        </section>}
       </nav>
       <main className="main-area">
         <div className="plan-heading"><div><span className="eyebrow">TAGESANSICHT</span><h2>{selectedDay?.date ?? 'Programm'}</h2><p>{selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
+            {selectedEvent && <button className="primary" onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
             {selectedDay && rooms.length > 0 && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
         {loading && <p className="state-message">Lade Programm …</p>}
-        {!loading && schedule && <Schedule schedule={schedule} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onChange={changeSlot} />}
+        {!loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} />}
         {!loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Beschriftete Karten zeigen Änderungen und Absagen.</p>}
+        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.</p>}
       </main>
       {panel?.kind === 'speaker' && <SpeakerEditor
         key={`speaker-${panel.id ?? 'new'}`}
@@ -263,7 +307,28 @@ export default function App() {
         onDeletePhoto={panel.id === null ? null : deleteSpeakerPhoto}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
-      {panel && panel.kind !== 'speaker' && <Editor
+      {panel?.kind === 'helper' && <HelperEditor
+        key={`helper-${panel.id ?? 'new'}`}
+        helper={selectedHelper}
+        duties={helperPlan.duties.filter(duty => duty.helper_ids.includes(panel.id ?? -1))}
+        onSave={saveHelper}
+        onDelete={panel.id === null ? null : remove}
+        onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })}
+        onClose={() => setPanel(current => current === panel ? null : current)}
+      />}
+      {panel?.kind === 'duty' && <DutyEditor
+        key={`duty-${panel.id ?? 'new'}`}
+        duty={selectedDuty}
+        days={days}
+        selectedDay={selectedDay}
+        rooms={rooms}
+        sessions={[...(schedule?.rooms.flatMap(room => room.slots) ?? []), ...unplanned]}
+        helpers={helpers}
+        onSave={saveDuty}
+        onDelete={panel.id === null ? null : remove}
+        onClose={() => setPanel(current => current === panel ? null : current)}
+      />}
+      {panel && panel.kind !== 'speaker' && panel.kind !== 'helper' && panel.kind !== 'duty' && <Editor
         key={`${panel.kind}-${panel.id ?? 'new'}-${panel.createUnplanned ? 'unplanned' : 'planned'}`}
         kind={panel.kind}
         event={panel.kind === 'event' ? events.find(item => item.id === panel.id) : selectedEvent}

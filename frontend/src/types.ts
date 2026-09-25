@@ -5,6 +5,26 @@ export type SpeakerSummary = { id: number; name: string }
 export type Speaker = SpeakerSummary & { event_id: number; bio: string | null; website: string | null; photo_url: string | null }
 export type SpeakerSession = { id: number; day_id: number | null; date: string | null; room_id: number | null; room_name: string | null; topic: string; start_time: string | null; end_time: string | null }
 export type SpeakerDetail = Speaker & { sessions: SpeakerSession[] }
+export type Helper = { id: number; event_id: number; name: string }
+export type DutyKind = 'general' | 'room' | 'session'
+export type Duty = {
+  id: number
+  event_id: number
+  kind: DutyKind
+  title: string | null
+  helper_ids: number[]
+  helpers: Helper[]
+  day_id: number | null
+  date: string | null
+  room_id: number | null
+  slot_id: number | null
+  session_topic: string | null
+  start_time: string | null
+  end_time: string | null
+  status: 'active' | 'unplanned' | 'cancelled'
+}
+export type DutyConflict = { first_duty_id: number; second_duty_id: number; helper_ids: number[] }
+export type HelperPlan = { duties: Duty[]; conflicts: DutyConflict[] }
 export type ChangeNotice = {
   type: 'rescheduled' | 'updated' | 'cancelled'
   expires_at: number | null

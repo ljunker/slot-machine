@@ -1,9 +1,11 @@
 from datetime import date, datetime, time
 from time import time as epoch_time
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.models.duty import Duty
+from app.models.helper import duty_helpers
 from app.models.slot import Slot
 from app.models.speaker import Speaker
 from app.repositories.event_day_repository import EventDayRepository
@@ -157,7 +159,11 @@ class SlotService:
         return [by_id[speaker_id] for speaker_id in speaker_ids]
 
     def delete(self, slot_id: int) -> None:
-        self.repository.delete(self.get(slot_id))
+        slot = self.get(slot_id)
+        duty_ids = select(Duty.id).where(Duty.slot_id == slot_id)
+        self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
+        self.db.execute(delete(Duty).where(Duty.slot_id == slot_id))
+        self.repository.delete(slot)
         self.db.commit()
 
     def get_unplanned_for_event(self, event_id: int) -> list[Slot]:

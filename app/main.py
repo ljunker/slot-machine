@@ -8,6 +8,7 @@ import app.models
 from app.api.routes import (
     event_days,
     events,
+    helpers,
     rooms,
     schedule,
     slots,
@@ -74,3 +75,4 @@ app.include_router(
 )
 
 app.include_router(speakers.router, prefix="/api")
+app.include_router(helpers.router, prefix="/api")

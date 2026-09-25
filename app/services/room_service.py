@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.duty import Duty
 from app.models.room import Room
 from app.models.slot import Slot
 from app.repositories.event_repository import EventRepository
@@ -51,6 +52,9 @@ class RoomService:
     def delete(self, room_id: int) -> None:
         room = self.get(room_id)
         event_id = room.event_id
+        for duty in self.db.scalars(select(Duty).where(Duty.room_id == room_id)):
+            duty.kind = "general"
+            duty.room_id = None
         for slot in self.db.scalars(select(Slot).where(Slot.room_id == room_id)):
             slot.day_id = None
             slot.room_id = None
