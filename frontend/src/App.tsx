@@ -5,6 +5,7 @@ import Editor from './Editor'
 import type { EditorKind } from './Editor'
 import DutyEditor from './DutyEditor'
 import HelperEditor from './HelperEditor'
+import ConflictOverview from './ConflictOverview'
 import Schedule from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
 import ThemeControl from './ThemeControl'
@@ -24,6 +25,10 @@ export default function App() {
   const [helpers, setHelpers] = useState<Helper[]>([])
   const [helperPlan, setHelperPlan] = useState<HelperPlan>({ duties: [], conflicts: [] })
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
+  const [view, setView] = useState<'schedule' | 'conflicts'>('schedule')
+  const [overviewSchedules, setOverviewSchedules] = useState<DaySchedule[] | null>(null)
+  const [overviewError, setOverviewError] = useState('')
+  const [overviewRetry, setOverviewRetry] = useState(0)
   const [unplanned, setUnplanned] = useState<UnplannedSession[]>([])
   const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
   const [panel, setPanel] = useState<Panel | null>(null)
@@ -31,7 +36,7 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const loadNumber = useRef(0)
 
-  async function loadAll(preferredEvent: number | null, preferredDay: number | null) {
+  async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
     const number = ++loadNumber.current
     setLoading(true)
     try {
@@ -49,7 +54,7 @@ export default function App() {
         ])
       const selectedDay = dayList.find(item => item.id === preferredDay)?.id ?? dayList[0]?.id ?? null
       const daySchedule = selectedDay === null ? null : await request<DaySchedule>(`/schedule/days/${selectedDay}`)
-      if (number !== loadNumber.current) return
+      if (number !== loadNumber.current) return false
       setEvents(eventList)
       setEventId(selectedEvent)
       setDays(dayList)
@@ -61,14 +66,33 @@ export default function App() {
       setSchedule(daySchedule)
       setUnplanned(unplannedList)
       setError('')
+      return true
     } catch (cause) {
       if (number === loadNumber.current) setError((cause as Error).message)
+      return false
     } finally {
       if (number === loadNumber.current) setLoading(false)
     }
   }
 
   useEffect(() => { void loadAll(null, null) }, [])
+
+  useEffect(() => {
+    if (view !== 'conflicts' || eventId === null) return
+    let active = true
+    setOverviewSchedules(null)
+    setOverviewError('')
+    Promise.all(days.map(day => request<DaySchedule>(`/schedule/days/${day.id}`)))
+      .then(loaded => { if (active) setOverviewSchedules(loaded) })
+      .catch((cause: Error) => { if (active) setOverviewError(cause.message) })
+    return () => { active = false }
+  }, [view, eventId, days, overviewRetry])
+
+  async function openConflictEntry(targetDayId: number, kind: 'slot' | 'duty', id: number) {
+    if (!await loadAll(eventId, targetDayId)) return
+    setView('schedule')
+    setPanel({ kind, id })
+  }
 
   const selectedEvent = events.find(item => item.id === eventId)
   const selectedDay = days.find(item => item.id === dayId)
@@ -116,6 +140,7 @@ export default function App() {
     try {
       await write<void>('DELETE', path)
       await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
+      if (panel.kind === 'event') setView('schedule')
       return true
     } catch (cause) {
       setError((cause as Error).message)
@@ -255,7 +280,7 @@ export default function App() {
           <div className="section-heading"><h2>Tage</h2><button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button></div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" onClick={() => { setPanel(null); void loadAll(eventId, day.id) }}>{day.date}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            <button type="button" onClick={() => { setPanel(null); setView('schedule'); void loadAll(eventId, day.id) }}>{day.date}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
             <button type="button" className="icon-button" aria-label={`${day.date} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>
           </div>)}</div>
         </section>}
@@ -301,18 +326,25 @@ export default function App() {
         </section>}
       </nav>
       <main className="main-area">
-        <div className="plan-heading"><div><span className="eyebrow">TAGESANSICHT</span><h2>{selectedDay?.date ?? 'Programm'}</h2><p>{selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
+        {selectedEvent && <div className="planning-views" role="group" aria-label="Planungsansicht">
+          <button type="button" aria-pressed={view === 'schedule'} onClick={() => setView('schedule')}>Tagesplan</button>
+          <button type="button" aria-pressed={view === 'conflicts'} onClick={() => { setPanel(null); setView('conflicts') }}>Konflikte</button>
+        </div>}
+        <div className="plan-heading"><div><span className="eyebrow">{view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : 'TAGESANSICHT'}</span><h2>{view === 'conflicts' ? 'Konfliktübersicht' : selectedDay?.date ?? 'Programm'}</h2><p>{view === 'conflicts' ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
-            {selectedEvent && <button className="primary" onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
-            {selectedDay && rooms.length > 0 && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+            {selectedEvent && view === 'schedule' && <button className="primary" onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
+            {selectedDay && rooms.length > 0 && view === 'schedule' && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
-        {loading && <p className="state-message">Lade Programm …</p>}
-        {!loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} />}
-        {!loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.</p>}
+        {view === 'schedule' && loading && <p className="state-message">Lade Programm …</p>}
+        {view === 'schedule' && !loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} />}
+        {view === 'schedule' && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
+        {view === 'schedule' && schedule && <p className="hint">Slot am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.</p>}
+        {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
+        {view === 'conflicts' && !loading && overviewError && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError}<br /><button className="text-button" type="button" onClick={() => setOverviewRetry(value => value + 1)}>Erneut versuchen</button></div>}
+        {view === 'conflicts' && !loading && overviewSchedules && !overviewError && <ConflictOverview schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openConflictEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openConflictEntry(day, 'duty', duty)} />}
       </main>
       {panel?.kind === 'speaker' && <SpeakerEditor
         key={`speaker-${panel.id ?? 'new'}`}
