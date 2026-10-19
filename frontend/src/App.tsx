@@ -9,6 +9,7 @@ import ConflictOverview from './ConflictOverview'
 import Schedule from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
 import ThemeControl from './ThemeControl'
+import BackupRestore from './BackupRestore'
 import type { DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 
@@ -34,6 +35,7 @@ export default function App() {
   const [panel, setPanel] = useState<Panel | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [showRestore, setShowRestore] = useState(false)
   const loadNumber = useRef(0)
 
   async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
@@ -263,7 +265,7 @@ export default function App() {
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
-      <div className="header-actions"><ThemeControl /><button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button></div>
+      <div className="header-actions"><ThemeControl /><button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button><button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button></div>
     </header>
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError('')}>Schließen</button></div>}
     <div className="workspace">
@@ -275,6 +277,7 @@ export default function App() {
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
           {selectedEvent && <p className="muted">{selectedEvent.start_date} bis {selectedEvent.end_date}</p>}
+          {selectedEvent && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
         </section>
         {selectedEvent && <section>
           <div className="section-heading"><h2>Tage</h2><button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button></div>
@@ -391,6 +394,11 @@ export default function App() {
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
+      {showRestore && <BackupRestore events={events} selectedEventId={eventId} onComplete={async restoredId => {
+        setPanel(null)
+        if (await loadAll(restoredId, null)) setShowRestore(false)
+        else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
+      }} onClose={() => setShowRestore(false)} />}
     </div>
   </div>
 }

@@ -220,6 +220,15 @@ button:disabled { cursor: default; opacity: .35; }
 }
 @media (max-width: 600px) { .app-header { padding: 20px; } .app-header h1 { font-size: 22px; } .app-header p { display: none; } .workspace, .workspace:has(.editor) { display: block; } .sidebar { border-right: 0; border-bottom: 1px solid var(--border); } .sidebar section { margin-bottom: 12px; padding-bottom: 12px; } .schedule-scroll { max-height: 70vh; } .plan-heading { align-items: flex-start; flex-direction: column; } .conflict-participants { grid-template-columns: 1fr; } }
 .header-actions { display: flex; align-items: center; gap: 15px; }
+.header-secondary { border: 1px solid var(--header-muted); border-radius: 9px; background: transparent; color: var(--header-text); font-weight: 700; padding: 9px 14px; }
+.backup-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 18px; background: #0009; }
+.backup-dialog { width: min(520px, 100%); max-height: 90vh; overflow: auto; display: grid; gap: 15px; padding: 24px; border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 20px 50px var(--shadow); }
+.backup-dialog label { display: grid; gap: 6px; color: var(--subtext); font-size: 13px; font-weight: 700; }
+.backup-dialog input, .backup-dialog select { width: 100%; min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--input-text); }
+.backup-preview { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); overflow-wrap: anywhere; }
+.backup-preview p { margin: 0; font-size: 13px; line-height: 1.4; }
+.backup-preview .danger { justify-self: start; }
+.backup-error { margin: 0; color: var(--danger-text); font-size: 13px; }
 .public-header-content { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .public-title { display: flex; align-items: center; gap: 18px; min-width: 0; }
 .public-title h1 { overflow-wrap: anywhere; }

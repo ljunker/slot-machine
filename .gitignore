@@ -18,3 +18,4 @@ frontend/*.tsbuildinfo
 FEATURE_IDEEN.md
 TODO.md
 .env
+.idea

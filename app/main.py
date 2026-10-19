@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 # Models importieren, damit SQLAlchemy sie kennt.
 import app.models
 from app.api.routes import (
+    backups,
     event_days,
     events,
     helpers,
@@ -78,3 +79,4 @@ app.include_router(
 
 app.include_router(speakers.router, prefix="/api")
 app.include_router(helpers.router, prefix="/api")
+app.include_router(backups.router, prefix="/api")

@@ -59,6 +59,14 @@ Im Veranstaltungseditor kann eine Akzentfarbe gewählt und für bestehende Veran
 
 Änderungen an Zeit oder Raum markieren eine Session 24 Stunden als **Verschoben**; die vorherige Planung steht in den Details. Änderungen an Thema, Beschreibung oder Rednern erscheinen 24 Stunden als **Geändert**. Über **Session abgesagt** bleibt eine Session dauerhaft als **Abgesagt** im Programm, zählt aber nicht zu Konflikten. Nach Aufheben der Absage erscheint sie 24 Stunden als geändert. Im PDF stehen frühere Angaben nur, wenn die Karte genug Platz bietet. Offene Seiten laden neue Änderungen weiterhin erst nach Neuladen.
 
+## Backup und Restore
+
+**Backup herunterladen** sichert die gewählte Veranstaltung als ZIP. Es enthält CSV-Dateien für Veranstaltung, Tage, Räume, Sessions, Redner, Helfer, Dienste und ihre Zuordnungen sowie Logo und Rednerfotos. `manifest.csv` enthält die Formatversion. Die CSV-Dateien verwenden UTF-8, Kommas als Trennzeichen, ISO-Datums- und Zeitwerte sowie `\N` für `null`; führende Backslashes in Textwerten sind verdoppelt.
+
+Über **Restore** kann das ZIP geprüft und anschließend als neue Veranstaltung eingespielt oder über eine gewählte Veranstaltung geschrieben werden. Die Vorschau zeigt den Inhalt und mögliche Änderungen öffentlicher Session-Links. Beim Ersetzen bleiben andere Veranstaltungen erhalten. Bestehende Session-IDs bleiben erhalten, sofern sie nicht inzwischen zu einer anderen Veranstaltung gehören. Die Wiederherstellung prüft das Archiv erneut und verlangt eine Bestätigung. Fehlende oder ungültige Dateien brechen sie ab, ohne vorhandene Planungsdaten zu ändern.
+
+Das ZIP darf höchstens 128 MB groß sein; entpackt höchstens 256 MB. Einzelne CSV-Dateien dürfen höchstens 32 MB groß sein. Für Bilder gelten weiter 5 MB pro Datei. Backup- und Restore-API sind wie die übrige Planungs-API nicht durch eine Anmeldung geschützt.
+
 ## Tests
 
 ```bash
