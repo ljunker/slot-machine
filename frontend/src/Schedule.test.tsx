@@ -30,7 +30,7 @@ describe('schedule interactions', () => {
     expect(second.style.left).toBe('50%')
   })
 
-  it('sends drag and resize patches', () => {
+  it.each(['program', 'helpers'] as const)('sends drag and resize patches in %s view', focus => {
     const onChange = vi.fn(async () => {})
     const original = Element.prototype.getBoundingClientRect
     Element.prototype.getBoundingClientRect = function () {
@@ -38,7 +38,10 @@ describe('schedule interactions', () => {
       return { left: room === '2' ? 300 : 0, right: room === '2' ? 600 : 299 } as DOMRect
     }
     try {
-      const { container } = render(<Schedule schedule={schedule} onEdit={() => {}} onChange={onChange} />)
+      const onEdit = vi.fn()
+      const { container } = render(<Schedule schedule={schedule} focus={focus} onEdit={onEdit} onChange={onChange} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Erster bearbeiten' }))
+      expect(onEdit).toHaveBeenCalledWith(schedule.rooms[0].slots[0])
       fireEvent.pointerDown(screen.getByLabelText('Erster verschieben'), { button: 0, clientY: 100 })
       fireEvent.pointerMove(window, { clientY: 148, clientX: 350 })
       fireEvent.pointerUp(window)

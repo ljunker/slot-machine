@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { Locator } from '@playwright/test'
 
 test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page }) => {
   const eventResponse = await page.request.post('/api/events', { data: {
@@ -69,4 +70,141 @@ test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page 
   await expect(page.locator(`[data-duty-id="${sessionDuty.id}"]`)).toHaveCount(0)
   await page.getByRole('button', { name: 'Ada', exact: true }).click()
   await expect(page.locator('.helper-duties')).toContainText('Abgesagt')
+})
+
+test('gibt parallelen Diensten im Helferplan Platz, auch bei schmalem Fenster', async ({ page }) => {
+  const event = await (await page.request.post('/api/events', { data: {
+    name: 'Parallele Dienste', start_date: '2026-10-01', end_date: '2026-10-01',
+  } })).json()
+  const day = await (await page.request.post(`/api/events/${event.id}/days`, { data: {
+    event_id: event.id, date: '2026-10-01', start_time: '09:00', end_time: '18:00',
+  } })).json()
+  const room = await (await page.request.post('/api/rooms', { data: { event_id: event.id, name: 'Saal' } })).json()
+  await page.request.post('/api/slots', { data: {
+    event_id: event.id, day_id: day.id, room_id: room.id, topic: 'Vortrag',
+    start_time: '10:00', end_time: '11:00',
+  } })
+  for (const title of ['Einlass', 'Technik', 'Info']) {
+    await page.request.post(`/api/events/${event.id}/duties`, { data: {
+      kind: 'room', title, day_id: day.id, room_id: room.id,
+      start_time: '10:00', end_time: '11:00', helper_ids: [],
+    } })
+  }
+  await page.setViewportSize({ width: 700, height: 800 })
+  await page.goto('/')
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
+  await expect(page.locator('[aria-label="Helferdienste Saal"] [data-duty-id]')).toHaveCount(3)
+  expect(await page.locator('.schedule-grid').evaluate(element => getComputedStyle(element).gridTemplateColumns)).toContain('180px')
+  await page.getByRole('button', { name: 'Helferplan' }).click()
+  const sizes = await page.locator('.schedule-scroll').evaluate(container => {
+    const cards = [...container.querySelectorAll<HTMLElement>('[aria-label="Helferdienste Saal"] [data-duty-id]')]
+      .map(card => card.getBoundingClientRect())
+      .sort((a, b) => a.left - b.left)
+    return {
+      scrolls: container.scrollWidth > container.clientWidth,
+      widths: cards.map(card => card.width),
+      separated: cards.every((card, index) => index === 0 || cards[index - 1].right <= card.left + 1),
+      dutyBeforeProgram: container.querySelector('[aria-label="Helferdienste Saal"]')!.getBoundingClientRect().right
+        <= container.querySelector('[data-room-column]')!.getBoundingClientRect().left + 1,
+      programWidth: container.querySelector('[data-room-column]')!.getBoundingClientRect().width,
+      timeBelowTitle: container.querySelector('.slot-grip strong')!.getBoundingClientRect().bottom
+        <= container.querySelector('.slot-grip span')!.getBoundingClientRect().top + 1,
+    }
+  })
+  expect(sizes.scrolls).toBe(true)
+  expect(sizes.widths).toHaveLength(3)
+  expect(sizes.widths.every(width => width >= 219)).toBe(true)
+  expect(sizes.separated).toBe(true)
+  expect(sizes.dutyBeforeProgram).toBe(true)
+  expect(sizes.programWidth).toBe(180)
+  expect(sizes.timeBelowTitle).toBe(true)
+  if (process.env.HELPER_PLAN_SCREENSHOT) await page.screenshot({ path: process.env.HELPER_PLAN_SCREENSHOT, fullPage: true })
+})
+
+test('verschiebt und verlängert Dienste über ihre Karten', async ({ page }) => {
+  const event = await (await page.request.post('/api/events', { data: {
+    name: 'Dienstbewegung', start_date: '2026-10-01', end_date: '2026-10-01',
+  } })).json()
+  const day = await (await page.request.post(`/api/events/${event.id}/days`, { data: {
+    event_id: event.id, date: '2026-10-01', start_time: '09:00', end_time: '18:00',
+  } })).json()
+  const roomA = await (await page.request.post('/api/rooms', { data: { event_id: event.id, name: 'A' } })).json()
+  const roomB = await (await page.request.post('/api/rooms', { data: { event_id: event.id, name: 'B' } })).json()
+  const general = await (await page.request.post(`/api/events/${event.id}/duties`, { data: {
+    kind: 'general', title: 'Aufbau', day_id: day.id, start_time: '09:00', end_time: '10:00',
+  } })).json()
+  const roomDuty = await (await page.request.post(`/api/events/${event.id}/duties`, { data: {
+    kind: 'room', title: 'Einlass', day_id: day.id, room_id: roomA.id,
+    start_time: '10:00', end_time: '11:00',
+  } })).json()
+  const slot = await (await page.request.post('/api/slots', { data: {
+    event_id: event.id, day_id: day.id, room_id: roomA.id, topic: 'Vortrag',
+    start_time: '11:00', end_time: '12:00',
+  } })).json()
+  const sessionDuty = await (await page.request.post(`/api/events/${event.id}/duties`, { data: {
+    kind: 'session', slot_id: slot.id, title: 'Betreuung',
+  } })).json()
+  await page.setViewportSize({ width: 2200, height: 900 })
+  await page.goto('/')
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
+  await page.getByRole('button', { name: 'Helferplan' }).click()
+
+  async function drag(source: Locator, target: Locator, deltaY: number) {
+    await expect(source).toBeVisible()
+    await expect(target).toBeVisible()
+    const from = (await source.boundingBox())!
+    const to = (await target.boundingBox())!
+    await page.mouse.move(from.x + 24, from.y + 16)
+    await page.mouse.down()
+    await page.mouse.move(to.x + 30, from.y + 16 + deltaY, { steps: 4 })
+    await page.mouse.up()
+  }
+
+  await drag(page.locator(`[data-duty-id="${general.id}"] .duty-grip`), page.locator(`[data-duty-column="${roomA.id}"]`), 24)
+  await expect.poll(async () => {
+    const duty = await (await page.request.get(`/api/duties/${general.id}`)).json()
+    return [duty.kind, duty.room_id, duty.start_time, duty.end_time]
+  }).toEqual(['room', roomA.id, '09:15:00', '10:15:00'])
+  await expect(page.locator(`[data-duty-column="${roomA.id}"] [data-duty-id="${general.id}"]`)).toContainText('09:15–10:15')
+  await drag(page.locator(`[data-duty-id="${general.id}"] .duty-grip`), page.locator('[data-duty-column="general"]'), 0)
+  await expect.poll(async () => {
+    const duty = await (await page.request.get(`/api/duties/${general.id}`)).json()
+    return [duty.kind, duty.room_id]
+  }).toEqual(['general', null])
+  await expect(page.locator(`[data-duty-column="general"] [data-duty-id="${general.id}"]`)).toHaveCount(1)
+
+  await drag(page.locator(`[data-duty-id="${roomDuty.id}"] .duty-grip`), page.locator(`[data-duty-column="${roomB.id}"]`), 24)
+  await expect.poll(async () => {
+    const duty = await (await page.request.get(`/api/duties/${roomDuty.id}`)).json()
+    return [duty.room_id, duty.start_time, duty.end_time]
+  }).toEqual([roomB.id, '10:15:00', '11:15:00'])
+  await expect(page.locator(`[data-duty-column="${roomB.id}"] [data-duty-id="${roomDuty.id}"]`)).toContainText('10:15–11:15')
+  const resize = page.locator(`[data-duty-id="${roomDuty.id}"] .duty-resize`)
+  await expect(resize).toBeVisible()
+  const handle = (await resize.boundingBox())!
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 + 24, { steps: 4 })
+  await page.mouse.up()
+  await expect.poll(async () => (await (await page.request.get(`/api/duties/${roomDuty.id}`)).json()).end_time).toBe('11:30:00')
+  await expect(page.locator(`[data-duty-column="${roomB.id}"] [data-duty-id="${roomDuty.id}"]`)).toContainText('10:15–11:30')
+
+  await drag(page.locator(`[data-duty-id="${sessionDuty.id}"] .duty-grip`), page.locator(`[data-duty-column="${roomB.id}"]`), 24)
+  await expect.poll(async () => {
+    const schedule = await (await page.request.get(`/api/schedule/days/${day.id}`)).json()
+    const moved = schedule.rooms.flatMap((room: { slots: { id: number; room_id: number; start_time: string; end_time: string }[] }) => room.slots)
+      .find((item: { id: number }) => item.id === slot.id)
+    return [moved?.room_id, moved?.start_time, moved?.end_time]
+  }).toEqual([roomB.id, '11:15:00', '12:15:00'])
+  await expect(page.locator(`[data-duty-column="${roomB.id}"] [data-duty-id="${sessionDuty.id}"]`)).toHaveCount(1)
+  const sessionHandle = page.locator(`[data-duty-id="${sessionDuty.id}"] .duty-resize`)
+  const sessionBox = (await sessionHandle.boundingBox())!
+  await page.mouse.move(sessionBox.x + sessionBox.width / 2, sessionBox.y + sessionBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(sessionBox.x + sessionBox.width / 2, sessionBox.y + sessionBox.height / 2 - 24, { steps: 4 })
+  await page.mouse.up()
+  await expect.poll(async () => (await (await page.request.get(`/api/duties/${sessionDuty.id}`)).json()).end_time).toBe('12:00:00')
+  await expect(page.locator('aside.editor')).toHaveCount(0)
+  await page.locator(`[data-duty-id="${general.id}"]`).click()
+  await expect(page.locator('aside.editor')).toHaveCount(1)
 })

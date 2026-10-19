@@ -7,6 +7,9 @@ import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
 type SlotPatch = { room_id?: number; start_time?: string; end_time?: string }
 type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number; overProgram: boolean }
 type ActiveDuty = Duty & { day_id: number; start_time: string; end_time: string }
+export type DutyPatch = { kind?: 'general' | 'room'; room_id?: number | null; start_time?: string; end_time?: string }
+type DutyTarget = { roomId: number | null }
+type DutyDrag = { duty: ActiveDuty; mode: 'move' | 'resize'; originX: number; originY: number; delta: number; target: DutyTarget | null; moved: boolean }
 
 function layoutDuties(duties: ActiveDuty[]) {
   const sorted = [...duties].sort((a, b) => toMinutes(a.start_time) - toMinutes(b.start_time) || a.id - b.id)
@@ -33,21 +36,31 @@ function layoutDuties(duties: ActiveDuty[]) {
   })
 }
 
+function helperColumnWidth(duties: ActiveDuty[]) {
+  const lanes = layoutDuties(duties).reduce((max, entry) => Math.max(max, entry.lanes), 1)
+  return Math.max(320, lanes * 220)
+}
+
 function dutyTitle(duty: Duty): string {
   if (duty.kind === 'session' && duty.title && duty.session_topic) return `${duty.title}: ${duty.session_topic}`
   return duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
 }
 
-export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, backlogPreview, onEdit, onEditDuty, onChange }: {
+export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, onEdit, onEditDuty, onChange, onChangeDuty }: {
   schedule: DaySchedule
   helperPlan?: HelperPlan
+  focus?: 'program' | 'helpers'
   backlogPreview?: { roomId: number; start: number; topic: string } | null
   onEdit: (slot: Slot) => void
   onEditDuty?: (duty: Duty) => void
   onChange: (slotId: number, patch: SlotPatch) => Promise<void>
+  onChangeDuty?: (duty: Duty, patch: DutyPatch) => Promise<void>
 }) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
+  const [dutyDrag, setDutyDrag] = useState<DutyDrag | null>(null)
+  const dutyDragRef = useRef<DutyDrag | null>(null)
+  const suppressDutyClick = useRef<number | null>(null)
   const start = toMinutes(schedule.start_time)
   const end = toMinutes(schedule.end_time)
   const height = (end - start) * PX_PER_MINUTE
@@ -55,6 +68,8 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const speakerConflictIds = new Set(schedule.speaker_conflicts.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
   const activeDuties = helperPlan.duties.filter((duty): duty is ActiveDuty =>
     duty.status === 'active' && duty.day_id === schedule.day_id && duty.start_time !== null && duty.end_time !== null)
+  const generalDuties = activeDuties.filter(duty => duty.kind === 'general')
+  const roomDuties = schedule.rooms.map(room => activeDuties.filter(duty => duty.room_id === room.id))
   const activeDutyIds = new Set(activeDuties.map(duty => duty.id))
   const dutyConflicts = helperPlan.conflicts.filter(pair => activeDutyIds.has(pair.first_duty_id) && activeDutyIds.has(pair.second_duty_id))
   const dutyConflictIds = new Set(dutyConflicts.flatMap(pair => [pair.first_duty_id, pair.second_duty_id]))
@@ -129,6 +144,73 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     window.addEventListener('pointercancel', cancel)
   }
 
+  function beginDuty(event: PointerEvent, duty: ActiveDuty, mode: 'move' | 'resize') {
+    if (event.button !== 0 || !onChangeDuty) return
+    event.preventDefault()
+    const initial: DutyDrag = { duty, mode, originX: event.clientX, originY: event.clientY, delta: 0,
+      target: { roomId: duty.room_id }, moved: false }
+    dutyDragRef.current = initial
+
+    function move(pointer: globalThis.PointerEvent) {
+      const current = dutyDragRef.current
+      if (!current) return
+      let target = current.target
+      if (current.mode === 'move') {
+        target = null
+        for (const column of document.querySelectorAll<HTMLElement>('[data-duty-column]')) {
+          const rect = column.getBoundingClientRect()
+          if (pointer.clientX < rect.left || pointer.clientX > rect.right) continue
+          const roomId = column.dataset.dutyColumn === 'general' ? null : Number(column.dataset.dutyColumn)
+          if (current.duty.kind !== 'session' || roomId !== null) target = { roomId }
+          break
+        }
+      }
+      const next = { ...current, delta: snappedDelta(pointer.clientY - current.originY), target,
+        moved: current.moved || Math.abs(pointer.clientX - current.originX) > 3 || Math.abs(pointer.clientY - current.originY) > 3 }
+      dutyDragRef.current = next
+      if (next.moved) setDutyDrag(next)
+    }
+
+    function cleanup() {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', cancel)
+      const current = dutyDragRef.current
+      dutyDragRef.current = null
+      setDutyDrag(null)
+      return current
+    }
+
+    function finish() {
+      const current = cleanup()
+      if (!current) return
+      if (current.moved) {
+        suppressDutyClick.current = current.duty.id
+        window.setTimeout(() => { if (suppressDutyClick.current === current.duty.id) suppressDutyClick.current = null }, 0)
+      }
+      if (current.mode === 'resize') {
+        const patch = resizePatch(current.duty, current.delta, end)
+        if (patch.end_time !== current.duty.end_time.slice(0, 5)) void onChangeDuty?.(current.duty, patch)
+        return
+      }
+      if (!current.target) return
+      const moved = movePatch(current.duty, current.delta, current.target.roomId ?? 0, start, end)
+      const newKind = current.target.roomId === null ? 'general' : 'room'
+      if (moved.start_time === current.duty.start_time.slice(0, 5) && current.target.roomId === current.duty.room_id &&
+        (current.duty.kind === 'session' || newKind === current.duty.kind)) return
+      const patch: DutyPatch = { start_time: moved.start_time, end_time: moved.end_time }
+      if (current.target.roomId !== current.duty.room_id) patch.room_id = current.target.roomId
+      if (current.duty.kind !== 'session' && newKind !== current.duty.kind) patch.kind = newKind
+      void onChangeDuty?.(current.duty, patch)
+    }
+
+    function cancel() { cleanup() }
+
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', cancel)
+  }
+
   function card(slot: Slot, top: number, cardHeight: number, lane: number, lanes: number, ghost = false) {
     const notice = activeNotice(slot, now)
     const compactNotice = notice && cardHeight < 45
@@ -159,23 +241,56 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const previewStart = drag && (drag.mode === 'move' ? toMinutes((preview as ReturnType<typeof movePatch>).start_time) : toMinutes(drag.slot.start_time))
   const previewEnd = drag && toMinutes(preview!.end_time)
 
-  function dutyColumn(duties: ActiveDuty[], label: string, column: number) {
-    return <div key={label} className="duty-column" aria-label={label} style={{ gridColumn: column, gridRow: 3, height }}>
+  const dutyPreview = dutyDrag && (dutyDrag.mode === 'resize' || dutyDrag.target)
+    ? (() => {
+      const patch = dutyDrag.mode === 'resize'
+        ? resizePatch(dutyDrag.duty, dutyDrag.delta, end)
+        : movePatch(dutyDrag.duty, dutyDrag.delta, dutyDrag.target!.roomId ?? 0, start, end)
+      const roomId = dutyDrag.mode === 'resize' ? dutyDrag.duty.room_id : dutyDrag.target!.roomId
+      const kind = dutyDrag.duty.kind === 'session' ? 'session' : roomId === null ? 'general' : 'room'
+      return { ...dutyDrag.duty, ...patch, room_id: roomId, kind } as ActiveDuty
+    })()
+    : null
+
+  function dutyCard(duty: ActiveDuty, lane: number, lanes: number, ghost = false) {
+    return <article
+      key={duty.id}
+      data-duty-id={duty.id}
+      className={`duty-card${dutyConflictIds.has(duty.id) ? ' duty-conflict' : ''}${duty.helper_ids.length === 0 ? ' duty-open' : ''}${ghost ? ' ghost' : ''}`}
+      style={{ top: (toMinutes(duty.start_time) - start) * PX_PER_MINUTE, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * PX_PER_MINUTE,
+        left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
+      role={ghost ? undefined : 'button'}
+      tabIndex={ghost ? undefined : 0}
+      aria-hidden={ghost ? true : undefined}
+      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.helper_ids.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}`}
+      onClick={ghost ? undefined : () => {
+        if (suppressDutyClick.current === duty.id) return
+        onEditDuty?.(duty)
+      }}
+      onKeyDown={ghost ? undefined : event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onEditDuty?.(duty) }
+      }}
+    >
+      <div className="duty-grip" onPointerDown={ghost ? undefined : event => beginDuty(event, duty, 'move')}>
+        <strong>{dutyTitle(duty)}</strong><span>{duty.start_time.slice(0, 5)}–{duty.end_time.slice(0, 5)}</span>
+        <small>{duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small>
+      </div>
+      {!ghost && <div className="duty-resize" onPointerDown={event => beginDuty(event, duty, 'resize')}
+        onClick={event => event.stopPropagation()} aria-label={`${dutyTitle(duty)} verlängern oder verkürzen`} />}
+    </article>
+  }
+
+  function dutyColumn(duties: ActiveDuty[], label: string, column: number, roomId: number | null) {
+    return <div key={label} className={`duty-column${dutyDrag?.mode === 'move' && dutyDrag.target?.roomId === roomId ? ' drop-target' : ''}`}
+      data-duty-column={roomId ?? 'general'} aria-label={label} style={{ gridColumn: column, gridRow: 3, height }}>
       {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
       {duties.length === 0 && <span className="empty-room">Keine Dienste</span>}
-      {layoutDuties(duties).map(({ duty, lane, lanes }) => <button
-        type="button"
-        key={duty.id}
-        data-duty-id={duty.id}
-        className={`duty-card${dutyConflictIds.has(duty.id) ? ' duty-conflict' : ''}${duty.helper_ids.length === 0 ? ' duty-open' : ''}`}
-        style={{ top: (toMinutes(duty.start_time) - start) * PX_PER_MINUTE, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * PX_PER_MINUTE, left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
-        onClick={() => onEditDuty?.(duty)}
-        aria-label={`${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.helper_ids.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}`}
-      ><strong>{dutyTitle(duty)}</strong><span>{duty.start_time.slice(0, 5)}–{duty.end_time.slice(0, 5)}</span><small>{duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small></button>)}
+      {layoutDuties(duties).filter(({ duty }) => duty.id !== dutyDrag?.duty.id || !dutyPreview).map(({ duty, lane, lanes }) => dutyCard(duty, lane, lanes))}
+      {dutyPreview?.room_id === roomId && dutyCard(dutyPreview, 0, 1, true)}
     </div>
   }
 
-  return <div className="schedule-scroll" aria-label="Tagesplan">
+  return <div className="schedule-scroll" aria-label={focus === 'helpers' ? 'Helferplan' : 'Tagesplan'}>
     {schedule.speaker_conflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Rednerkonflikte">
       <h3>Rednerkonflikte</h3>
       <ul>{schedule.speaker_conflicts.map(conflict => {
@@ -190,21 +305,23 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         {pair.helper_ids.map(id => helperById.get(id)).filter(Boolean).join(', ')}: {dutyTitle(dutyById.get(pair.first_duty_id)!)} und {dutyTitle(dutyById.get(pair.second_duty_id)!)}
       </li>)}</ul>
     </section>}
-    <div className="schedule-grid helper-schedule-grid" style={{ gridTemplateColumns: `72px 180px ${schedule.rooms.map(() => 'minmax(240px, 1fr) 180px').join(' ')}` }}>
+    <div className={`schedule-grid helper-schedule-grid${focus === 'helpers' ? ' helper-focus-grid' : ''}`} style={{ gridTemplateColumns: focus === 'helpers'
+      ? `72px ${helperColumnWidth(generalDuties)}px ${roomDuties.map(duties => `${helperColumnWidth(duties)}px 180px`).join(' ')}`
+      : `72px 180px ${schedule.rooms.map(() => 'minmax(240px, 1fr) 180px').join(' ')}` }}>
       <div className="time-head" style={{ gridColumn: 1, gridRow: '1 / span 2' }}>Zeit</div>
       <div className="duty-head general-head" style={{ gridColumn: 2, gridRow: '1 / span 2' }}>Allgemeine Dienste</div>
       {schedule.rooms.map((room, index) => <div className="room-head" key={`head-${room.id}`} style={{ gridColumn: `${3 + index * 2} / span 2`, gridRow: 1 }}>{room.name}</div>)}
-      {schedule.rooms.map((room, index) => <div className="room-subhead" key={`program-${room.id}`} style={{ gridColumn: 3 + index * 2, gridRow: 2 }}>Programm</div>)}
-      {schedule.rooms.map((room, index) => <div className="room-subhead duty-subhead" key={`duty-${room.id}`} style={{ gridColumn: 4 + index * 2, gridRow: 2 }}>Helferdienste</div>)}
+      {schedule.rooms.map((room, index) => <div className="room-subhead" key={`program-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 2 }}>Programm</div>)}
+      {schedule.rooms.map((room, index) => <div className="room-subhead duty-subhead" key={`duty-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 3 : 4) + index * 2, gridRow: 2 }}>Helferdienste</div>)}
       <div className="time-axis" style={{ gridColumn: 1, gridRow: 3, height }}>
         {hours.map(minute => <div className="hour-label" key={minute} style={{ top: Math.max(9, Math.min(height - 9, (minute - start) * PX_PER_MINUTE)) }}>{toTime(minute)}</div>)}
       </div>
-      {dutyColumn(activeDuties.filter(duty => duty.kind === 'general'), 'Allgemeine Dienste', 2)}
+      {dutyColumn(generalDuties, 'Allgemeine Dienste', 2, null)}
       {schedule.rooms.map((room, index) => <div
         className={`room-column${drag?.roomId === room.id || backlogPreview?.roomId === room.id ? ' drop-target' : ''}`}
         data-room-column={room.id}
         key={room.id}
-        style={{ gridColumn: 3 + index * 2, gridRow: 3, height }}
+        style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 3, height }}
       >
         {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
         {room.slots.length === 0 && !drag && <span className="empty-room">Noch keine Slots</span>}
@@ -218,7 +335,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         )}
         {backlogPreview?.roomId === room.id && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * PX_PER_MINUTE, height: 60 * PX_PER_MINUTE }}><strong>{backlogPreview.topic}</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
       </div>)}
-      {schedule.rooms.map((room, index) => dutyColumn(activeDuties.filter(duty => duty.room_id === room.id), `Helferdienste ${room.name}`, 4 + index * 2))}
+      {schedule.rooms.map((room, index) => dutyColumn(roomDuties[index], `Helferdienste ${room.name}`, (focus === 'helpers' ? 3 : 4) + index * 2, room.id))}
     </div>
   </div>
 }

@@ -16,13 +16,13 @@ export function snappedDelta(pixels: number): number {
   return Math.round(pixels / (SNAP_MINUTES * PX_PER_MINUTE)) * SNAP_MINUTES
 }
 
-export function movePatch(slot: Slot, delta: number, roomId: number, dayStart: number, dayEnd: number) {
+export function movePatch(slot: Pick<Slot, 'start_time' | 'end_time'>, delta: number, roomId: number, dayStart: number, dayEnd: number) {
   const duration = toMinutes(slot.end_time) - toMinutes(slot.start_time)
   const start = Math.max(dayStart, Math.min(dayEnd - duration, toMinutes(slot.start_time) + delta))
   return { room_id: roomId, start_time: toTime(start), end_time: toTime(start + duration) }
 }
 
-export function resizePatch(slot: Slot, delta: number, dayEnd: number) {
+export function resizePatch(slot: Pick<Slot, 'start_time' | 'end_time'>, delta: number, dayEnd: number) {
   const minimum = Math.min(SNAP_MINUTES, toMinutes(slot.end_time) - toMinutes(slot.start_time))
   const end = Math.max(toMinutes(slot.start_time) + minimum, Math.min(dayEnd, toMinutes(slot.end_time) + delta))
   return { end_time: toTime(end) }

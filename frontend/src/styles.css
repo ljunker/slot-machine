@@ -90,11 +90,21 @@ button:disabled { cursor: default; opacity: .35; }
 .time-axis { position: relative; background: var(--surface-soft); }
 .hour-label { position: absolute; right: 11px; transform: translateY(-8px); font-size: 11px; font-weight: 700; color: var(--muted); }
 .room-column { position: relative; border-left: 1px solid var(--border-soft); min-width: 240px; background: var(--surface); }
+.helper-focus-grid .room-column { min-width: 180px; }
 .room-column.drop-target { background: var(--drop); }
 .duty-column { position: relative; min-width: 180px; border-left: 1px solid var(--border-soft); background: var(--surface-soft); }
-.duty-card { position: absolute; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; overflow: hidden; min-height: 22px; padding: 5px 6px; border: 1px solid var(--card-border); border-left: 4px solid var(--card-accent); border-radius: 6px; background: var(--card); color: var(--text-strong); text-align: left; box-shadow: 0 2px 6px var(--shadow); }
+.duty-column.drop-target { background: var(--drop); }
+.duty-card { position: absolute; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; overflow: hidden; min-height: 22px; padding: 5px 6px 11px; border: 1px solid var(--card-border); border-left: 4px solid var(--card-accent); border-radius: 6px; background: var(--card); color: var(--text-strong); text-align: left; box-shadow: 0 2px 6px var(--shadow); }
+.duty-card.ghost { opacity: .7; pointer-events: none; z-index: 4; }
+.duty-grip { display: grid; justify-items: start; gap: 2px; width: 100%; cursor: grab; touch-action: none; user-select: none; }
+.duty-grip:active { cursor: grabbing; }
+.duty-resize { position: absolute; bottom: 0; left: 0; right: 0; height: 8px; cursor: ns-resize; touch-action: none; }
+.duty-resize::after { content: ''; display: block; width: 22px; height: 2px; border-radius: 2px; background: var(--handle); margin: 3px auto; }
 .duty-card strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
 .duty-card span, .duty-card small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--subtext); font-size: 10px; }
+.helper-focus-grid .duty-card { padding: 7px 9px; }
+.helper-focus-grid .duty-card strong { white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
+.helper-focus-grid .duty-card span, .helper-focus-grid .duty-card small { white-space: normal; overflow-wrap: anywhere; font-size: 11px; }
 .duty-card.duty-open { background: var(--warning-bg); border-color: var(--warning-border); }
 .duty-card.duty-conflict { box-shadow: inset 0 0 0 2px var(--warning-border), 0 2px 6px var(--shadow); }
 .hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border-soft); pointer-events: none; }
@@ -113,6 +123,8 @@ button:disabled { cursor: default; opacity: .35; }
 .slot-grip:active { cursor: grabbing; }
 .slot-grip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .slot-grip span { color: var(--subtext); white-space: nowrap; }
+.helper-focus-grid .slot-grip { display: grid; gap: 2px; justify-content: stretch; }
+.helper-focus-grid .slot-grip strong { white-space: normal; overflow-wrap: anywhere; }
 .slot-card small { color: var(--subtext); display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .slot-edit { border: 0; background: transparent; color: var(--link); padding: 3px 0; font-size: 10px; font-weight: 700; }
 .slot-resize { position: absolute; bottom: 0; left: 0; right: 0; height: 8px; cursor: ns-resize; touch-action: none; }
@@ -256,5 +268,5 @@ button:disabled { cursor: default; opacity: .35; }
 .cancel-checkbox { display: flex !important; align-items: center; gap: 8px !important; }
 .cancel-checkbox input { width: auto; }
 .previous-planning { color: var(--subtext); font-size: 12px; }
-button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, .slot-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, .slot-card:focus-visible, .duty-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 @media (max-width: 600px) { .app-header { align-items: flex-start; } .header-actions { flex-direction: column; align-items: flex-end; gap: 8px; } .public-header-content { flex-wrap: wrap; } .public-title { gap: 10px; } .public-logo { width: 72px; height: 54px; } .public-logo img { max-width: 56px; max-height: 38px; } }
