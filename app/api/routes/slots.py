@@ -44,6 +44,18 @@ def update_slot(
 
 
 @router.delete(
+    "/{slot_id}/rescheduled-notice",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def clear_rescheduled_notice(
+    slot_id: int,
+    db: Session = Depends(get_db),
+):
+    SlotService(db).clear_rescheduled_notice(slot_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
     "/{slot_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )

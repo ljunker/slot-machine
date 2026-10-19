@@ -88,7 +88,7 @@ def test_open_and_multiple_helpers_and_validation(client):
     assert client.get(f"/api/schedule/days/{day['id']}").json().get("duties") is None
 
 
-def test_conflicts_are_per_helper_and_covered_duties_are_allowed(client):
+def test_general_duties_conflict_but_room_duties_cover_sessions(client):
     event, day, room_a = setup_event(client)
     room_b = client.post(
         "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
@@ -131,9 +131,11 @@ def test_conflicts_are_per_helper_and_covered_duties_are_allowed(client):
         slot_id=slot["id"],
         helper_ids=[ada["id"], ben["id"]],
     )
-    assert (
-        client.get(f"/api/events/{event['id']}/helper-plan").json()["conflicts"] == []
-    )
+    conflicts = client.get(f"/api/events/{event['id']}/helper-plan").json()["conflicts"]
+    assert {(pair["first_duty_id"], pair["second_duty_id"]) for pair in conflicts} == {
+        (general["id"], room["id"]),
+        (general["id"], session["id"]),
+    }
     other = duty(
         client,
         event["id"],
@@ -145,11 +147,70 @@ def test_conflicts_are_per_helper_and_covered_duties_are_allowed(client):
     )
     conflicts = client.get(f"/api/events/{event['id']}/helper-plan").json()["conflicts"]
     assert {(pair["first_duty_id"], pair["second_duty_id"]) for pair in conflicts} == {
+        (general["id"], room["id"]),
+        (general["id"], session["id"]),
+        (general["id"], other["id"]),
         (room["id"], other["id"]),
         (session["id"], other["id"]),
     }
     assert all(pair["helper_ids"] == [ada["id"]] for pair in conflicts)
-    assert general["id"] not in {pair["first_duty_id"] for pair in conflicts}
+
+
+def test_two_helpers_have_separate_conflicts_with_general_duty(client):
+    event, day, room_a = setup_event(client)
+    room_b = client.post(
+        "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
+    ).json()
+    helper_2 = helper(client, event["id"], "Helfer 2")
+    helper_4 = helper(client, event["id"], "Helfer 4")
+    general = duty(
+        client,
+        event["id"],
+        kind="general",
+        title="Getränke",
+        day_id=day["id"],
+        start_time="15:00",
+        end_time="17:00",
+        helper_ids=[helper_2["id"], helper_4["id"]],
+    )
+    room_duties = [
+        duty(
+            client,
+            event["id"],
+            kind="room",
+            title="Caller-Betreuung",
+            day_id=day["id"],
+            room_id=room["id"],
+            start_time="16:00",
+            end_time="17:00",
+            helper_ids=[person["id"]],
+        )
+        for room, person in ((room_a, helper_2), (room_b, helper_4))
+    ]
+    duty(
+        client,
+        event["id"],
+        kind="room",
+        day_id=day["id"],
+        room_id=room_a["id"],
+        start_time="17:00",
+        end_time="18:00",
+        helper_ids=[helper_2["id"]],
+    )
+
+    conflicts = client.get(f"/api/events/{event['id']}/helper-plan").json()["conflicts"]
+    assert conflicts == [
+        {
+            "first_duty_id": general["id"],
+            "second_duty_id": room_duties[0]["id"],
+            "helper_ids": [helper_2["id"]],
+        },
+        {
+            "first_duty_id": general["id"],
+            "second_duty_id": room_duties[1]["id"],
+            "helper_ids": [helper_4["id"]],
+        },
+    ]
 
 
 def test_session_duty_follows_slot_and_survives_inactive_states(client):

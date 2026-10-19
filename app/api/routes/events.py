@@ -47,6 +47,12 @@ def get_public_session(event_id: int, slot_id: int, db: Session = Depends(get_db
     return SlotService(db).get_public_session(event_id, slot_id)
 
 
+@router.delete("/{event_id}/rescheduled-notices", status_code=status.HTTP_204_NO_CONTENT)
+def clear_event_rescheduled_notices(event_id: int, db: Session = Depends(get_db)):
+    SlotService(db).clear_event_rescheduled_notices(event_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{event_id}/program.pdf")
 def get_program_pdf(event_id: int, db: Session = Depends(get_db)):
     data = build_program_pdf(db, event_id)

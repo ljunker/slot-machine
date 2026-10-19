@@ -39,10 +39,41 @@ it.each(['program', 'helpers'] as const)('shows duty columns, open duties, lanes
   expect(container.querySelector('[data-duty-id="1"]')?.textContent).toContain('Offen')
   expect(container.querySelector('[data-duty-id="2"]')?.textContent).toContain('Ada, Ben')
   expect((container.querySelector('[data-duty-id="3"]') as HTMLElement).style.left).toBe('50%')
-  expect(container.querySelectorAll('.duty-card.duty-conflict')).toHaveLength(2)
+  expect(container.querySelectorAll('.duty-card.duty-conflict')).toHaveLength(0)
+  expect(container.querySelectorAll('.helper-conflict-name')).toHaveLength(2)
+  expect(container.querySelector('[data-duty-id="2"] .helper-conflict-name')?.textContent).toBe('Ada')
+  expect(container.querySelector('[data-duty-id="2"]')?.getAttribute('aria-label')).toContain('Helferkonflikt: Ada')
+  expect(container.querySelector('[data-duty-id="2"] .duty-grip small')?.textContent).toBe('Ada, Ben')
   expect(screen.getByRole('region', { name: 'Helferkonflikte' }).textContent).toContain('Ada: Einlass und Technik')
   fireEvent.click(container.querySelector('[data-duty-id="2"]')!)
   expect(onEditDuty).toHaveBeenCalledWith(roomDuty)
+})
+
+it('marks Helfer 2 and Helfer 4 separately when a general duty overlaps room duties', () => {
+  const helper2 = { id: 2, event_id: 1, name: 'Helfer 2' }
+  const helper4 = { id: 4, event_id: 1, name: 'Helfer 4' }
+  const helper5 = { id: 5, event_id: 1, name: 'Helfer 5' }
+  const general: Duty = { ...base, title: 'Getränke', start_time: '15:00:00', end_time: '17:00:00',
+    helper_ids: [2, 4, 5], helpers: [helper2, helper4, helper5] }
+  const room1: Duty = { ...base, id: 2, kind: 'room', title: 'Caller-Betreuung', room_id: 1,
+    start_time: '16:00:00', end_time: '17:00:00', helper_ids: [2], helpers: [helper2] }
+  const room2: Duty = { ...room1, id: 3, room_id: 2, helper_ids: [4], helpers: [helper4] }
+  const plan: HelperPlan = { duties: [general, room1, room2], conflicts: [
+    { first_duty_id: 1, second_duty_id: 2, helper_ids: [2] },
+    { first_duty_id: 1, second_duty_id: 3, helper_ids: [4] },
+  ] }
+
+  const { container } = render(<Schedule schedule={schedule} helperPlan={plan} focus="helpers" onEdit={() => {}} onChange={async () => {}} />)
+  expect([...container.querySelectorAll('[data-duty-id="1"] .helper-conflict-name')].map(element => element.textContent)).toEqual(['Helfer 2', 'Helfer 4'])
+  expect(container.querySelector('[data-duty-id="2"] .helper-conflict-name')?.textContent).toBe('Helfer 2')
+  expect(container.querySelector('[data-duty-id="3"] .helper-conflict-name')?.textContent).toBe('Helfer 4')
+  expect(container.querySelector('[data-duty-id="1"] .duty-grip small')?.textContent).toBe('Helfer 2, Helfer 4, Helfer 5')
+  expect(container.querySelectorAll('.duty-card.duty-conflict')).toHaveLength(0)
+  const warnings = screen.getByRole('region', { name: 'Helferkonflikte' }).querySelectorAll('li')
+  expect([...warnings].map(warning => warning.textContent)).toEqual([
+    'Helfer 2: Getränke und Caller-Betreuung',
+    'Helfer 4: Getränke und Caller-Betreuung',
+  ])
 })
 
 it('expands helper columns for parallel duties and keeps inactive duties off the timeline', () => {

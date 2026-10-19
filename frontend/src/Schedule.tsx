@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
@@ -72,7 +72,14 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const roomDuties = schedule.rooms.map(room => activeDuties.filter(duty => duty.room_id === room.id))
   const activeDutyIds = new Set(activeDuties.map(duty => duty.id))
   const dutyConflicts = helperPlan.conflicts.filter(pair => activeDutyIds.has(pair.first_duty_id) && activeDutyIds.has(pair.second_duty_id))
-  const dutyConflictIds = new Set(dutyConflicts.flatMap(pair => [pair.first_duty_id, pair.second_duty_id]))
+  const dutyConflictHelperIds = new Map<number, Set<number>>()
+  for (const pair of dutyConflicts) {
+    for (const dutyId of [pair.first_duty_id, pair.second_duty_id]) {
+      const helperIds = dutyConflictHelperIds.get(dutyId) ?? new Set<number>()
+      pair.helper_ids.forEach(id => helperIds.add(id))
+      dutyConflictHelperIds.set(dutyId, helperIds)
+    }
+  }
   const dutyById = new Map(activeDuties.map(duty => [duty.id, duty]))
   const helperById = new Map(helperPlan.duties.flatMap(duty => duty.helpers).map(helper => [helper.id, helper.name]))
   const slots = schedule.rooms.flatMap(room => room.slots)
@@ -253,16 +260,18 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     : null
 
   function dutyCard(duty: ActiveDuty, lane: number, lanes: number, ghost = false) {
+    const conflictingHelperIds = ghost ? undefined : dutyConflictHelperIds.get(duty.id)
+    const conflictingHelpers = duty.helpers.filter(helper => conflictingHelperIds?.has(helper.id))
     return <article
       key={duty.id}
       data-duty-id={duty.id}
-      className={`duty-card${dutyConflictIds.has(duty.id) ? ' duty-conflict' : ''}${duty.helper_ids.length === 0 ? ' duty-open' : ''}${ghost ? ' ghost' : ''}`}
+      className={`duty-card${duty.helper_ids.length === 0 ? ' duty-open' : ''}${ghost ? ' ghost' : ''}`}
       style={{ top: (toMinutes(duty.start_time) - start) * PX_PER_MINUTE, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * PX_PER_MINUTE,
         left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
       role={ghost ? undefined : 'button'}
       tabIndex={ghost ? undefined : 0}
       aria-hidden={ghost ? true : undefined}
-      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.helper_ids.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}`}
+      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.helper_ids.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}${conflictingHelpers.length ? `, Helferkonflikt: ${conflictingHelpers.map(helper => helper.name).join(', ')}` : ''}`}
       onClick={ghost ? undefined : () => {
         if (suppressDutyClick.current === duty.id) return
         onEditDuty?.(duty)
@@ -273,7 +282,11 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     >
       <div className="duty-grip" onPointerDown={ghost ? undefined : event => beginDuty(event, duty, 'move')}>
         <strong>{dutyTitle(duty)}</strong><span>{duty.start_time.slice(0, 5)}–{duty.end_time.slice(0, 5)}</span>
-        <small>{duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small>
+        <small>{duty.helpers.length ? duty.helpers.map((helper, index) => <Fragment key={helper.id}>
+          {index > 0 && ', '}
+          <span className={conflictingHelperIds?.has(helper.id) ? 'helper-conflict-name' : undefined}
+            title={conflictingHelperIds?.has(helper.id) ? 'Helferkonflikt' : undefined}>{helper.name}</span>
+        </Fragment>) : 'Offen'}</small>
       </div>
       {!ghost && <div className="duty-resize" onPointerDown={event => beginDuty(event, duty, 'resize')}
         onClick={event => event.stopPropagation()} aria-label={`${dutyTitle(duty)} verlängern oder verkürzen`} />}
@@ -301,9 +314,9 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       })}</ul>
     </section>}
     {dutyConflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Helferkonflikte">
-      <h3>Helferkonflikte</h3><ul>{dutyConflicts.map(pair => <li key={`${pair.first_duty_id}-${pair.second_duty_id}`}>
-        {pair.helper_ids.map(id => helperById.get(id)).filter(Boolean).join(', ')}: {dutyTitle(dutyById.get(pair.first_duty_id)!)} und {dutyTitle(dutyById.get(pair.second_duty_id)!)}
-      </li>)}</ul>
+      <h3>Helferkonflikte</h3><ul>{dutyConflicts.flatMap(pair => pair.helper_ids.map(id => <li key={`${pair.first_duty_id}-${pair.second_duty_id}-${id}`}>
+        {helperById.get(id) ?? `Helfer ${id}`}: {dutyTitle(dutyById.get(pair.first_duty_id)!)} und {dutyTitle(dutyById.get(pair.second_duty_id)!)}
+      </li>))}</ul>
     </section>}
     <div className={`schedule-grid helper-schedule-grid${focus === 'helpers' ? ' helper-focus-grid' : ''}`} style={{ gridTemplateColumns: focus === 'helpers'
       ? `72px ${helperColumnWidth(generalDuties)}px ${roomDuties.map(duties => `${helperColumnWidth(duties)}px 180px`).join(' ')}`

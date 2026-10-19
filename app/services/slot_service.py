@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from time import time as epoch_time
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.models.duty import Duty
@@ -181,6 +181,29 @@ class SlotService:
         self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
         self.db.execute(delete(Duty).where(Duty.slot_id == slot_id))
         self.repository.delete(slot)
+        self.db.commit()
+
+    def clear_rescheduled_notice(self, slot_id: int) -> None:
+        slot = self.get(slot_id)
+        slot.schedule_changed_at = None
+        slot.previous_room_name = None
+        slot.previous_start_time = None
+        slot.previous_end_time = None
+        self.db.commit()
+
+    def clear_event_rescheduled_notices(self, event_id: int) -> None:
+        if self.events.get_by_id(event_id) is None:
+            raise NotFound("Veranstaltung nicht gefunden")
+        self.db.execute(
+            update(Slot)
+            .where(Slot.event_id == event_id, Slot.schedule_changed_at.is_not(None))
+            .values(
+                schedule_changed_at=None,
+                previous_room_name=None,
+                previous_start_time=None,
+                previous_end_time=None,
+            )
+        )
         self.db.commit()
 
     def get_unplanned_for_event(self, event_id: int) -> list[Slot]:

@@ -281,7 +281,9 @@ class HelperService:
                     or second.start_time >= first.end_time
                 ):
                     continue
-                if self._covers(first, second) or self._covers(second, first):
+                if self._room_covers_session(first, second) or self._room_covers_session(
+                    second, first
+                ):
                     continue
                 conflicts.append(
                     DutyConflict(
@@ -293,16 +295,10 @@ class HelperService:
         return HelperPlan(duties=responses, conflicts=conflicts)
 
     @staticmethod
-    def _covers(broad: DutyResponse, narrow: DutyResponse) -> bool:
+    def _room_covers_session(broad: DutyResponse, narrow: DutyResponse) -> bool:
         if broad.start_time > narrow.start_time or broad.end_time < narrow.end_time:
             return False
         return (
-            broad.kind == "general"
-            and narrow.kind != "general"
-            and (
-                broad.start_time < narrow.start_time or broad.end_time > narrow.end_time
-            )
-        ) or (
             broad.kind == "room"
             and narrow.kind == "session"
             and broad.room_id == narrow.room_id

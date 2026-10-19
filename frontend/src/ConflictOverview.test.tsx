@@ -43,11 +43,44 @@ it('sorts all conflict types across days and opens the selected entry', () => {
   render(<ConflictOverview schedules={schedules} helperPlan={helperPlan} onOpenSlot={onOpenSlot} onOpenDuty={onOpenDuty} />)
   expect(screen.getByText('3 Konflikte in dieser Veranstaltung')).toBeTruthy()
   expect(screen.getByText('Betroffen: Ada')).toBeTruthy()
-  expect(screen.getByText('Betroffen: Ben')).toBeTruthy()
+  expect(screen.getByText('Helferkonflikt: Ben')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Vierter am 2099-06-02 bearbeiten' }))
   fireEvent.click(screen.getByRole('button', { name: 'Einlass am 2099-06-02 bearbeiten' }))
   expect(onOpenSlot).toHaveBeenCalledWith(12, 4)
   expect(onOpenDuty).toHaveBeenCalledWith(12, 22)
+})
+
+it('lists one conflict per helper with time and both duties', () => {
+  const helper2 = { id: 2, event_id: 1, name: 'Helfer 2' }
+  const helper4 = { id: 4, event_id: 1, name: 'Helfer 4' }
+  const general: Duty = { ...duty(31, 'Getränke'), kind: 'general', room_id: null,
+    start_time: '15:00:00', end_time: '17:00:00', helper_ids: [2, 4], helpers: [helper2, helper4] }
+  const room1: Duty = { ...duty(32, 'Caller-Betreuung'), start_time: '16:00:00', end_time: '17:00:00',
+    helper_ids: [2], helpers: [helper2] }
+  const room2: Duty = { ...room1, id: 33, room_id: 3, helper_ids: [4], helpers: [helper4] }
+  const plan: HelperPlan = { duties: [general, room1, room2], conflicts: [
+    { first_duty_id: 31, second_duty_id: 32, helper_ids: [2] },
+    { first_duty_id: 31, second_duty_id: 33, helper_ids: [4] },
+  ] }
+
+  const { container } = render(<ConflictOverview schedules={[{ ...schedules[1], speaker_conflicts: [] }]} helperPlan={plan} onOpenSlot={() => {}} onOpenDuty={() => {}} />)
+  expect(screen.getByText('2 Konflikte in dieser Veranstaltung')).toBeTruthy()
+  const entries = [...container.querySelectorAll('.conflict-item')]
+  expect(entries.map(entry => entry.querySelector('strong')?.textContent)).toEqual(['Helferkonflikt: Helfer 2', 'Helferkonflikt: Helfer 4'])
+  for (const entry of entries) {
+    expect(entry.textContent).toContain('16:00–17:00')
+    expect(entry.textContent).toContain('Getränke')
+    expect(entry.textContent).toContain('Caller-Betreuung')
+  }
+})
+
+it('splits a shared duty pair into one entry per helper', () => {
+  const helpers = [{ id: 2, event_id: 1, name: 'Helfer 2' }, { id: 4, event_id: 1, name: 'Helfer 4' }]
+  const first: Duty = { ...duty(41, 'Getränke'), kind: 'general', room_id: null, helper_ids: [2, 4], helpers }
+  const second: Duty = { ...duty(42, 'Einlass'), helper_ids: [2, 4], helpers }
+  const plan: HelperPlan = { duties: [first, second], conflicts: [{ first_duty_id: 41, second_duty_id: 42, helper_ids: [2, 4] }] }
+  const entries = collectConflicts([{ ...schedules[1], speaker_conflicts: [] }], plan)
+  expect(entries.map(entry => entry.people)).toEqual([['Helfer 2'], ['Helfer 4']])
 })
 
 it('ignores cancelled or inactive pairs and shows empty state', () => {

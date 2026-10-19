@@ -63,12 +63,12 @@ export function collectConflicts(schedules: DaySchedule[], helperPlan: HelperPla
     const day = dayById.get(first.day_id)
     if (!day) continue
     const roomNames = new Map(day.rooms.map(room => [room.id, room.name]))
-    entries.push({
-      key: `helper-${day.day_id}-${first.id}-${second.id}`,
+    for (const helperId of pair.helper_ids) entries.push({
+      key: `helper-${day.day_id}-${first.id}-${second.id}-${helperId}`,
       kind: 'helper', date: day.date, dayId: day.day_id,
       startTime: first.start_time > second.start_time ? first.start_time : second.start_time,
       endTime: first.end_time < second.end_time ? first.end_time : second.end_time,
-      people: pair.helper_ids.map(id => helperNames.get(id)).filter((name): name is string => Boolean(name)),
+      people: [helperNames.get(helperId) ?? `Helfer ${helperId}`],
       first: { id: first.id, label: dutyTitle(first), detail: dutyDetail(first, roomNames) },
       second: { id: second.id, label: dutyTitle(second), detail: dutyDetail(second, roomNames) },
     })
@@ -90,10 +90,10 @@ export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, on
     <p className="conflict-count">{entries.length} {entries.length === 1 ? 'Konflikt' : 'Konflikte'} in dieser Veranstaltung</p>
     <ol className="conflict-list">{entries.map(entry => <li key={entry.key} className={`conflict-item conflict-${entry.kind}`}>
       <div className="conflict-heading">
-        <strong>{entry.kind === 'room' ? 'Raumkonflikt' : entry.kind === 'speaker' ? 'Rednerkonflikt' : 'Helferkonflikt'}</strong>
+        <strong>{entry.kind === 'room' ? 'Raumkonflikt' : entry.kind === 'speaker' ? 'Rednerkonflikt' : `Helferkonflikt: ${entry.people[0]}`}</strong>
         <span>{entry.date} · {entry.startTime.slice(0, 5)}–{entry.endTime.slice(0, 5)}</span>
       </div>
-      {entry.people.length > 0 && <p>Betroffen: {entry.people.join(', ')}</p>}
+      {entry.kind !== 'helper' && entry.people.length > 0 && <p>Betroffen: {entry.people.join(', ')}</p>}
       <div className="conflict-participants">{[entry.first, entry.second].map(participant => <button
         key={participant.id}
         type="button"

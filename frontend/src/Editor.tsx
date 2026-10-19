@@ -6,7 +6,7 @@ import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './cha
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
-export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, createUnplanned = false, onSave, onDeleteLogo, onDelete, onClose }: {
+export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, createUnplanned = false, onSave, onDeleteLogo, onClearRescheduledNotice, onDelete, onClose }: {
   kind: EditorKind
   event?: Event
   day?: EventDay
@@ -18,6 +18,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   createUnplanned?: boolean
   onSave: (body: Record<string, unknown>, logo?: File | null) => Promise<boolean>
   onDeleteLogo?: (() => Promise<void>) | null
+  onClearRescheduledNotice?: (() => Promise<void>) | null
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
 }) {
@@ -40,6 +41,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   const [dayId, setDayId] = useState(slot?.day_id ?? day?.id ?? days[0]?.id ?? 0)
   const [planned, setPlanned] = useState(slot ? slot.day_id !== null : !createUnplanned)
   const [slotCancelled, setSlotCancelled] = useState(slot?.is_cancelled ?? false)
+  const [clearingNotice, setClearingNotice] = useState(false)
   const now = useNoticeNow(slot ? [slot] : [])
   const notice = slot ? activeNotice(slot, now) : null
   const existing = kind === 'event' ? !!event : kind === 'day' ? !!day : kind === 'room' ? !!room : !!slot
@@ -78,10 +80,20 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     if (await onDelete()) onClose()
   }
 
+  async function clearRescheduledNotice() {
+    if (!onClearRescheduledNotice) return
+    setClearingNotice(true)
+    try {
+      await onClearRescheduledNotice()
+    } finally {
+      setClearingNotice(false)
+    }
+  }
+
   return <aside className="editor" aria-label={`${title} ${existing ? 'bearbeiten' : 'anlegen'}`}>
     <div className="editor-heading"><h2>{title} {existing ? 'bearbeiten' : 'anlegen'}</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
     <form onSubmit={submit}>
-      {kind === 'slot' && notice && <p className={`editor-notice notice-${notice.type}`}><strong>{noticeLabel(notice)}</strong>{previousPlanning(notice) && <span>Vorher: {previousPlanning(notice)}</span>}</p>}
+      {kind === 'slot' && notice && <p className={`editor-notice notice-${notice.type}`}><strong>{noticeLabel(notice)}</strong>{previousPlanning(notice) && <span>Vorher: {previousPlanning(notice)}</span>}{notice.type === 'rescheduled' && onClearRescheduledNotice && <button type="button" className="text-button" disabled={clearingNotice} onClick={() => void clearRescheduledNotice()}>Verschoben entfernen</button>}</p>}
       {(kind === 'event' || kind === 'room') && <label>Name<input required maxLength={255} value={name} onChange={e => setName(e.target.value)} /></label>}
       {kind === 'event' && <>
         <label>Startdatum<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>

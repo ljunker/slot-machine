@@ -37,6 +37,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [showRestore, setShowRestore] = useState(false)
+  const [clearingRescheduledNotices, setClearingRescheduledNotices] = useState(false)
   const loadNumber = useRef(0)
 
   async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
@@ -183,6 +184,24 @@ export default function App() {
     } catch (cause) { setError((cause as Error).message) }
   }
 
+  async function clearSlotRescheduledNotice() {
+    if (panel?.kind !== 'slot' || panel.id === null) return
+    try {
+      await write<void>('DELETE', `/slots/${panel.id}/rescheduled-notice`)
+      await loadAll(eventId, dayId)
+    } catch (cause) { setError((cause as Error).message) }
+  }
+
+  async function clearEventRescheduledNotices() {
+    if (eventId === null || !window.confirm('Alle Verschoben-Flags dieser Veranstaltung entfernen?')) return
+    setClearingRescheduledNotices(true)
+    try {
+      await write<void>('DELETE', `/events/${eventId}/rescheduled-notices`)
+      await loadAll(eventId, dayId)
+    } catch (cause) { setError((cause as Error).message) }
+    finally { setClearingRescheduledNotices(false) }
+  }
+
   async function saveHelper(name: string): Promise<boolean> {
     if (panel?.kind !== 'helper' || eventId === null) return false
     try {
@@ -293,6 +312,7 @@ export default function App() {
           </select>
           {selectedEvent && <p className="muted">{selectedEvent.start_date} bis {selectedEvent.end_date}</p>}
           {selectedEvent && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
+          {selectedEvent && <button type="button" className="text-button clear-rescheduled-button" disabled={clearingRescheduledNotices} onClick={() => void clearEventRescheduledNotices()}>Alle Verschoben Flags entfernen</button>}
         </section>
         {selectedEvent && <section>
           <div className="section-heading"><h2>Tage</h2><button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button></div>
@@ -407,6 +427,7 @@ export default function App() {
         createUnplanned={panel.createUnplanned}
         onSave={save}
         onDeleteLogo={panel.kind === 'event' && panel.id !== null ? deleteEventLogo : null}
+        onClearRescheduledNotice={panel.kind === 'slot' && panel.id !== null ? clearSlotRescheduledNotice : null}
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
