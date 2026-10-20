@@ -1,6 +1,6 @@
 from datetime import time
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, Time
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -30,6 +30,7 @@ class Duty(Base):
     slot_id: Mapped[int | None] = mapped_column(ForeignKey("slots.id"))
     start_time: Mapped[time | None] = mapped_column(Time)
     end_time: Mapped[time | None] = mapped_column(Time)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     helpers = relationship(
         "Helper", secondary=duty_helpers, back_populates="duties", order_by="Helper.id"
     )

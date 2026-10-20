@@ -9,9 +9,10 @@ type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: numbe
 type ActiveDuty = Duty & { day_id: number; start_time: string; end_time: string }
 export type DutyPatch = { kind?: 'general' | 'room'; room_id?: number | null; start_time?: string; end_time?: string }
 type DutyTarget = { roomId: number | null }
-type DutyDrag = { duty: ActiveDuty; mode: 'move' | 'resize'; originX: number; originY: number; delta: number; target: DutyTarget | null; moved: boolean }
+type DutyDrag = { duty: ActiveDuty; mode: 'move' | 'resize'; originX: number; originY: number; delta: number;
+  target: DutyTarget | null; moved: boolean; reordering: boolean; reorderIds: number[] | null }
 
-function layoutDuties(duties: ActiveDuty[]) {
+function dutyGroups(duties: ActiveDuty[]) {
   const sorted = [...duties].sort((a, b) => toMinutes(a.start_time) - toMinutes(b.start_time) || a.id - b.id)
   const groups: ActiveDuty[][] = []
   let groupEnd = -1
@@ -23,17 +24,43 @@ function layoutDuties(duties: ActiveDuty[]) {
     groups[groups.length - 1].push(duty)
     groupEnd = Math.max(groupEnd, toMinutes(duty.end_time))
   }
+  return groups
+}
+
+function layoutDuties(duties: ActiveDuty[]) {
+  const groups = dutyGroups(duties)
   return groups.flatMap(group => {
-    const laneEnds: number[] = []
-    const entries = group.map(duty => {
-      const start = toMinutes(duty.start_time)
-      let lane = laneEnds.findIndex(end => end <= start)
-      if (lane === -1) lane = laneEnds.length
-      laneEnds[lane] = toMinutes(duty.end_time)
+    const lanes: ActiveDuty[][] = []
+    const entries = [...group].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id).map(duty => {
+      const overlaps = (other: ActiveDuty) => toMinutes(duty.start_time) < toMinutes(other.end_time)
+        && toMinutes(other.start_time) < toMinutes(duty.end_time)
+      let lane = lanes.findIndex(items => items.every(item => !overlaps(item)))
+      if (lane === -1) lane = lanes.length
+      if (!lanes[lane]) lanes[lane] = []
+      lanes[lane].push(duty)
       return { duty, lane }
     })
-    return entries.map(entry => ({ ...entry, lanes: laneEnds.length }))
+    return entries.map(entry => ({ ...entry, lanes: lanes.length }))
   })
+}
+
+function reorderedDutyIds(duties: ActiveDuty[], source: ActiveDuty, pointerX: number, rect: DOMRect) {
+  const group = dutyGroups(duties).find(items => items.some(item => item.id === source.id))
+  if (!group || group.length < 2) return null
+  const layout = layoutDuties(group)
+  const sourceLayout = layout.find(item => item.duty.id === source.id)!
+  const lane = Math.max(0, Math.min(sourceLayout.lanes - 1,
+    Math.floor((pointerX - rect.left) / rect.width * sourceLayout.lanes)))
+  const target = layout.filter(item => item.lane === lane).find(item =>
+    toMinutes(item.duty.start_time) < toMinutes(source.end_time)
+    && toMinutes(source.start_time) < toMinutes(item.duty.end_time)) ?? layout.find(item => item.lane === lane)
+  if (!target || target.duty.id === source.id) return null
+  const ordered = [...duties].sort((a, b) => a.sort_order - b.sort_order || a.id - b.id).map(duty => duty.id)
+  const sourceIndex = ordered.indexOf(source.id)
+  const targetIndex = ordered.indexOf(target.duty.id)
+  ordered.splice(sourceIndex, 1)
+  ordered.splice(ordered.indexOf(target.duty.id) + (sourceIndex < targetIndex ? 1 : 0), 0, source.id)
+  return ordered
 }
 
 function helperColumnWidth(duties: ActiveDuty[]) {
@@ -46,7 +73,7 @@ function dutyTitle(duty: Duty): string {
   return duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
 }
 
-export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, onEdit, onEditDuty, onChange, onChangeDuty }: {
+export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties }: {
   schedule: DaySchedule
   helperPlan?: HelperPlan
   focus?: 'program' | 'helpers'
@@ -55,6 +82,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   onEditDuty?: (duty: Duty) => void
   onChange: (slotId: number, patch: SlotPatch) => Promise<void>
   onChangeDuty?: (duty: Duty, patch: DutyPatch) => Promise<void>
+  onReorderDuties?: (dayId: number, roomId: number | null, dutyIds: number[]) => Promise<void>
 }) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
@@ -70,6 +98,9 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     duty.status === 'active' && duty.day_id === schedule.day_id && duty.start_time !== null && duty.end_time !== null)
   const generalDuties = activeDuties.filter(duty => duty.kind === 'general')
   const roomDuties = schedule.rooms.map(room => activeDuties.filter(duty => duty.room_id === room.id))
+  function columnDuties(roomId: number | null) {
+    return roomId === null ? generalDuties : roomDuties[schedule.rooms.findIndex(room => room.id === roomId)] ?? []
+  }
   const activeDutyIds = new Set(activeDuties.map(duty => duty.id))
   const dutyConflicts = helperPlan.conflicts.filter(pair => activeDutyIds.has(pair.first_duty_id) && activeDutyIds.has(pair.second_duty_id))
   const dutyConflictHelperIds = new Map<number, Set<number>>()
@@ -155,24 +186,35 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     if (event.button !== 0 || !onChangeDuty) return
     event.preventDefault()
     const initial: DutyDrag = { duty, mode, originX: event.clientX, originY: event.clientY, delta: 0,
-      target: { roomId: duty.room_id }, moved: false }
+      target: { roomId: duty.room_id }, moved: false, reordering: false, reorderIds: null }
     dutyDragRef.current = initial
 
     function move(pointer: globalThis.PointerEvent) {
       const current = dutyDragRef.current
       if (!current) return
       let target = current.target
+      let targetRect: DOMRect | null = null
       if (current.mode === 'move') {
         target = null
         for (const column of document.querySelectorAll<HTMLElement>('[data-duty-column]')) {
           const rect = column.getBoundingClientRect()
           if (pointer.clientX < rect.left || pointer.clientX > rect.right) continue
           const roomId = column.dataset.dutyColumn === 'general' ? null : Number(column.dataset.dutyColumn)
-          if (current.duty.kind !== 'session' || roomId !== null) target = { roomId }
+          if (current.duty.kind !== 'session' || roomId !== null) {
+            target = { roomId }
+            targetRect = rect
+          }
           break
         }
       }
-      const next = { ...current, delta: snappedDelta(pointer.clientY - current.originY), target,
+      const dx = pointer.clientX - current.originX
+      const dy = pointer.clientY - current.originY
+      const reordering = current.mode === 'move' && target?.roomId === current.duty.room_id
+        && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)
+      const reorderIds = reordering && targetRect
+        ? reorderedDutyIds(columnDuties(current.duty.room_id), current.duty, pointer.clientX, targetRect)
+        : null
+      const next = { ...current, delta: reordering ? 0 : snappedDelta(dy), target, reordering, reorderIds,
         moved: current.moved || Math.abs(pointer.clientX - current.originX) > 3 || Math.abs(pointer.clientY - current.originY) > 3 }
       dutyDragRef.current = next
       if (next.moved) setDutyDrag(next)
@@ -198,6 +240,10 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       if (current.mode === 'resize') {
         const patch = resizePatch(current.duty, current.delta, end)
         if (patch.end_time !== current.duty.end_time.slice(0, 5)) void onChangeDuty?.(current.duty, patch)
+        return
+      }
+      if (current.reordering) {
+        if (current.reorderIds) void onReorderDuties?.(current.duty.day_id, current.duty.room_id, current.reorderIds)
         return
       }
       if (!current.target) return
@@ -248,7 +294,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const previewStart = drag && (drag.mode === 'move' ? toMinutes((preview as ReturnType<typeof movePatch>).start_time) : toMinutes(drag.slot.start_time))
   const previewEnd = drag && toMinutes(preview!.end_time)
 
-  const dutyPreview = dutyDrag && (dutyDrag.mode === 'resize' || dutyDrag.target)
+  const dutyPreview = dutyDrag && !dutyDrag.reordering && (dutyDrag.mode === 'resize' || dutyDrag.target)
     ? (() => {
       const patch = dutyDrag.mode === 'resize'
         ? resizePatch(dutyDrag.duty, dutyDrag.delta, end)
@@ -294,11 +340,14 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   }
 
   function dutyColumn(duties: ActiveDuty[], label: string, column: number, roomId: number | null) {
+    const reorderIds = dutyDrag?.reordering && dutyDrag.duty.room_id === roomId ? dutyDrag.reorderIds : null
+    const ordered = reorderIds ? duties.map(duty => ({ ...duty, sort_order: reorderIds.indexOf(duty.id) })) : duties
     return <div key={label} className={`duty-column${dutyDrag?.mode === 'move' && dutyDrag.target?.roomId === roomId ? ' drop-target' : ''}`}
       data-duty-column={roomId ?? 'general'} aria-label={label} style={{ gridColumn: column, gridRow: 3, height }}>
       {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
       {duties.length === 0 && <span className="empty-room">Keine Dienste</span>}
-      {layoutDuties(duties).filter(({ duty }) => duty.id !== dutyDrag?.duty.id || !dutyPreview).map(({ duty, lane, lanes }) => dutyCard(duty, lane, lanes))}
+      {layoutDuties(ordered).filter(({ duty }) => duty.id !== dutyDrag?.duty.id || !dutyPreview).map(({ duty, lane, lanes }) =>
+        dutyCard(duty, lane, lanes, Boolean(reorderIds && duty.id === dutyDrag?.duty.id)))}
       {dutyPreview?.room_id === roomId && dutyCard(dutyPreview, 0, 1, true)}
     </div>
   }

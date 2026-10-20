@@ -17,7 +17,7 @@ const ben = { id: 2, event_id: 1, name: 'Ben' }
 const base: Duty = {
   id: 1, event_id: 1, kind: 'general', title: 'Aufbau', helper_ids: [], helpers: [],
   day_id: 1, date: '2026-10-01', room_id: null, slot_id: null, session_topic: null,
-  start_time: '09:00:00', end_time: '12:00:00', status: 'active',
+  start_time: '09:00:00', end_time: '12:00:00', sort_order: 1, status: 'active',
 }
 
 afterEach(cleanup)
@@ -159,5 +159,37 @@ it('keeps session duties in rooms and passes their changes to the linked session
     fireEvent.pointerMove(window, { clientX: 350, clientY: 76 })
     fireEvent.pointerUp(window)
     expect(onChangeDuty).toHaveBeenCalledWith(sessionDuty, { end_time: '10:45' })
+  } finally { Element.prototype.getBoundingClientRect = original }
+})
+
+it.each(['program', 'helpers'] as const)('reorders parallel duties in %s without changing their times', focus => {
+  const drinks: Duty = { ...base, title: 'Getränke', start_time: '15:00:00', end_time: '17:00:00' }
+  const parking: Duty = { ...drinks, id: 2, title: 'Parkeinweisung', sort_order: 2 }
+  const registration: Duty = { ...drinks, id: 3, title: 'Registration', sort_order: 3 }
+  const onChangeDuty = vi.fn(async () => {})
+  const onReorderDuties = vi.fn(async () => {})
+  const original = Element.prototype.getBoundingClientRect
+  Element.prototype.getBoundingClientRect = function () {
+    const column = (this as HTMLElement).dataset.dutyColumn
+    return { left: column === 'general' ? 0 : 700, right: column === 'general' ? 600 : 1300,
+      width: 600 } as DOMRect
+  }
+  try {
+    const { container } = render(<Schedule schedule={schedule} helperPlan={{ duties: [drinks, parking, registration], conflicts: [] }}
+      focus={focus} onEdit={() => {}} onChange={async () => {}} onChangeDuty={onChangeDuty} onReorderDuties={onReorderDuties} />)
+    fireEvent.pointerDown(container.querySelector('[data-duty-id="1"] .duty-grip')!, { button: 0, clientX: 50, clientY: 100 })
+    fireEvent.pointerMove(window, { clientX: 550, clientY: 104 })
+    expect((container.querySelector('[data-duty-id="1"].ghost') as HTMLElement).style.left).toBe('66.66666666666667%')
+    expect((container.querySelector('[data-duty-id="2"]') as HTMLElement).style.left).toBe('0%')
+    expect((container.querySelector('[data-duty-id="3"]') as HTMLElement).style.left).toBe('33.333333333333336%')
+    fireEvent.pointerUp(window)
+    expect(onReorderDuties).toHaveBeenCalledWith(1, null, [2, 3, 1])
+    expect(onChangeDuty).not.toHaveBeenCalled()
+
+    fireEvent.pointerDown(container.querySelector('[data-duty-id="1"] .duty-grip')!, { button: 0, clientX: 50, clientY: 100 })
+    fireEvent.pointerMove(window, { clientX: 50, clientY: 124 })
+    fireEvent.pointerUp(window)
+    expect(onChangeDuty).toHaveBeenCalledWith(drinks, { start_time: '15:15', end_time: '17:15' })
+    expect(onReorderDuties).toHaveBeenCalledTimes(1)
   } finally { Element.prototype.getBoundingClientRect = original }
 })

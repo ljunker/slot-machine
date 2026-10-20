@@ -1,4 +1,5 @@
-from io import BytesIO
+import csv
+from io import BytesIO, StringIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -202,6 +203,78 @@ def test_roundtrip_replace_and_create(client, db, monkeypatch, tmp_path):
     assert client.get(f"/api/events/{other_id}").status_code == 200
 
 
+def test_duty_order_roundtrip_and_legacy_backup(client):
+    event_id = create_event(client)
+    day = client.post(
+        f"/api/events/{event_id}/days",
+        json={
+            "event_id": event_id,
+            "date": "2026-10-01",
+            "start_time": "09:00",
+            "end_time": "18:00",
+        },
+    ).json()
+    duty_ids = [
+        client.post(
+            f"/api/events/{event_id}/duties",
+            json={
+                "kind": "general",
+                "title": title,
+                "day_id": day["id"],
+                "start_time": start,
+                "end_time": "11:00",
+            },
+        ).json()["id"]
+        for title, start in (
+            ("Getränke", "10:00"),
+            ("Parkeinweisung", "09:30"),
+            ("Registration", "10:00"),
+        )
+    ]
+    response = client.patch(
+        f"/api/events/{event_id}/duties/order",
+        json={
+            "day_id": day["id"],
+            "room_id": None,
+            "duty_ids": [duty_ids[1], duty_ids[2], duty_ids[0]],
+        },
+    )
+    assert response.status_code == 200, response.text
+    backup = client.get(f"/api/backups/events/{event_id}").content
+    restored = upload(client, backup, endpoint="restore")
+    assert restored.status_code == 200, restored.text
+    duties = client.get(
+        f"/api/events/{restored.json()['event_id']}/helper-plan"
+    ).json()["duties"]
+    assert [item["title"] for item in sorted(duties, key=lambda item: item["sort_order"])] == [
+        "Parkeinweisung", "Registration", "Getränke"
+    ]
+
+    with ZipFile(BytesIO(backup)) as archive:
+        manifest = archive.read("manifest.csv").replace(b"2,", b"1,", 1)
+        source = csv.reader(StringIO(archive.read("duties.csv").decode("utf-8")))
+        rows = list(source)
+        order_index = rows[0].index("sort_order")
+        output = StringIO(newline="")
+        writer = csv.writer(output, lineterminator="\r\n")
+        writer.writerows([cell for index, cell in enumerate(row) if index != order_index] for row in rows)
+        legacy = alter_archive(
+            backup,
+            replace={
+                "manifest.csv": manifest,
+                "duties.csv": output.getvalue().encode("utf-8"),
+            },
+        )
+    restored = upload(client, legacy, endpoint="restore")
+    assert restored.status_code == 200, restored.text
+    duties = client.get(
+        f"/api/events/{restored.json()['event_id']}/helper-plan"
+    ).json()["duties"]
+    assert [item["title"] for item in sorted(duties, key=lambda item: item["sort_order"])] == [
+        "Parkeinweisung", "Getränke", "Registration"
+    ]
+
+
 def test_invalid_archives_do_not_change_data(client, monkeypatch, tmp_path):
     monkeypatch.setenv("EVENT_LOGO_DIR", str(tmp_path / "logos"))
     event_id = create_event(client)
@@ -211,7 +284,7 @@ def test_invalid_archives_do_not_change_data(client, monkeypatch, tmp_path):
     )
     backup = client.get(f"/api/backups/events/{event_id}").content
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"1,", b"99,", 1)
+        manifest = archive.read("manifest.csv").replace(b"2,", b"99,", 1)
     invalid = [
         b"not a zip",
         alter_archive(backup, remove="media/logo.png"),

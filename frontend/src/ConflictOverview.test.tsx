@@ -26,7 +26,7 @@ const schedules: DaySchedule[] = [
 const duty = (id: number, title: string): Duty => ({
   id, event_id: 1, kind: 'room', title, helper_ids: [9], helpers: [{ id: 9, event_id: 1, name: 'Ben' }],
   day_id: 12, date: '2099-06-02', room_id: 2, slot_id: null, session_topic: null,
-  start_time: '11:00:00', end_time: '12:00:00', status: 'active',
+  start_time: '11:00:00', end_time: '12:00:00', sort_order: id, status: 'active',
 })
 const helperPlan: HelperPlan = {
   duties: [duty(21, 'Aufbau'), duty(22, 'Einlass')],

@@ -208,3 +208,78 @@ test('verschiebt und verlängert Dienste über ihre Karten', async ({ page }) =>
   await page.locator(`[data-duty-id="${general.id}"]`).click()
   await expect(page.locator('aside.editor')).toHaveCount(1)
 })
+
+test('ordnet allgemeine, Raum- und Session-Dienste dauerhaft innerhalb ihrer Spalten', async ({ page }) => {
+  const event = await (await page.request.post('/api/events', { data: {
+    name: 'Dienstreihenfolge', start_date: '2026-10-01', end_date: '2026-10-01',
+  } })).json()
+  const day = await (await page.request.post(`/api/events/${event.id}/days`, { data: {
+    event_id: event.id, date: '2026-10-01', start_time: '09:00', end_time: '18:00',
+  } })).json()
+  const room = await (await page.request.post('/api/rooms', { data: { event_id: event.id, name: 'Saal' } })).json()
+  const general = []
+  for (const title of ['Getränke', 'Parkeinweisung', 'Registration']) {
+    general.push(await (await page.request.post(`/api/events/${event.id}/duties`, { data: {
+      kind: 'general', title, day_id: day.id, start_time: '15:00', end_time: '17:00',
+    } })).json())
+  }
+  const roomDuties = []
+  for (const title of ['Einlass', 'Technik']) {
+    roomDuties.push(await (await page.request.post(`/api/events/${event.id}/duties`, { data: {
+      kind: 'room', title, day_id: day.id, room_id: room.id, start_time: '15:00', end_time: '17:00',
+    } })).json())
+  }
+  const slot = await (await page.request.post('/api/slots', { data: {
+    event_id: event.id, day_id: day.id, room_id: room.id, topic: 'Vortrag',
+    start_time: '15:00', end_time: '17:00',
+  } })).json()
+  const session = await (await page.request.post(`/api/events/${event.id}/duties`, { data: {
+    kind: 'session', title: 'Betreuung', slot_id: slot.id,
+  } })).json()
+  await page.setViewportSize({ width: 1800, height: 900 })
+  await page.goto('/')
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
+  await page.getByRole('button', { name: 'Helferplan' }).click()
+
+  async function dragSideways(sourceId: number, targetId: number) {
+    await page.locator(`[data-duty-id="${sourceId}"]`).scrollIntoViewIfNeeded()
+    const from = (await page.locator(`[data-duty-id="${sourceId}"] .duty-grip`).boundingBox())!
+    const to = (await page.locator(`[data-duty-id="${targetId}"]`).boundingBox())!
+    await page.mouse.move(from.x + 24, from.y + 14)
+    await page.mouse.down()
+    await page.mouse.move(to.x + to.width / 2, from.y + 14, { steps: 6 })
+    await expect(page.locator(`[data-duty-id="${sourceId}"].ghost`)).toHaveCount(1)
+    await page.mouse.up()
+  }
+  async function order(ids: number[]) {
+    return Promise.all(ids.map(async id => (await (await page.request.get(`/api/duties/${id}`)).json()).sort_order))
+  }
+  async function left(id: number) {
+    return page.locator(`[data-duty-id="${id}"]`).evaluate(element =>
+      Math.round(parseFloat((element as HTMLElement).style.left)))
+  }
+
+  await dragSideways(general[0].id, general[2].id)
+  await expect.poll(() => order([general[1].id, general[2].id, general[0].id])).toEqual([0, 1, 2])
+  await page.reload()
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
+  await page.getByRole('button', { name: 'Helferplan' }).click()
+  await expect.poll(() => left(general[0].id)).toBe(67)
+  await page.getByRole('button', { name: 'Tagesplan' }).click()
+  await expect.poll(() => left(general[0].id)).toBe(67)
+  await page.getByRole('button', { name: 'Helferplan' }).click()
+
+  await dragSideways(roomDuties[0].id, session.id)
+  await expect.poll(() => order([roomDuties[1].id, session.id, roomDuties[0].id])).toEqual([0, 1, 2])
+  await dragSideways(session.id, roomDuties[1].id)
+  await expect.poll(() => order([session.id, roomDuties[1].id, roomDuties[0].id])).toEqual([0, 1, 2])
+  await page.reload()
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
+  await page.getByRole('button', { name: 'Helferplan' }).click()
+  await expect.poll(() => left(session.id)).toBe(0)
+  await expect.poll(() => left(roomDuties[0].id)).toBe(67)
+  const savedSession = await (await page.request.get(`/api/duties/${session.id}`)).json()
+  expect([savedSession.room_id, savedSession.start_time, savedSession.end_time]).toEqual([room.id, '15:00:00', '17:00:00'])
+  const savedGeneral = await (await page.request.get(`/api/duties/${general[0].id}`)).json()
+  expect([savedGeneral.start_time, savedGeneral.end_time]).toEqual(['15:00:00', '17:00:00'])
+})

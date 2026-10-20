@@ -1,4 +1,4 @@
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.models.slot import Slot
 from app.schemas.helper import (
     DutyConflict,
     DutyCreate,
+    DutyOrder,
     DutyResponse,
     DutyUpdate,
     HelperCreate,
@@ -208,6 +209,7 @@ class HelperService:
             session_topic=topic,
             start_time=start,
             end_time=end,
+            sort_order=duty.sort_order,
             status=status,
         )
 
@@ -215,11 +217,41 @@ class HelperService:
         self._event(event_id)
         values = self._validated(event_id, data.model_dump(exclude={"helper_ids"}))
         helpers = self._helpers(event_id, data.helper_ids)
-        duty = Duty(event_id=event_id, **values)
+        sort_order = (
+            self.db.scalar(select(func.max(Duty.sort_order)).where(Duty.event_id == event_id))
+            or 0
+        ) + 1
+        duty = Duty(event_id=event_id, sort_order=sort_order, **values)
         duty.helpers = helpers
         self.db.add(duty)
         self.db.commit()
         return self._response(duty)
+
+    def reorder_duties(self, event_id: int, data: DutyOrder) -> list[DutyResponse]:
+        self._event(event_id)
+        day = self.db.get(EventDay, data.day_id)
+        if day is None or day.event_id != event_id:
+            raise DomainError("Tag gehört nicht zur Veranstaltung")
+        if data.room_id is not None:
+            room = self.db.get(Room, data.room_id)
+            if room is None or room.event_id != event_id:
+                raise DomainError("Raum gehört nicht zur Veranstaltung")
+        duties = list(self.db.scalars(select(Duty).where(Duty.event_id == event_id)))
+        active = {
+            duty.id: duty
+            for duty in duties
+            if (response := self._response(duty)).status == "active"
+            and response.day_id == data.day_id
+            and response.room_id == data.room_id
+        }
+        if len(data.duty_ids) != len(active) or set(data.duty_ids) != set(active):
+            raise DomainError(
+                "Dienstliste muss alle aktiven Dienste der Spalte genau einmal enthalten"
+            )
+        for index, duty_id in enumerate(data.duty_ids):
+            active[duty_id].sort_order = index
+        self.db.commit()
+        return [self._response(active[duty_id]) for duty_id in data.duty_ids]
 
     def update_duty(self, duty_id: int, data: DutyUpdate) -> DutyResponse:
         duty = self.get_duty(duty_id)

@@ -254,6 +254,16 @@ export default function App() {
     } catch (cause) { setError((cause as Error).message) }
   }
 
+  async function reorderDuties(selectedDayId: number, roomId: number | null, dutyIds: number[]) {
+    if (eventId === null) return
+    try {
+      await write<Duty[]>('PATCH', `/events/${eventId}/duties/order`, {
+        day_id: selectedDayId, room_id: roomId, duty_ids: dutyIds,
+      })
+      await loadAll(eventId, dayId)
+    } catch (cause) { setError((cause as Error).message) }
+  }
+
   function beginBacklogDrag(event: PointerEvent, session: UnplannedSession) {
     if (event.button !== 0 || !schedule || dayId === null) return
     event.preventDefault()
@@ -378,9 +388,9 @@ export default function App() {
           </div>
         </div>
         {view !== 'conflicts' && loading && <p className="state-message">Lade Programm …</p>}
-        {view !== 'conflicts' && !loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} />}
+        {view !== 'conflicts' && !loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
         {view !== 'conflicts' && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {view !== 'conflicts' && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern dabei ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
+        {view !== 'conflicts' && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
         {view === 'conflicts' && !loading && overviewError && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError}<br /><button className="text-button" type="button" onClick={() => setOverviewRetry(value => value + 1)}>Erneut versuchen</button></div>}
         {view === 'conflicts' && !loading && overviewSchedules && !overviewError && <ConflictOverview schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openConflictEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openConflictEntry(day, 'duty', duty)} />}

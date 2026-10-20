@@ -48,7 +48,7 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "1"
+FORMAT_VERSION = "2"
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
@@ -316,13 +316,16 @@ def _parse_archive(
                 ["format_version", "source_event_id", "exported_at"],
                 "manifest.csv",
             )
-            if len(manifest) != 1 or manifest[0]["format_version"] != FORMAT_VERSION:
+            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", FORMAT_VERSION}:
                 raise DomainError("Nicht unterstützte Backup-Version")
+            version = manifest[0]["format_version"]
             source_id = int(manifest[0]["source_event_id"])
             datetime.fromisoformat(manifest[0]["exported_at"])
             rows: dict[str, list[dict]] = {}
             for name in ORDER:
                 columns = list(_columns(name))
+                if version == "1" and name == "duties":
+                    columns = [column for column in columns if column.name != "sort_order"]
                 raw = _read_csv(
                     archive.read(f"{name}.csv"),
                     [column.name for column in columns],
@@ -335,6 +338,19 @@ def _parse_archive(
                     }
                     for row in raw
                 ]
+                if version == "1" and name == "duties":
+                    slots_by_id = {slot["id"]: slot for slot in rows["slots"]}
+                    ordered = sorted(
+                        rows[name],
+                        key=lambda row: (
+                            row["start_time"]
+                            or (slots_by_id.get(row["slot_id"]) or {}).get("start_time")
+                            or time.min,
+                            row["id"],
+                        ),
+                    )
+                    for index, row in enumerate(ordered):
+                        row["sort_order"] = index
             media = {
                 name: archive.read(name) for name in names if name.startswith("media/")
             }
@@ -412,6 +428,8 @@ def _validate(
                 raise DomainError("Session liegt außerhalb der Planung")
     for duty in rows["duties"]:
         kind = duty["kind"]
+        if duty["sort_order"] < 0:
+            raise DomainError("Ungültige Dienstreihenfolge im Backup")
         if kind == "session":
             valid = duty["slot_id"] in by_id["slots"] and all(
                 duty[key] is None

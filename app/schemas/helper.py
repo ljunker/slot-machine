@@ -46,6 +46,14 @@ class DutyUpdate(BaseModel):
     end_time: time | None = None
 
 
+class DutyOrder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    day_id: int
+    room_id: int | None
+    duty_ids: list[int]
+
+
 class DutyResponse(BaseModel):
     id: int
     event_id: int
@@ -60,6 +68,7 @@ class DutyResponse(BaseModel):
     session_topic: str | None
     start_time: time | None
     end_time: time | None
+    sort_order: int
     status: Literal["active", "unplanned", "cancelled"]
 
 

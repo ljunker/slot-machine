@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.helper import (
     DutyCreate,
+    DutyOrder,
     DutyResponse,
     DutyUpdate,
     HelperCreate,
@@ -58,6 +59,11 @@ def get_helper_plan(event_id: int, db: Session = Depends(get_db)):
 )
 def create_duty(event_id: int, data: DutyCreate, db: Session = Depends(get_db)):
     return HelperService(db).create_duty(event_id, data)
+
+
+@router.patch("/events/{event_id}/duties/order", response_model=list[DutyResponse])
+def reorder_duties(event_id: int, data: DutyOrder, db: Session = Depends(get_db)):
+    return HelperService(db).reorder_duties(event_id, data)
 
 
 @router.get("/duties/{duty_id}", response_model=DutyResponse)

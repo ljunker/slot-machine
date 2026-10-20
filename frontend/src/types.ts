@@ -21,6 +21,7 @@ export type Duty = {
   session_topic: string | null
   start_time: string | null
   end_time: string | null
+  sort_order: number
   status: 'active' | 'unplanned' | 'cancelled'
 }
 export type DutyConflict = { first_duty_id: number; second_duty_id: number; helper_ids: number[] }

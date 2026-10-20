@@ -30,6 +30,96 @@ def duty(client, event_id, **data):
     return response.json()
 
 
+def test_reorder_duties_within_one_column(client):
+    event, day, room_a = setup_event(client)
+    room_b = client.post(
+        "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
+    ).json()
+    general = [
+        duty(
+            client,
+            event["id"],
+            kind="general",
+            title=title,
+            day_id=day["id"],
+            start_time="15:00",
+            end_time="17:00",
+        )
+        for title in ("Getränke", "Parkeinweisung", "Registration")
+    ]
+    room_duty = duty(
+        client,
+        event["id"],
+        kind="room",
+        title="Einlass",
+        day_id=day["id"],
+        room_id=room_a["id"],
+        start_time="15:00",
+        end_time="17:00",
+    )
+    slot = client.post(
+        "/api/slots",
+        json={
+            "event_id": event["id"],
+            "day_id": day["id"],
+            "room_id": room_a["id"],
+            "topic": "Vortrag",
+            "start_time": "15:00",
+            "end_time": "17:00",
+        },
+    ).json()
+    session = duty(
+        client, event["id"], kind="session", slot_id=slot["id"]
+    )
+    other_room = duty(
+        client,
+        event["id"],
+        kind="room",
+        day_id=day["id"],
+        room_id=room_b["id"],
+        start_time="15:00",
+        end_time="17:00",
+    )
+    endpoint = f"/api/events/{event['id']}/duties/order"
+    general_ids = [item["id"] for item in general]
+    desired = [general_ids[1], general_ids[2], general_ids[0]]
+    response = client.patch(
+        endpoint,
+        json={"day_id": day["id"], "room_id": None, "duty_ids": desired},
+    )
+    assert response.status_code == 200, response.text
+    assert [item["sort_order"] for item in response.json()] == [0, 1, 2]
+    assert [client.get(f"/api/duties/{duty_id}").json()["sort_order"] for duty_id in desired] == [0, 1, 2]
+    assert [client.get(f"/api/duties/{duty_id}").json()["start_time"] for duty_id in desired] == ["15:00:00"] * 3
+
+    room_ids = [room_duty["id"], session["id"]]
+    response = client.patch(
+        endpoint,
+        json={"day_id": day["id"], "room_id": room_a["id"], "duty_ids": room_ids[::-1]},
+    )
+    assert response.status_code == 200, response.text
+    assert [item["sort_order"] for item in response.json()] == [0, 1]
+    scheduled_slot = next(
+        item
+        for room in client.get(f"/api/schedule/days/{day['id']}").json()["rooms"]
+        for item in room["slots"]
+        if item["id"] == slot["id"]
+    )
+    assert scheduled_slot["room_id"] == room_a["id"]
+    assert scheduled_slot["start_time"] == "15:00:00"
+
+    invalid = [
+        {"day_id": day["id"], "room_id": None, "duty_ids": desired[:-1]},
+        {"day_id": day["id"], "room_id": None, "duty_ids": [desired[0]] * 3},
+        {"day_id": day["id"], "room_id": None, "duty_ids": [*desired[:-1], other_room["id"]]},
+        {"day_id": day["id"], "room_id": room_b["id"], "duty_ids": room_ids},
+    ]
+    for body in invalid:
+        assert client.patch(endpoint, json=body).status_code == 400
+    assert [client.get(f"/api/duties/{duty_id}").json()["sort_order"] for duty_id in desired] == [0, 1, 2]
+    assert client.get(f"/api/duties/{other_room['id']}").json()["sort_order"] == other_room["sort_order"]
+
+
 def test_open_and_multiple_helpers_and_validation(client):
     event, day, room = setup_event(client)
     ada = helper(client, event["id"], "Ada")
