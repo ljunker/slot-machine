@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async ({ page }) => {
   await page.goto('/')
@@ -7,6 +7,7 @@ test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async (
   await page.getByLabel('Startdatum').fill('2026-10-01')
   await page.getByLabel('Enddatum').fill('2026-10-01')
   await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' }).locator('option:checked')).toHaveText('Backlog-Konferenz')
 
   await page.getByRole('button', { name: '+ Session' }).click()
   await page.getByLabel('Thema').fill('Ungeplanter Vortrag')
@@ -19,8 +20,10 @@ test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async (
   await page.getByRole('button', { name: '+ Raum' }).click()
   await page.getByLabel('Name').fill('Saal')
   await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.locator('.editor')).toHaveCount(0)
 
   const grip = page.getByRole('button', { name: 'Ungeplanter Vortrag einplanen' })
+  await grip.scrollIntoViewIfNeeded()
   const source = await grip.boundingBox()
   const target = await page.locator('[data-room-column]').boundingBox()
   expect(source).not.toBeNull()
@@ -28,6 +31,7 @@ test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async (
   await page.mouse.move(source!.x + source!.width / 2, source!.y + source!.height / 2)
   await page.mouse.down()
   await page.mouse.move(target!.x + 50, target!.y + 96, { steps: 8 })
+  await expect(page.locator('.backlog-ghost')).toBeVisible()
   await page.mouse.up()
   await expect(page.locator('[data-room-column] [data-slot-id]')).toContainText('10:00–11:00')
   await expect(grip).toHaveCount(0)

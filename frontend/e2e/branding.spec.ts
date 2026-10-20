@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 const logo = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAFElEQVR4nGNc5i3BAANMcBYDAwMAGbQBDWSbBX0AAAAASUVORK5CYII=', 'base64')
 

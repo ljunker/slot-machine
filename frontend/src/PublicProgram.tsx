@@ -4,13 +4,13 @@ import { brandingStyle } from './branding'
 import PublicSchedule from './PublicSchedule'
 import ThemeControl from './ThemeControl'
 import { defaultDay } from './publicDay'
-import type { DaySchedule, Event, EventDay } from './types'
+import type { Event, EventDay, PublicDaySchedule } from './types'
 
 export default function PublicProgram({ eventId }: { eventId: number | null }) {
   const [event, setEvent] = useState<Event | null>(null)
   const [days, setDays] = useState<EventDay[]>([])
   const [dayId, setDayId] = useState<number | null>(null)
-  const [schedule, setSchedule] = useState<DaySchedule | null>(null)
+  const [schedule, setSchedule] = useState<PublicDaySchedule | null>(null)
   const [loadingEvent, setLoadingEvent] = useState(true)
   const [loadingSchedule, setLoadingSchedule] = useState(false)
   const [eventError, setEventError] = useState('')
@@ -53,7 +53,7 @@ export default function PublicProgram({ eventId }: { eventId: number | null }) {
     setLoadingSchedule(true)
     setSchedule(null)
     setScheduleError('')
-    request<DaySchedule>(`/schedule/days/${dayId}`).then(data => {
+    request<PublicDaySchedule>(`/public/events/${eventId}/days/${dayId}/schedule`).then(data => {
       if (active) setSchedule(data)
     }).catch((cause: Error) => {
       if (active) setScheduleError(cause.message)
@@ -61,7 +61,7 @@ export default function PublicProgram({ eventId }: { eventId: number | null }) {
       if (active) setLoadingSchedule(false)
     })
     return () => { active = false }
-  }, [dayId, retrySchedule])
+  }, [eventId, dayId, retrySchedule])
 
   const selectedDay = days.find(day => day.id === dayId)
 

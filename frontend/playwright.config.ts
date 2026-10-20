@@ -9,9 +9,9 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:5173', browserName: 'chromium' },
   webServer: [
     {
-      command: 'uv run --no-sync uvicorn app.main:app --host 127.0.0.1 --port 8765',
+      command: 'uv run --no-sync python -m app.cli create-superadmin --email e2e@example.invalid --password-env E2E_ADMIN_PASSWORD && uv run --no-sync uvicorn app.main:app --host 127.0.0.1 --port 8765',
       cwd: resolve('..'),
-      env: { DATABASE_URL: `sqlite:///${database}` },
+      env: { DATABASE_URL: `sqlite:///${database}`, E2E_ADMIN_PASSWORD: 'E2eTestpassword123!' },
       url: 'http://127.0.0.1:8765/api/health',
       reuseExistingServer: false,
       timeout: 30_000,

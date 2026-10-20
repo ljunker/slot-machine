@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import App from './App'
-import type { DaySchedule, Event, EventDay, Slot } from './types'
+import type { CurrentUser, DaySchedule, Event, EventDay, Slot } from './types'
+
+const currentUser: CurrentUser = { id: 1, email: 'admin@example.invalid', is_superadmin: true, event_roles: {}, csrf_token: 'test' }
 
 const event: Event = { id: 1, name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-02', accent_color: null, logo_url: null }
 const days: EventDay[] = [
@@ -46,7 +48,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('loads every day only for the overview and opens a slot on its day', async () => {
   const api = mockApi()
-  render(<App />)
+  render(<App currentUser={currentUser} />)
   await screen.findByRole('button', { name: 'Konflikte' })
   expect(api.secondDayRequests()).toBe(0)
   fireEvent.click(screen.getByRole('button', { name: 'Konflikte' }))
@@ -59,7 +61,7 @@ it('loads every day only for the overview and opens a slot on its day', async ()
 
 it('reports a failed day request instead of showing an incomplete overview', async () => {
   mockApi(true)
-  render(<App />)
+  render(<App currentUser={currentUser} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Konflikte' }))
   expect((await screen.findByRole('alert')).textContent).toContain('Konflikte konnten nicht geladen werden: Tagesplan nicht verfügbar')
   expect(screen.getByRole('button', { name: 'Erneut versuchen' })).toBeTruthy()
@@ -68,7 +70,7 @@ it('reports a failed day request instead of showing an incomplete overview', asy
 
 it('keeps the helper plan active across day changes and opens sessions there', async () => {
   mockApi()
-  render(<App />)
+  render(<App currentUser={currentUser} />)
   const dayView = await screen.findByRole('button', { name: 'Tagesplan' })
   expect(dayView.getAttribute('aria-pressed')).toBe('true')
   fireEvent.click(screen.getByRole('button', { name: 'Helferplan' }))

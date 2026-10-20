@@ -2,18 +2,18 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PublicProgram from './PublicProgram'
 import PublicSchedule from './PublicSchedule'
-import type { DaySchedule } from './types'
+import type { PublicDaySchedule } from './types'
 
 const event = { id: 7, name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-02' }
 const days = [
   { id: 11, event_id: 7, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00' },
   { id: 12, event_id: 7, date: '2099-06-02', start_time: '09:00:00', end_time: '18:00:00' },
 ]
-const schedule: DaySchedule = {
-  day_id: 11, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00', collisions: [], speaker_conflicts: [],
+const schedule: PublicDaySchedule = {
+  day_id: 11, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00',
   rooms: [
-    { id: 1, event_id: 7, name: 'Saal A', sort_order: 0, slots: [{ id: 21, event_id: 7, day_id: 11, room_id: 1, topic: 'Eröffnung', speaker_ids: [1], speakers: [{ id: 1, name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null }] },
-    { id: 2, event_id: 7, name: 'Saal B', sort_order: 1, slots: [] },
+    { id: 1, name: 'Saal A', slots: [{ id: 21, event_id: 7, room_id: 1, topic: 'Eröffnung', speakers: [{ name: 'Ada' }], description: 'Willkommen zur Konferenz.', start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null }] },
+    { id: 2, name: 'Saal B', slots: [] },
   ],
 }
 
@@ -31,9 +31,9 @@ describe('public program', () => {
     const picker = await screen.findByRole('combobox', { name: 'Veranstaltungstag' })
     expect(screen.getByRole('link', { name: 'PDF-Programm herunterladen' }).getAttribute('href')).toBe('/api/events/7/program.pdf')
     expect((picker as HTMLSelectElement).value).toBe('11')
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/schedule/days/11', expect.any(Object)))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/public/events/7/days/11/schedule', expect.any(Object)))
     fireEvent.change(picker, { target: { value: '12' } })
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/schedule/days/12', expect.any(Object)))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/public/events/7/days/12/schedule', expect.any(Object)))
     expect((picker as HTMLSelectElement).value).toBe('12')
     expect(fetchMock.mock.calls.every(call => !call[1]?.method)).toBe(true)
   })
@@ -65,7 +65,7 @@ describe('public program', () => {
   })
 
   it('shows previous planning and cancellation in public views', () => {
-    const changed: DaySchedule = {
+    const changed: PublicDaySchedule = {
       ...schedule,
       rooms: [{ ...schedule.rooms[0], slots: [
         { ...schedule.rooms[0].slots[0], change_notice: { type: 'rescheduled', expires_at: Math.floor(Date.now() / 1000) + 3600, previous_start_time: '09:00:00', previous_end_time: '10:00:00', previous_room_name: 'Saal B' } },

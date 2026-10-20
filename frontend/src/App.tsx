@@ -11,13 +11,14 @@ import type { DutyPatch } from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
 import ThemeControl from './ThemeControl'
 import BackupRestore from './BackupRestore'
-import type { DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
+import { TeamManagement, UserManagement } from './TeamManagement'
+import type { CurrentUser, DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 
 type Panel = { kind: EditorKind | 'speaker' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number; start: number; topic: string }
 
-export default function App() {
+export default function App({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout?: () => void }) {
   const [events, setEvents] = useState<Event[]>([])
   const [eventId, setEventId] = useState<number | null>(null)
   const [days, setDays] = useState<EventDay[]>([])
@@ -37,6 +38,8 @@ export default function App() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [showRestore, setShowRestore] = useState(false)
+  const [showTeam, setShowTeam] = useState(false)
+  const [showUsers, setShowUsers] = useState(false)
   const [clearingRescheduledNotices, setClearingRescheduledNotices] = useState(false)
   const loadNumber = useRef(0)
 
@@ -99,6 +102,8 @@ export default function App() {
   }
 
   const selectedEvent = events.find(item => item.id === eventId)
+  const isSuperadmin = currentUser.is_superadmin
+  const isAdmin = isSuperadmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'admin')
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot'
@@ -309,36 +314,37 @@ export default function App() {
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
-      <div className="header-actions"><ThemeControl /><button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button><button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button></div>
+      <div className="header-actions"><ThemeControl /><span className="account-name">{currentUser.email}</span>{onLogout && <button className="header-secondary" onClick={onLogout}>Abmelden</button>}{isSuperadmin && <button className="header-secondary" onClick={() => setShowUsers(true)}>Benutzer</button>}{(isSuperadmin || selectedEvent && isAdmin) && <button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button>}{isSuperadmin && <button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>}</div>
     </header>
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError('')}>Schließen</button></div>}
     <div className="workspace">
       <nav className="sidebar" aria-label="Planung">
         <section>
-          <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && <button className="text-button" onClick={() => setPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
+          <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
           <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { setPanel(null); void loadAll(Number(e.target.value), null) }}>
             {events.length === 0 && <option value="">Keine Veranstaltung</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
           {selectedEvent && <p className="muted">{selectedEvent.start_date} bis {selectedEvent.end_date}</p>}
-          {selectedEvent && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
+          {selectedEvent && isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
+          {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowTeam(true)}>Team verwalten</button>}
           {selectedEvent && <button type="button" className="text-button clear-rescheduled-button" disabled={clearingRescheduledNotices} onClick={() => void clearEventRescheduledNotices()}>Alle Verschoben Flags entfernen</button>}
         </section>
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Tage</h2><button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button></div>
+          <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
             <button type="button" onClick={() => { setPanel(null); if (view === 'conflicts') setView('schedule'); void loadAll(eventId, day.id) }}>{day.date}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
-            <button type="button" className="icon-button" aria-label={`${day.date} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${day.date} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Räume</h2><button className="text-button" onClick={() => setPanel({ kind: 'room', id: null })}>+ Raum</button></div>
+          <div className="section-heading"><h2>Räume</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'room', id: null })}>+ Raum</button>}</div>
           {rooms.length === 0 && <p className="muted">Noch keine Räume</p>}
           <div className="room-list">{rooms.map((room, index) => <div className="room-row" key={room.id}>
-            <button type="button" className="room-name" onClick={() => setPanel({ kind: 'room', id: room.id })}>{room.name}</button>
-            <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>
-            <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>
+            {isAdmin ? <button type="button" className="room-name" onClick={() => setPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
@@ -438,14 +444,16 @@ export default function App() {
         onSave={save}
         onDeleteLogo={panel.kind === 'event' && panel.id !== null ? deleteEventLogo : null}
         onClearRescheduledNotice={panel.kind === 'slot' && panel.id !== null ? clearSlotRescheduledNotice : null}
-        onDelete={panel.id === null ? null : remove}
+        onDelete={panel.id === null || panel.kind === 'event' && !isSuperadmin ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
-      {showRestore && <BackupRestore events={events} selectedEventId={eventId} onComplete={async restoredId => {
+      {showRestore && <BackupRestore events={events} selectedEventId={eventId} allowCreate={isSuperadmin} onComplete={async restoredId => {
         setPanel(null)
         if (await loadAll(restoredId, null)) setShowRestore(false)
         else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
+      {showTeam && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
+      {showUsers && isSuperadmin && <UserManagement currentUserId={currentUser.id} onClose={() => setShowUsers(false)} />}
     </div>
   </div>
 }

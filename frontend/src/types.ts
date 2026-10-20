@@ -1,4 +1,5 @@
 export type Event = { id: number; name: string; start_date: string; end_date: string; accent_color: string | null; logo_url: string | null }
+export type CurrentUser = { id: number; email: string; is_superadmin: boolean; event_roles: Record<string, 'admin' | 'editor'>; csrf_token: string }
 export type EventDay = { id: number; event_id: number; date: string; start_time: string; end_time: string }
 export type Room = { id: number; event_id: number; name: string; sort_order: number }
 export type SpeakerSummary = { id: number; name: string }
@@ -53,7 +54,8 @@ export type UnplannedSession = Omit<Slot, 'day_id' | 'room_id' | 'start_time' | 
   start_time: null
   end_time: null
 }
-export type PublicSession = Slot & { date: string; room_name: string }
+export type PublicSlot = Pick<Slot, 'id' | 'event_id' | 'room_id' | 'topic' | 'description' | 'start_time' | 'end_time' | 'is_cancelled' | 'change_notice'> & { speakers: { name: string }[] }
+export type PublicSession = PublicSlot & { date: string; room_name: string }
 export type ScheduleRoom = Room & { slots: Slot[] }
 export type CollisionPair = { first_slot_id: number; second_slot_id: number }
 export type SpeakerConflict = CollisionPair & { speaker_ids: number[] }
@@ -66,3 +68,4 @@ export type DaySchedule = {
   collisions: CollisionPair[]
   speaker_conflicts: SpeakerConflict[]
 }
+export type PublicDaySchedule = Pick<DaySchedule, 'day_id' | 'date' | 'start_time' | 'end_time'> & { rooms: { id: number; name: string; slots: PublicSlot[] }[] }

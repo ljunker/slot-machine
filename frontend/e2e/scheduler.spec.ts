@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.goto('/')
@@ -7,7 +7,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.getByLabel('Startdatum').fill('2026-10-01')
   await page.getByLabel('Enddatum').fill('2026-10-02')
   await page.getByRole('button', { name: 'Speichern' }).click()
-  await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' })).toHaveValue(/\d+/)
+  await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' }).locator('option:checked')).toHaveText('Browserkonferenz')
 
   await page.getByRole('button', { name: '+ Tag' }).click()
   await page.getByLabel('Datum').fill('2026-10-01')

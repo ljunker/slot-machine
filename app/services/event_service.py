@@ -1,6 +1,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.models.auth import AuthToken, EventMembership
 from app.models.duty import Duty
 from app.models.event_day import EventDay
 from app.models.helper import Helper, duty_helpers
@@ -10,8 +11,8 @@ from app.models.speaker import Speaker, slot_speakers
 from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.event_repository import EventRepository
 from app.schemas.event import EventCreate, EventUpdate
-from app.services.event_branding import accent_color, remove_logo_file
 from app.services.errors import Conflict, NotFound
+from app.services.event_branding import accent_color, remove_logo_file
 from app.services.speaker_service import SpeakerService
 from app.services.validation import date_range, name, required_patch
 
@@ -77,6 +78,8 @@ class EventService:
         self.db.execute(delete(Speaker).where(Speaker.event_id == event_id))
         self.db.execute(delete(EventDay).where(EventDay.event_id == event_id))
         self.db.execute(delete(Room).where(Room.event_id == event_id))
+        self.db.execute(delete(AuthToken).where(AuthToken.event_id == event_id))
+        self.db.execute(delete(EventMembership).where(EventMembership.event_id == event_id))
         self.repository.delete(event)
         self.db.commit()
         for photo in photos:

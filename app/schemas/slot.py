@@ -64,6 +64,27 @@ class PlannedSlotResponse(SlotResponse):
     end_time: time
 
 
-class PublicSessionResponse(PlannedSlotResponse):
+class PublicSpeaker(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str
+
+
+class PublicSlotResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    event_id: int
+    room_id: int
+    topic: str
+    speakers: list[PublicSpeaker]
+    description: str | None
+    start_time: time
+    end_time: time
+    is_cancelled: bool
+    change_notice: ChangeNotice | None
+
+
+class PublicSessionResponse(PublicSlotResponse):
     date: date
     room_name: str

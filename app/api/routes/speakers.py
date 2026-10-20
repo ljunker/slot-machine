@@ -3,12 +3,15 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
+from app.models.auth import User
+from app.models.speaker import Speaker
 from app.schemas.speaker import (
     SpeakerCreate,
     SpeakerDetail,
     SpeakerResponse,
     SpeakerUpdate,
 )
+from app.services.auth import authorize_event, authorize_object, require_user
 from app.services.errors import NotFound
 from app.services.speaker_service import (
     MAX_PHOTO_BYTES,
@@ -17,11 +20,12 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-router = APIRouter(tags=["Speakers"])
+router = APIRouter(tags=["Speakers"], dependencies=[Depends(require_user)])
 
 
 @router.get("/events/{event_id}/speakers", response_model=list[SpeakerResponse])
-def list_speakers(event_id: int, db: Session = Depends(get_db)):
+def list_speakers(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id)
     return SpeakerService(db).list_for_event(event_id)
 
 
@@ -30,12 +34,14 @@ def list_speakers(event_id: int, db: Session = Depends(get_db)):
     response_model=SpeakerResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_speaker(event_id: int, data: SpeakerCreate, db: Session = Depends(get_db)):
+def create_speaker(event_id: int, data: SpeakerCreate, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id)
     return SpeakerService(db).create(event_id, data)
 
 
 @router.get("/speakers/{speaker_id}", response_model=SpeakerDetail)
-def get_speaker(speaker_id: int, db: Session = Depends(get_db)):
+def get_speaker(speaker_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_object(db, user, Speaker, speaker_id)
     service = SpeakerService(db)
     speaker = service.get(speaker_id)
     return SpeakerDetail(
@@ -45,26 +51,30 @@ def get_speaker(speaker_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/speakers/{speaker_id}", response_model=SpeakerResponse)
-def update_speaker(speaker_id: int, data: SpeakerUpdate, db: Session = Depends(get_db)):
+def update_speaker(speaker_id: int, data: SpeakerUpdate, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_object(db, user, Speaker, speaker_id)
     return SpeakerService(db).update(speaker_id, data)
 
 
 @router.delete("/speakers/{speaker_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_speaker(speaker_id: int, db: Session = Depends(get_db)):
+def delete_speaker(speaker_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_object(db, user, Speaker, speaker_id)
     SpeakerService(db).delete(speaker_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/speakers/{speaker_id}/photo", response_model=SpeakerResponse)
 async def upload_photo(
-    speaker_id: int, photo: UploadFile = File(...), db: Session = Depends(get_db)
+    speaker_id: int, photo: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(require_user)
 ):
+    authorize_object(db, user, Speaker, speaker_id)
     content = await photo.read(MAX_PHOTO_BYTES + 1)
     return SpeakerService(db).upload_photo(speaker_id, content)
 
 
 @router.get("/speakers/{speaker_id}/photo")
-def get_photo(speaker_id: int, db: Session = Depends(get_db)):
+def get_photo(speaker_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_object(db, user, Speaker, speaker_id)
     speaker = SpeakerService(db).get(speaker_id)
     if not speaker.photo_filename:
         raise NotFound("Foto nicht gefunden")
@@ -75,5 +85,6 @@ def get_photo(speaker_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/speakers/{speaker_id}/photo", response_model=SpeakerResponse)
-def delete_photo(speaker_id: int, db: Session = Depends(get_db)):
+def delete_photo(speaker_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_object(db, user, Speaker, speaker_id)
     return SpeakerService(db).delete_photo(speaker_id)

@@ -13,8 +13,8 @@ from app.repositories.event_repository import EventRepository
 from app.repositories.room_repository import RoomRepository
 from app.repositories.slot_repository import SlotRepository
 from app.schemas.slot import (
-    PlannedSlotResponse,
     PublicSessionResponse,
+    PublicSlotResponse,
     SlotCreate,
     SlotUpdate,
 )
@@ -43,7 +43,7 @@ class SlotService:
         day = self.days.get_by_id(slot.day_id)
         room = self.rooms.get_by_id(slot.room_id)
         return PublicSessionResponse.model_validate({
-            **PlannedSlotResponse.model_validate(slot).model_dump(),
+            **PublicSlotResponse.model_validate(slot).model_dump(),
             "date": day.date,
             "room_name": room.name,
         })

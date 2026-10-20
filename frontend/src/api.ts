@@ -1,7 +1,15 @@
+let csrfToken: string | null = null
+
+export function setCsrfToken(token: string | null) { csrfToken = token }
+
+export function csrfHeaders(): Record<string, string> {
+  return csrfToken ? { 'X-CSRF-Token': csrfToken } : {}
+}
+
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...csrfHeaders(), ...options.headers },
   })
   if (!response.ok) {
     let message = `HTTP ${response.status}`
@@ -22,7 +30,7 @@ export function write<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body
 export async function uploadImage(path: string, field: 'photo' | 'logo', file: File): Promise<void> {
   const body = new FormData()
   body.append(field, file)
-  const response = await fetch(`/api${path}`, { method: 'POST', body })
+  const response = await fetch(`/api${path}`, { method: 'POST', headers: csrfHeaders(), body })
   if (!response.ok) {
     const data = await response.json().catch(() => null)
     throw new Error(typeof data?.detail === 'string' ? data.detail : `HTTP ${response.status}`)

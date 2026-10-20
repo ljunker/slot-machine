@@ -6,10 +6,13 @@ from fastapi.responses import JSONResponse
 # Models importieren, damit SQLAlchemy sie kennt.
 import app.models
 from app.api.routes import (
+    auth,
     backups,
     event_days,
     events,
     helpers,
+    members,
+    public_schedule,
     rooms,
     schedule,
     slots,
@@ -61,8 +64,13 @@ app.include_router(
     events.router,
     prefix="/api",
 )
+app.include_router(events.public_router, prefix="/api")
 
 app.include_router(event_days.router, prefix="/api")
+app.include_router(event_days.public_router, prefix="/api")
+app.include_router(public_schedule.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(members.router, prefix="/api")
 
 app.include_router(
     rooms.router,

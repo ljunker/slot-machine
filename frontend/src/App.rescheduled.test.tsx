@@ -1,7 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import App from './App'
-import type { DaySchedule, Event, EventDay, Slot } from './types'
+import type { CurrentUser, DaySchedule, Event, EventDay, Slot } from './types'
+
+const currentUser: CurrentUser = { id: 1, email: 'admin@example.invalid', is_superadmin: true, event_roles: {}, csrf_token: 'test' }
 
 const event: Event = { id: 1, name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-01', accent_color: null, logo_url: null }
 const day: EventDay = { id: 11, event_id: 1, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00' }
@@ -46,7 +48,7 @@ it('removes one rescheduled notice in the editor and all remaining notices for t
   })
   vi.stubGlobal('fetch', fetchMock)
 
-  const { container } = render(<App />)
+  const { container } = render(<App currentUser={currentUser} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Erster bearbeiten' }))
   expect(screen.getByRole('button', { name: 'Verschoben entfernen' })).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Verschoben entfernen' }))

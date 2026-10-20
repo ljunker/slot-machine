@@ -7,6 +7,15 @@ services:
       DATABASE_URL: sqlite:////data/schedule.db
       SPEAKER_UPLOAD_DIR: /data/speaker_uploads
       EVENT_LOGO_DIR: /data/event_logos
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:5173}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-auto}
     volumes:
       - schedule_data:/data
     ports:

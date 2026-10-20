@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { layoutSlots, PX_PER_MINUTE, toMinutes, toTime } from './time'
-import type { DaySchedule, Slot } from './types'
+import type { PublicDaySchedule, PublicSlot } from './types'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
 
-function speakerNames(slot: Slot): string {
+function speakerNames(slot: PublicSlot): string {
   return slot.speakers.map(speaker => speaker.name).join(', ')
 }
 
-export default function PublicSchedule({ schedule }: { schedule: DaySchedule }) {
+export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedule }) {
   const [roomId, setRoomId] = useState<number | null>(schedule.rooms[0]?.id ?? null)
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null)
+  const [selectedSlot, setSelectedSlot] = useState<PublicSlot | null>(null)
   const detailRef = useRef<HTMLElement>(null)
   const room = schedule.rooms.find(item => item.id === roomId) ?? schedule.rooms[0]
   const now = useNoticeNow(schedule.rooms.flatMap(item => item.slots))

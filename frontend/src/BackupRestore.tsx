@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { csrfHeaders } from './api'
 import type { Event } from './types'
 
 type Preview = {
@@ -15,7 +16,7 @@ async function sendBackup(path: 'preview' | 'restore', file: File, targetId: num
   const body = new FormData()
   body.append('backup', file)
   if (targetId !== null) body.append('target_event_id', String(targetId))
-  const response = await fetch(`/api/backups/${path}`, { method: 'POST', body })
+  const response = await fetch(`/api/backups/${path}`, { method: 'POST', headers: csrfHeaders(), body })
   if (!response.ok) {
     const data = await response.json().catch(() => null)
     throw new Error(typeof data?.detail === 'string' ? data.detail : `HTTP ${response.status}`)
@@ -23,9 +24,10 @@ async function sendBackup(path: 'preview' | 'restore', file: File, targetId: num
   return response.json()
 }
 
-export default function BackupRestore({ events, selectedEventId, onComplete, onClose }: {
+export default function BackupRestore({ events, selectedEventId, allowCreate = true, onComplete, onClose }: {
   events: Event[]
   selectedEventId: number | null
+  allowCreate?: boolean
   onComplete: (eventId: number) => Promise<void>
   onClose: () => void
 }) {
@@ -77,7 +79,7 @@ export default function BackupRestore({ events, selectedEventId, onComplete, onC
       </label>
       <label>Ziel
         <select value={targetId ?? ''} disabled={busy} onChange={event => { setTargetId(event.target.value ? Number(event.target.value) : null); setPreview(null); setError('') }}>
-          <option value="">Als neue Veranstaltung anlegen</option>
+          {allowCreate && <option value="">Als neue Veranstaltung anlegen</option>}
           {events.map(event => <option key={event.id} value={event.id}>{event.name} ersetzen</option>)}
         </select>
       </label>

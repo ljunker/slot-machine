@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Raumraster', async ({ page, request }) => {
   const eventResponse = await request.post('/api/events', { data: { name: 'Mobile Konferenz', start_date: '2099-06-01', end_date: '2099-06-02' } })
@@ -74,4 +74,26 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   await page.getByRole('checkbox', { name: 'Session abgesagt' }).check()
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator(`[data-slot-id="${slot.id}"]`)).toContainText('Abgesagt')
+})
+
+test('zeigt Programm und PDF ohne Anmeldung, sperrt die Planung', async ({ browser, request }) => {
+  const created = await request.post('/api/events', { data: {
+    name: 'Öffentliche Konferenz', start_date: '2099-06-01', end_date: '2099-06-01',
+  } })
+  const event = await created.json() as { id: number }
+  const day = await request.post(`/api/events/${event.id}/days`, { data: {
+    event_id: event.id, date: '2099-06-01', start_time: '09:00', end_time: '18:00',
+  } })
+  expect(day.ok()).toBeTruthy()
+  const anonymous = await browser.newContext({ baseURL: 'http://127.0.0.1:5173' })
+  const page = await anonymous.newPage()
+  await page.goto(`/programm/${event.id}`)
+  await expect(page.getByRole('heading', { name: 'Öffentliche Konferenz' })).toBeVisible()
+  const pdf = await page.request.get(`/api/events/${event.id}/program.pdf`)
+  expect(pdf.status()).toBe(200)
+  expect(pdf.headers()['content-type']).toContain('application/pdf')
+  expect((await page.request.get('/api/events')).status()).toBe(401)
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible()
+  await anonymous.close()
 })

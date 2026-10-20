@@ -28,11 +28,11 @@ export function resizePatch(slot: Pick<Slot, 'start_time' | 'end_time'>, delta: 
   return { end_time: toTime(end) }
 }
 
-export type SlotLayout = { slot: Slot; lane: number; lanes: number }
+export type SlotLayout<T extends Pick<Slot, 'id' | 'start_time' | 'end_time'> = Slot> = { slot: T; lane: number; lanes: number }
 
-export function layoutSlots(slots: Slot[]): SlotLayout[] {
+export function layoutSlots<T extends Pick<Slot, 'id' | 'start_time' | 'end_time'>>(slots: T[]): SlotLayout<T>[] {
   const sorted = [...slots].sort((a, b) => toMinutes(a.start_time) - toMinutes(b.start_time) || a.id - b.id)
-  const groups: Slot[][] = []
+  const groups: T[][] = []
   let groupEnd = -1
   for (const slot of sorted) {
     if (groups.length === 0 || toMinutes(slot.start_time) >= groupEnd) {
