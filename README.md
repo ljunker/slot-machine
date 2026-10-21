@@ -27,11 +27,26 @@ uv run python -m app.cli create-superadmin --email admin@example.org
 
 ## Mit Docker starten
 
+Lokal aus den Quellen bauen und starten:
+
 ```bash
-docker compose up --build -d
+docker compose -f compose.yml -f compose.local.yaml up --build -d
 ```
 
-Frontend: <http://127.0.0.1:5173>. API-Dokumentation: <http://127.0.0.1:8000/docs>. Frontend und Backend werden getrennt gebaut. Die SQLite-Datenbank liegt im Docker-Volume `schedule_data` und bleibt beim Stoppen der Container erhalten. Den ersten Superadmin im Container anlegen:
+Für den Server beide Multiarch-Images auf Docker Hub veröffentlichen. Dafür einmal `docker login` ausführen, dann:
+
+```bash
+./build-images.sh
+```
+
+Das Skript richtet bei Bedarf einen eigenen Buildx-Builder ein. Es baut und pusht `kryptikker/slot-machine-backend:latest` und `kryptikker/slot-machine-frontend:latest` für `linux/amd64` und `linux/arm64`. Auf dem Server `compose.yml` und eine passende `.env` bereitstellen und die fertigen Images starten:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Frontend: <http://127.0.0.1:5173>. API-Dokumentation: <http://127.0.0.1:8000/docs>. Die SQLite-Datenbank liegt im Docker-Volume `schedule_data` und bleibt beim Stoppen der Container erhalten. Den ersten Superadmin im Container anlegen:
 
 ```bash
 docker compose exec backend python -m app.cli create-superadmin --email admin@example.org
@@ -61,7 +76,7 @@ PUBLIC_BASE_URL=https://programm.example.org
 AUTH_COOKIE_SECURE=true
 ```
 
-`SMTP_FROM` und `SMTP_USERNAME` durch die echte STRATO-Postfachadresse ersetzen. Das Passwort ist das Passwort dieses Postfachs. Nach Änderungen an `.env` den Backend-Container mit `docker compose up -d --build --force-recreate backend` neu erstellen.
+`SMTP_FROM` und `SMTP_USERNAME` durch die echte STRATO-Postfachadresse ersetzen. Das Passwort ist das Passwort dieses Postfachs. Nach Änderungen an `.env` den Backend-Container mit `docker compose up -d --force-recreate backend` neu erstellen; lokal dabei beide Compose-Dateien mit `-f` angeben.
 
 Veranstaltung, Tage und Räume links anlegen. Slots über **+ Slot** anlegen oder per Formular bearbeiten. Am Kopf einer Slot-Karte ziehen, um Zeit und Raum zu ändern; an der unteren Kante ziehen, um die Endzeit zu ändern. Ziehen rastet in 15-Minuten-Schritten ein. Die API nimmt auch andere gültige Uhrzeiten an.
 
