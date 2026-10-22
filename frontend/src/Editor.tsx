@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import type { Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
 import { toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
+import { formatDate } from './date'
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
@@ -116,7 +117,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
         </fieldset>
         <label>Beschreibung<textarea value={description} onChange={e => setDescription(e.target.value)} /></label>
         {planned && <>
-          <label>Veranstaltungstag<select value={dayId} onChange={e => setDayId(Number(e.target.value))}>{days.map(item => <option key={item.id} value={item.id}>{item.date}</option>)}</select></label>
+          <label>Veranstaltungstag<select value={dayId} onChange={e => setDayId(Number(e.target.value))}>{days.map(item => <option key={item.id} value={item.id}>{formatDate(item.date)}</option>)}</select></label>
           <label>Raum<select value={roomId} onChange={e => setRoomId(Number(e.target.value))}>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         </>}
         {!planned && days.length > 0 && rooms.length > 0 && <button type="button" className="text-button planning-toggle" onClick={() => setPlanned(true)}>Einplanen</button>}

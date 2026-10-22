@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { formatDate } from './date'
 import type { Duty, DutyKind, EventDay, Helper, Room, Slot, UnplannedSession } from './types'
 
 export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, helpers, onSave, onDelete, onClose }: {
@@ -64,7 +65,7 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
           const selected = days.find(day => day.id === Number(event.target.value))
           setDayId(Number(event.target.value))
           if (selected) { setStart(selected.start_time.slice(0, 5)); setEnd(selected.end_time.slice(0, 5)) }
-        }}>{days.map(day => <option key={day.id} value={day.id}>{day.date}</option>)}</select></label>
+        }}>{days.map(day => <option key={day.id} value={day.id}>{formatDate(day.date)}</option>)}</select></label>
         {kind === 'room' && <label>Raum<select aria-label="Raum" required value={roomId || ''} onChange={event => setRoomId(Number(event.target.value))}>
           {rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}
         </select></label>}

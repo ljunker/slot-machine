@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import { formatDate } from './date'
 import type { Duty, Helper } from './types'
 
 export default function HelperEditor({ helper, duties, onSave, onDelete, onEditDuty, onClose }: {
@@ -32,7 +33,7 @@ export default function HelperEditor({ helper, duties, onSave, onDelete, onEditD
     {helper && <section className="helper-duties"><h3>Dienste</h3>
       {duties.length === 0 ? <p className="muted">Noch keine Dienste</p> : <ul>{duties.map(duty => <li key={duty.id}>
         <button type="button" onClick={() => onEditDuty(duty)}>
-          {duty.date ?? 'Ohne Tag'} · {duty.status === 'active' ? `${duty.start_time?.slice(0, 5)}–${duty.end_time?.slice(0, 5)}` : duty.status === 'cancelled' ? 'Abgesagt' : 'Ungeplant'} · {duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}
+          {duty.date ? formatDate(duty.date) : 'Ohne Tag'} · {duty.status === 'active' ? `${duty.start_time?.slice(0, 5)}–${duty.end_time?.slice(0, 5)}` : duty.status === 'cancelled' ? 'Abgesagt' : 'Ungeplant'} · {duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}
           {duty.status !== 'active' && <small>{duty.status === 'cancelled' ? 'Abgesagt' : 'Ungeplant'}</small>}
         </button>
       </li>)}</ul>}

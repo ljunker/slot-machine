@@ -14,6 +14,7 @@ import BackupRestore from './BackupRestore'
 import { TeamManagement, UserManagement } from './TeamManagement'
 import type { CurrentUser, DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
+import { formatDate } from './date'
 
 type Panel = { kind: EditorKind | 'speaker' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number; start: number; topic: string }
@@ -325,7 +326,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
             {events.length === 0 && <option value="">Keine Veranstaltung</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
-          {selectedEvent && <p className="muted">{selectedEvent.start_date} bis {selectedEvent.end_date}</p>}
+          {selectedEvent && <p className="muted">{formatDate(selectedEvent.start_date)} bis {formatDate(selectedEvent.end_date)}</p>}
           {selectedEvent && isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
           {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowTeam(true)}>Team verwalten</button>}
           {selectedEvent && <button type="button" className="text-button clear-rescheduled-button" disabled={clearingRescheduledNotices} onClick={() => void clearEventRescheduledNotices()}>Alle Verschoben Flags entfernen</button>}
@@ -334,8 +335,8 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" onClick={() => { setPanel(null); if (view === 'conflicts') setView('schedule'); void loadAll(eventId, day.id) }}>{day.date}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${day.date} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>}
+            <button type="button" onClick={() => { setPanel(null); if (view === 'conflicts') setView('schedule'); void loadAll(eventId, day.id) }}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
@@ -375,7 +376,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           {helperPlan.duties.length === 0 && <p className="muted">Noch keine Dienste</p>}
           <div className="duty-list">{helperPlan.duties.map(duty => <button type="button" key={duty.id} onClick={() => setPanel({ kind: 'duty', id: duty.id })}>
             <strong>{duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}</strong>
-            <small>{duty.date ?? 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small>
+            <small>{duty.date ? formatDate(duty.date) : 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small>
           </button>)}</div>
         </section>}
       </nav>
@@ -385,7 +386,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           <button type="button" aria-pressed={view === 'helpers'} onClick={() => setView('helpers')}>Helferplan</button>
           <button type="button" aria-pressed={view === 'conflicts'} onClick={() => { setPanel(null); setView('conflicts') }}>Konflikte</button>
         </div>}
-        <div className="plan-heading"><div><span className="eyebrow">{view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{view === 'conflicts' ? 'Konfliktübersicht' : selectedDay?.date ?? 'Programm'}</h2><p>{view === 'conflicts' ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
+        <div className="plan-heading"><div><span className="eyebrow">{view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatDate(selectedDay.date) : 'Programm'}</h2><p>{view === 'conflicts' ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}

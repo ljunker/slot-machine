@@ -14,7 +14,7 @@ it('loads a public session and links back to its event', async () => {
   ), { status: 200 })))
   render(<PublicSessionPage eventId={7} sessionId={21} />)
   expect(await screen.findByRole('heading', { name: 'Eröffnung' })).toBeTruthy()
-  expect(screen.getByText(/2099-06-01.*10:00–11:00 Uhr.*Saal A/)).toBeTruthy()
+  expect(screen.getByText(/1\. Juni 2099.*10:00–11:00 Uhr.*Saal A/)).toBeTruthy()
   expect(screen.getByText('Redner: Ada')).toBeTruthy()
   expect(screen.getByText('Willkommen')).toBeTruthy()
   expect(screen.getByRole('link', { name: 'Zum Veranstaltungsprogramm' }).getAttribute('href')).toBe('/programm/7')

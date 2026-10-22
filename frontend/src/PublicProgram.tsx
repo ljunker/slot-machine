@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { request } from './api'
 import { brandingStyle } from './branding'
+import { formatDate } from './date'
 import PublicSchedule from './PublicSchedule'
 import ThemeControl from './ThemeControl'
 import { defaultDay } from './publicDay'
@@ -72,7 +73,7 @@ export default function PublicProgram({ eventId }: { eventId: number | null }) {
           {event?.logo_url && <span className="public-logo"><img src={event.logo_url} alt={`Logo von ${event.name}`} /></span>}
           <div><span className="eyebrow">VERANSTALTUNGSPROGRAMM</span>
             <h1>{event?.name ?? 'Programm'}</h1>
-            {event && <p>{event.start_date === event.end_date ? event.start_date : `${event.start_date} bis ${event.end_date}`}</p>}
+            {event && <p>{event.start_date === event.end_date ? formatDate(event.start_date) : `${formatDate(event.start_date)} bis ${formatDate(event.end_date)}`}</p>}
           </div>
         </div>
         <ThemeControl />
@@ -87,11 +88,11 @@ export default function PublicProgram({ eventId }: { eventId: number | null }) {
       {!loadingEvent && event && !eventError && <>
         {days.length === 0 ? <p className="public-state">Für diese Veranstaltung sind noch keine Tage angelegt.</p> : <>
           <div className="public-day-heading">
-            <div><span className="eyebrow">TAGESPROGRAMM</span><h2>{selectedDay?.date}</h2></div>
+            <div><span className="eyebrow">TAGESPROGRAMM</span><h2>{selectedDay && formatDate(selectedDay.date)}</h2></div>
             <a className="program-link" href={`/api/events/${event.id}/program.pdf`} download>PDF-Programm herunterladen</a>
             <label>Veranstaltungstag
               <select value={dayId ?? ''} onChange={change => setDayId(Number(change.target.value))}>
-                {days.map(day => <option key={day.id} value={day.id}>{day.date}</option>)}
+                {days.map(day => <option key={day.id} value={day.id}>{formatDate(day.date)}</option>)}
               </select>
             </label>
           </div>

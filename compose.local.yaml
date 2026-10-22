@@ -3,9 +3,37 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    pull_policy: build
+    environment:
+      DATABASE_URL: sqlite:////data/schedule.db
+      SPEAKER_UPLOAD_DIR: /data/speaker_uploads
+      EVENT_LOGO_DIR: /data/event_logos
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:5173}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-auto}
+    volumes:
+      - schedule_data:/data
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   frontend:
     build:
       context: ./frontend
-    pull_policy: build
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  schedule_data:

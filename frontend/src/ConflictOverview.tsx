@@ -1,4 +1,5 @@
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
+import { formatDate } from './date'
 
 type ConflictEntry = {
   key: string
@@ -91,14 +92,14 @@ export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, on
     <ol className="conflict-list">{entries.map(entry => <li key={entry.key} className={`conflict-item conflict-${entry.kind}`}>
       <div className="conflict-heading">
         <strong>{entry.kind === 'room' ? 'Raumkonflikt' : entry.kind === 'speaker' ? 'Rednerkonflikt' : `Helferkonflikt: ${entry.people[0]}`}</strong>
-        <span>{entry.date} · {entry.startTime.slice(0, 5)}–{entry.endTime.slice(0, 5)}</span>
+        <span>{formatDate(entry.date)} · {entry.startTime.slice(0, 5)}–{entry.endTime.slice(0, 5)}</span>
       </div>
       {entry.kind !== 'helper' && entry.people.length > 0 && <p>Betroffen: {entry.people.join(', ')}</p>}
       <div className="conflict-participants">{[entry.first, entry.second].map(participant => <button
         key={participant.id}
         type="button"
         onClick={() => entry.kind === 'helper' ? onOpenDuty(entry.dayId, participant.id) : onOpenSlot(entry.dayId, participant.id)}
-        aria-label={`${participant.label} am ${entry.date} bearbeiten`}
+        aria-label={`${participant.label} am ${formatDate(entry.date)} bearbeiten`}
       ><strong>{participant.label}</strong><small>{participant.detail}</small></button>)}</div>
     </li>)}</ol>
   </section>
