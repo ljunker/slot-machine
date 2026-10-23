@@ -41,6 +41,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   const [categoryIds, setCategoryIds] = useState<number[]>(slot?.category_ids ?? [])
   const [description, setDescription] = useState(slot?.description ?? '')
   const [roomId, setRoomId] = useState(slot?.room_id ?? rooms[0]?.id ?? 0)
+  const [scope, setScope] = useState<'room' | 'all_rooms'>(slot?.scope ?? 'room')
   const [dayId, setDayId] = useState(slot?.day_id ?? day?.id ?? days[0]?.id ?? 0)
   const [planned, setPlanned] = useState(slot ? slot.day_id !== null : !createUnplanned)
   const [slotCancelled, setSlotCancelled] = useState(slot?.is_cancelled ?? false)
@@ -70,7 +71,8 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     else body = {
       topic, speaker_ids: speakerIds, category_ids: categoryIds, description: description || null,
       day_id: planned ? dayId : null,
-      room_id: planned ? roomId : null,
+      scope,
+      room_id: planned && scope === 'room' ? roomId : null,
       start_time: planned ? start : null,
       end_time: planned ? end : null,
     }
@@ -122,13 +124,18 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
           {categories.map(category => <label key={category.id}><input type="checkbox" checked={categoryIds.includes(category.id)} onChange={event => setCategoryIds(current => event.target.checked ? [...current, category.id] : current.filter(id => id !== category.id))} /><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</label>)}
         </fieldset>
         <label>Beschreibung<textarea value={description} onChange={e => setDescription(e.target.value)} /></label>
+        <label>Geltungsbereich<select value={scope} onChange={e => setScope(e.target.value as 'room' | 'all_rooms')}>
+          <option value="room">Einzelner Raum</option><option value="all_rooms">Alle Räume</option>
+        </select></label>
         {planned && <>
           <label>Veranstaltungstag<select value={dayId} onChange={e => setDayId(Number(e.target.value))}>{days.map(item => <option key={item.id} value={item.id}>{formatDate(item.date)}</option>)}</select></label>
-          <label>Raum<select value={roomId} onChange={e => setRoomId(Number(e.target.value))}>{rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          {scope === 'room' && <label>Raum<select aria-label="Raum" required value={roomId || ''} onChange={e => setRoomId(Number(e.target.value))}>
+            {rooms.length === 0 && <option value="">Zuerst einen Raum anlegen</option>}
+            {rooms.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
         </>}
-        {!planned && days.length > 0 && rooms.length > 0 && <button type="button" className="text-button planning-toggle" onClick={() => setPlanned(true)}>Einplanen</button>}
+        {!planned && days.length > 0 && (scope === 'all_rooms' || rooms.length > 0) && <button type="button" className="text-button planning-toggle" onClick={() => setPlanned(true)}>Einplanen</button>}
         {planned && <button type="button" className="text-button planning-toggle" onClick={() => setPlanned(false)}>{slot ? 'Planung entfernen' : 'Nicht einplanen'}</button>}
-        {!planned && (days.length === 0 || rooms.length === 0) && <p className="muted">Zum Einplanen zuerst Tag und Raum anlegen.</p>}
+        {!planned && (days.length === 0 || scope === 'room' && rooms.length === 0) && <p className="muted">Zum Einplanen zuerst Tag{scope === 'room' ? ' und Raum' : ''} anlegen.</p>}
       </>}
       {(kind === 'day' || (kind === 'slot' && planned)) && <div className="two-fields"><label>Beginn<input required type="time" value={start} onChange={e => setStart(e.target.value)} /></label><label>Ende<input required type="time" value={end} onChange={e => setEnd(e.target.value)} /></label></div>}
       {kind === 'slot' && existing && planned && <label className="cancel-checkbox"><input type="checkbox" checked={slotCancelled} onChange={e => setSlotCancelled(e.target.checked)} />Session abgesagt</label>}

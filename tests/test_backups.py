@@ -252,7 +252,13 @@ def test_duty_order_roundtrip_and_legacy_backup(client):
     ]
 
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"3,", b"1,", 1)
+        manifest = archive.read("manifest.csv").replace(b"4,", b"1,", 1)
+        slot_rows = list(csv.reader(StringIO(archive.read("slots.csv").decode("utf-8"))))
+        scope_index = slot_rows[0].index("scope")
+        slot_output = StringIO(newline="")
+        csv.writer(slot_output).writerows(
+            [cell for index, cell in enumerate(row) if index != scope_index] for row in slot_rows
+        )
         source = csv.reader(StringIO(archive.read("duties.csv").decode("utf-8")))
         rows = list(source)
         order_index = rows[0].index("sort_order")
@@ -264,6 +270,7 @@ def test_duty_order_roundtrip_and_legacy_backup(client):
                 remove={"categories.csv", "slot_categories.csv"},
             replace={
                 "manifest.csv": manifest,
+                "slots.csv": slot_output.getvalue().encode("utf-8"),
                 "duties.csv": output.getvalue().encode("utf-8"),
             },
         )
@@ -286,7 +293,7 @@ def test_invalid_archives_do_not_change_data(client, monkeypatch, tmp_path):
     )
     backup = client.get(f"/api/backups/events/{event_id}").content
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"3,", b"99,", 1)
+        manifest = archive.read("manifest.csv").replace(b"4,", b"99,", 1)
     invalid = [
         b"not a zip",
             alter_archive(backup, remove="manifest.csv"),

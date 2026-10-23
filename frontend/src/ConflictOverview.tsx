@@ -19,7 +19,7 @@ function dutyTitle(duty: Duty): string {
 }
 
 function slotDetail(slot: Slot, roomNames: Map<number, string>): string {
-  return `${roomNames.get(slot.room_id) ?? 'Raum'} · ${slot.start_time.slice(0, 5)}–${slot.end_time.slice(0, 5)}`
+  return `${slot.scope === 'all_rooms' ? 'Alle Räume' : roomNames.get(slot.room_id!) ?? 'Raum'} · ${slot.start_time.slice(0, 5)}–${slot.end_time.slice(0, 5)}`
 }
 
 function dutyDetail(duty: Duty, roomNames: Map<number, string>): string {
@@ -34,7 +34,7 @@ export function collectConflicts(schedules: DaySchedule[], helperPlan: HelperPla
   const helperNames = new Map(helperPlan.duties.flatMap(duty => duty.helpers).map(helper => [helper.id, helper.name]))
 
   for (const day of schedules) {
-    const slots = day.rooms.flatMap(room => room.slots)
+    const slots = [...day.rooms.flatMap(room => room.slots), ...(day.shared_slots ?? [])]
     const slotById = new Map(slots.map(slot => [slot.id, slot]))
     const roomNames = new Map(day.rooms.map(room => [room.id, room.name]))
     const speakerNames = new Map(slots.flatMap(slot => slot.speakers).map(speaker => [speaker.id, speaker.name]))

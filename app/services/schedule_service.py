@@ -57,6 +57,7 @@ class ScheduleService:
             start_time=day.start_time,
             end_time=day.end_time,
             rooms=schedule_rooms,
+            shared_slots=[PlannedSlotResponse.model_validate(slot) for slot in slots if slot.scope == "all_rooms"],
             collisions=[
                 CollisionPair(first_slot_id=first.id, second_slot_id=second.id)
                 for first, second in self.check_collisions(day_id)
@@ -77,7 +78,7 @@ class ScheduleService:
             for second in ordered[index + 1 :]:
                 if second.start_time >= first.end_time:
                     break
-                if first.room_id == second.room_id:
+                if first.scope == second.scope == "room" and first.room_id == second.room_id:
                     continue
                 shared = sorted(first_ids.intersection(second.speaker_ids))
                 if shared:
@@ -98,28 +99,14 @@ class ScheduleService:
 
         slots = self.slot_repository.get_for_day(day_id)
 
-        slots_by_room: dict[int, list[Slot]] = defaultdict(list)
-
-        for slot in slots:
-            if slot.is_cancelled:
-                continue
-            slots_by_room[slot.room_id].append(slot)
-
         collisions: list[tuple[Slot, Slot]] = []
-
-        for room_slots in slots_by_room.values():
-            room_slots.sort(key=lambda slot: slot.start_time)
-
-            for index, slot in enumerate(room_slots):
-                for other_slot in room_slots[index + 1 :]:
-                    if other_slot.start_time >= slot.end_time:
-                        break
-
-                    if self._slots_overlap(
-                        slot,
-                        other_slot,
-                    ):
-                        collisions.append((slot, other_slot))
+        ordered = sorted((slot for slot in slots if not slot.is_cancelled), key=lambda slot: (slot.start_time, slot.id))
+        for index, slot in enumerate(ordered):
+            for other_slot in ordered[index + 1:]:
+                if other_slot.start_time >= slot.end_time:
+                    break
+                if slot.room_id == other_slot.room_id or "all_rooms" in (slot.scope, other_slot.scope):
+                    collisions.append((slot, other_slot))
 
         return collisions
 

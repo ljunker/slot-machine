@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models.event import Event
 from app.schemas.category import CategorySummary
-from app.schemas.schedule import DaySchedule
+from app.schemas.schedule import DaySchedule, ScheduleRoom
 from app.schemas.slot import SlotResponse
 from app.services.errors import Conflict
 from app.services.event_branding import logo_path
@@ -106,6 +106,7 @@ def _draw_slot(
     if width <= 0 or height <= 0:
         return
     notice = slot.change_notice
+    topic = f"{slot.topic} - Alle Räume" if slot.scope == "all_rooms" else slot.topic
     palette = {
         "rescheduled": ("#FFF1D6", "#B96F0D"),
         "updated": ("#F2E7FF", "#8C5ABA"),
@@ -159,7 +160,7 @@ def _draw_slot(
             if notice.previous_room_name:
                 previous += f", {notice.previous_room_name}"
         if height >= 30:
-            lines = [(interval, FONT, 6.2), (slot.topic, BOLD_FONT, 7.2)]
+            lines = [(interval, FONT, 6.2), (topic, BOLD_FONT, 7.2)]
             if status:
                 lines.append((status, BOLD_FONT, 6.2))
             if previous and height >= 45:
@@ -168,23 +169,23 @@ def _draw_slot(
                 lines.append((speakers, FONT, 6))
         elif height >= 18:
             if status:
-                lines = [(f"{status}: {slot.topic}", BOLD_FONT, 6.3)]
+                lines = [(f"{status}: {topic}", BOLD_FONT, 6.3)]
                 if speakers:
                     lines.append((speakers, FONT, 6))
             elif speakers:
                 lines = [
-                    (f"{interval} {slot.topic}", BOLD_FONT, 6.3),
+                    (f"{interval} {topic}", BOLD_FONT, 6.3),
                     (speakers, FONT, 6),
                 ]
             else:
-                lines = [(interval, FONT, 5.8), (slot.topic, BOLD_FONT, 6.5)]
+                lines = [(interval, FONT, 5.8), (topic, BOLD_FONT, 6.5)]
         elif height >= 9:
             lines = [
-                (f"{status}: {slot.topic}", BOLD_FONT, 6)
+                (f"{status}: {topic}", BOLD_FONT, 6)
                 if status
-                else (f"{speakers} - {slot.topic}", FONT, 6)
+                else (f"{speakers} - {topic}", FONT, 6)
                 if speakers
-                else (slot.topic, BOLD_FONT, 6)
+                else (topic, BOLD_FONT, 6)
             ]
         baseline = y + height - 8
         pdf.setFillColor(colors.HexColor("#24324D"))
@@ -204,8 +205,7 @@ def _draw_day(
 ) -> None:
     categories = sorted({
         category.id: category
-        for room in schedule.rooms
-        for slot in room.slots
+        for slot in [*(slot for room in schedule.rooms for slot in room.slots), *schedule.shared_slots]
         for category in slot.categories
     }.values(), key=lambda category: (category.name.casefold(), category.id))
     footer_rows: list[list[tuple[CategorySummary, float]]] = []
@@ -262,14 +262,22 @@ def _draw_day(
                 pdf.drawString(x + 14, y, _fit(category.name, width - 19, FONT, 7))
                 x += width + 9
 
-    if not schedule.rooms:
+    if not schedule.rooms and not schedule.shared_slots:
         pdf.setFont(FONT, 11)
         pdf.drawString(
             27, PAGE_HEIGHT - 115, "Für diesen Tag sind keine Räume angelegt."
         )
         return
 
-    room_width = (GRID_RIGHT - GRID_LEFT) / len(schedule.rooms)
+    rooms = schedule.rooms or [ScheduleRoom(id=0, name="Alle Räume", sort_order=0, slots=[])]
+    all_slots = [*(slot for room in schedule.rooms for slot in room.slots), *schedule.shared_slots]
+    repeated = [slot for slot in schedule.shared_slots if any(
+        other.id != slot.id and slot.start_time < other.end_time and slot.end_time > other.start_time
+        for other in all_slots
+    )]
+    repeated_ids = {slot.id for slot in repeated}
+    spanning = [slot for slot in schedule.shared_slots if slot.id not in repeated_ids]
+    room_width = (GRID_RIGHT - GRID_LEFT) / len(rooms)
     start = _seconds(schedule.start_time)
     end = _seconds(schedule.end_time)
     scale = (GRID_TOP - grid_bottom) / (end - start)
@@ -285,7 +293,7 @@ def _draw_day(
 
     pdf.setStrokeColor(colors.HexColor("#D8E0ED"))
     pdf.setLineWidth(0.5)
-    for index, room in enumerate(schedule.rooms):
+    for index, room in enumerate(rooms):
         room_x = GRID_LEFT + index * room_width
         pdf.line(room_x, grid_bottom, room_x, GRID_TOP)
         pdf.setFillColor(colors.HexColor("#35445F"))
@@ -310,9 +318,14 @@ def _draw_day(
             f"{int(second) // 3600:02d}:{int(second) // 60 % 60:02d}",
         )
 
-    for index, room in enumerate(schedule.rooms):
+    for slot in spanning:
+        top = GRID_TOP - (_seconds(slot.start_time) - start) * scale
+        bottom = GRID_TOP - (_seconds(slot.end_time) - start) * scale
+        _draw_slot(pdf, slot, GRID_LEFT + 1, bottom + 0.5, GRID_RIGHT - GRID_LEFT - 2, max(0.5, top - bottom - 1))
+
+    for index, room in enumerate(rooms):
         room_x = GRID_LEFT + index * room_width
-        for slot, lane, lanes in _slot_lanes(room.slots):
+        for slot, lane, lanes in _slot_lanes([*room.slots, *repeated]):
             lane_width = room_width / lanes
             padding = min(1, lane_width / 10)
             top = GRID_TOP - (_seconds(slot.start_time) - start) * scale

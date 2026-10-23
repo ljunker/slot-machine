@@ -1,6 +1,6 @@
 from datetime import date, time
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.slot import PublicSlotResponse
 
@@ -21,3 +21,4 @@ class PublicDaySchedule(BaseModel):
     start_time: time
     end_time: time
     rooms: list[PublicScheduleRoom]
+    shared_slots: list[PublicSlotResponse] = Field(default_factory=list)

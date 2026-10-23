@@ -118,6 +118,12 @@ button:disabled { cursor: default; opacity: .35; }
 .speaker-conflict-list ul { margin: 0; padding-left: 18px; }
 .speaker-conflict-list li + li { margin-top: 4px; }
 .slot-card.ghost { opacity: .7; pointer-events: none; z-index: 4; }
+.shared-slot-layer { position: relative; pointer-events: none; z-index: 2; min-width: 0; }
+.shared-slot-layer > .slot-card, .shared-slot-layer > .public-slot { pointer-events: auto; }
+.shared-slot-layer > .ghost { pointer-events: none; }
+.helper-schedule-grid .duty-card { z-index: 3; }
+.helper-schedule-grid .shared-slot-layer .slot-card > :not(.slot-resize):not(.category-stripe) { max-width: var(--shared-label-width); }
+.helper-schedule-grid .shared-slot-layer .slot-resize::after { margin-left: calc(var(--shared-label-width) / 2 - 11px); }
 .backlog-ghost { display: grid; align-content: start; gap: 4px; width: 100%; font-size: 11px; }
 .slot-grip { display: flex; flex-wrap: wrap; gap: 3px 8px; justify-content: space-between; cursor: grab; touch-action: none; user-select: none; font-size: 11px; }
 .slot-grip:active { cursor: grabbing; }

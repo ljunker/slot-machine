@@ -19,9 +19,11 @@ from app.db.base import Base
 class Slot(Base):
     __tablename__ = "slots"
     __table_args__ = (
+        CheckConstraint("scope IN ('room', 'all_rooms')", name="slot_scope_valid"),
         CheckConstraint(
             "(day_id IS NULL AND room_id IS NULL AND start_time IS NULL AND end_time IS NULL) "
-            "OR (day_id IS NOT NULL AND room_id IS NOT NULL AND start_time IS NOT NULL AND end_time IS NOT NULL)",
+            "OR (day_id IS NOT NULL AND start_time IS NOT NULL AND end_time IS NOT NULL "
+            "AND ((scope = 'room' AND room_id IS NOT NULL) OR (scope = 'all_rooms' AND room_id IS NULL)))",
             name="slot_planning_complete",
         ),
     )
@@ -29,6 +31,7 @@ class Slot(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     event_id: Mapped[int] = mapped_column(ForeignKey("events.id"), nullable=False)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="room", server_default="room")
 
     day_id: Mapped[int | None] = mapped_column(
         ForeignKey("event_days.id"),

@@ -154,7 +154,7 @@ class SpeakerService:
                 day_id=slot.day_id,
                 date=day_date,
                 room_id=slot.room_id,
-                room_name=room_name,
+                room_name="Alle Räume" if slot.scope == "all_rooms" and slot.day_id is not None else room_name,
                 topic=slot.topic,
                 start_time=slot.start_time,
                 end_time=slot.end_time,

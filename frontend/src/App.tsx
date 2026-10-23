@@ -19,7 +19,7 @@ import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
 
 type Panel = { kind: EditorKind | 'speaker' | 'category' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
-type BacklogPreview = { roomId: number; start: number; topic: string }
+type BacklogPreview = { roomId: number | null; start: number; topic: string }
 
 export default function App({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout?: () => void }) {
   const [events, setEvents] = useState<Event[]>([])
@@ -113,7 +113,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot'
-    ? schedule?.rooms.flatMap(item => item.slots).find(item => item.id === panel.id) ?? unplanned.find(item => item.id === panel.id)
+    ? [...(schedule?.rooms.flatMap(item => item.slots) ?? []), ...(schedule?.shared_slots ?? []), ...unplanned].find(item => item.id === panel.id)
     : undefined
   const selectedSpeaker = panel?.kind === 'speaker' ? speakers.find(item => item.id === panel.id) : undefined
   const selectedCategory = panel?.kind === 'category' ? categories.find(item => item.id === panel.id) : undefined
@@ -300,12 +300,12 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
       if (!scroll) return null
       const visible = scroll.getBoundingClientRect()
       if (pointer.clientX < visible.left || pointer.clientX > visible.right || pointer.clientY < visible.top || pointer.clientY > visible.bottom) return null
-      for (const column of document.querySelectorAll<HTMLElement>('[data-room-column]')) {
+      for (const column of document.querySelectorAll<HTMLElement>(session.scope === 'all_rooms' ? '[data-program-column]' : '[data-room-column]')) {
         const rect = column.getBoundingClientRect()
         if (pointer.clientX < rect.left || pointer.clientX > rect.right || pointer.clientY < rect.top || pointer.clientY > rect.bottom) continue
         const start = dayStart + Math.round((pointer.clientY - rect.top) / (SNAP_MINUTES * PX_PER_MINUTE)) * SNAP_MINUTES
         if (start < dayStart || start + 60 > dayEnd) return null
-        return { roomId: Number(column.dataset.roomColumn), start, topic: session.topic }
+        return { roomId: session.scope === 'all_rooms' ? null : Number(column.dataset.roomColumn), start, topic: session.topic }
       }
       return null
     }
@@ -417,11 +417,11 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
             {selectedEvent && view !== 'conflicts' && <button className="primary" onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
-            {selectedDay && rooms.length > 0 && view !== 'conflicts' && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+            {selectedDay && view !== 'conflicts' && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
         {view !== 'conflicts' && loading && <p className="state-message">Lade Programm …</p>}
-        {view !== 'conflicts' && !loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
+        {view !== 'conflicts' && !loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
         {view !== 'conflicts' && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
         {view !== 'conflicts' && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
@@ -458,7 +458,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         days={days}
         selectedDay={selectedDay}
         rooms={rooms}
-        sessions={[...(schedule?.rooms.flatMap(room => room.slots) ?? []), ...unplanned]}
+        sessions={[...(schedule?.rooms.flatMap(room => room.slots) ?? []), ...(schedule?.shared_slots ?? []), ...unplanned]}
         helpers={helpers}
         onSave={saveDuty}
         onDelete={panel.id === null ? null : remove}

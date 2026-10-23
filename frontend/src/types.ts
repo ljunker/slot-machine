@@ -40,7 +40,8 @@ export type Slot = {
   id: number
   event_id: number
   day_id: number
-  room_id: number
+  scope?: 'room' | 'all_rooms'
+  room_id: number | null
   topic: string
   speaker_ids: number[]
   category_ids?: number[]
@@ -58,7 +59,7 @@ export type UnplannedSession = Omit<Slot, 'day_id' | 'room_id' | 'start_time' | 
   start_time: null
   end_time: null
 }
-export type PublicSlot = Pick<Slot, 'id' | 'event_id' | 'room_id' | 'topic' | 'description' | 'start_time' | 'end_time' | 'is_cancelled' | 'change_notice' | 'categories'> & { speakers: { name: string }[] }
+export type PublicSlot = Pick<Slot, 'id' | 'event_id' | 'scope' | 'room_id' | 'topic' | 'description' | 'start_time' | 'end_time' | 'is_cancelled' | 'change_notice' | 'categories'> & { speakers: { name: string }[] }
 export type PublicSession = PublicSlot & { date: string; room_name: string }
 export type ScheduleRoom = Room & { slots: Slot[] }
 export type CollisionPair = { first_slot_id: number; second_slot_id: number }
@@ -69,7 +70,8 @@ export type DaySchedule = {
   start_time: string
   end_time: string
   rooms: ScheduleRoom[]
+  shared_slots?: Slot[]
   collisions: CollisionPair[]
   speaker_conflicts: SpeakerConflict[]
 }
-export type PublicDaySchedule = Pick<DaySchedule, 'day_id' | 'date' | 'start_time' | 'end_time'> & { rooms: { id: number; name: string; slots: PublicSlot[] }[] }
+export type PublicDaySchedule = Pick<DaySchedule, 'day_id' | 'date' | 'start_time' | 'end_time'> & { rooms: { id: number; name: string; slots: PublicSlot[] }[]; shared_slots?: PublicSlot[] }

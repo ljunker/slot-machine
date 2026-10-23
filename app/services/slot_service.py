@@ -42,11 +42,11 @@ class SlotService:
         if slot is None or slot.event_id != event_id or slot.day_id is None:
             raise NotFound("Session nicht gefunden")
         day = self.days.get_by_id(slot.day_id)
-        room = self.rooms.get_by_id(slot.room_id)
+        room = self.rooms.get_by_id(slot.room_id) if slot.room_id is not None else None
         return PublicSessionResponse.model_validate({
             **PublicSlotResponse.model_validate(slot).model_dump(),
             "date": day.date,
-            "room_name": room.name,
+            "room_name": "Alle Räume" if slot.scope == "all_rooms" else room.name,
         })
 
     def _validate(
@@ -56,18 +56,23 @@ class SlotService:
         room_id: int | None,
         start: time | None,
         end: time | None,
+        scope: str = "room",
     ) -> None:
         if all(value is None for value in (day_id, room_id, start, end)):
             return
-        if any(value is None for value in (day_id, room_id, start, end)):
+        if any(value is None for value in (day_id, start, end)):
+            raise DomainError("Tag, Beginn und Ende müssen gemeinsam gesetzt sein")
+        if scope == "all_rooms" and room_id is not None:
+            raise DomainError("Gemeinsame Sessions dürfen keinen einzelnen Raum haben")
+        if scope == "room" and room_id is None:
             raise DomainError("Tag, Raum, Beginn und Ende müssen gemeinsam gesetzt sein")
         day = self.days.get_by_id(day_id)
-        room = self.rooms.get_by_id(room_id)
+        room = self.rooms.get_by_id(room_id) if room_id is not None else None
         if day is None:
             raise NotFound("Veranstaltungstag nicht gefunden")
-        if room is None:
+        if room_id is not None and room is None:
             raise NotFound("Raum nicht gefunden")
-        if day.event_id != event_id or room.event_id != event_id:
+        if day.event_id != event_id or (room is not None and room.event_id != event_id):
             raise DomainError("Raum und Tag gehören zu verschiedenen Veranstaltungen")
         time_range(start, end)
         if start < day.start_time or end > day.end_time:
@@ -82,7 +87,7 @@ class SlotService:
             raise DomainError("Ungeplante Sessions brauchen eine Veranstaltung")
         if self.events.get_by_id(event_id) is None:
             raise NotFound("Veranstaltung nicht gefunden")
-        self._validate(event_id, data.day_id, data.room_id, data.start_time, data.end_time)
+        self._validate(event_id, data.day_id, data.room_id, data.start_time, data.end_time, data.scope)
         speakers = self._speakers(event_id, data.speaker_ids)
         categories = self._categories(event_id, data.category_ids)
         slot = self.repository.create(
@@ -101,13 +106,14 @@ class SlotService:
         slot = self.get(slot_id)
         changes = data.model_dump(exclude_unset=True)
         required_patch(
-            changes, {"topic", "is_cancelled"}
+            changes, {"topic", "is_cancelled", "scope"}
         )
         day_id = changes.get("day_id", slot.day_id)
         room_id = changes.get("room_id", slot.room_id)
         start = changes.get("start_time", slot.start_time)
         end = changes.get("end_time", slot.end_time)
-        self._validate(slot.event_id, day_id, room_id, start, end)
+        scope = changes.get("scope", slot.scope)
+        self._validate(slot.event_id, day_id, room_id, start, end, scope)
         was_planned = slot.day_id is not None
         will_be_planned = day_id is not None
         if not will_be_planned and changes.get("is_cancelled") is True:
@@ -124,7 +130,7 @@ class SlotService:
             changes["topic"] = name(changes["topic"])
         schedule_changed = was_planned and will_be_planned and any(
             field in changes and changes[field] != getattr(slot, field)
-            for field in ("day_id", "room_id", "start_time", "end_time")
+            for field in ("day_id", "room_id", "start_time", "end_time", "scope")
         )
         content_changed = any(
             field in changes and changes[field] != getattr(slot, field)
@@ -138,7 +144,9 @@ class SlotService:
         )
         if schedule_changed:
             if day_id == slot.day_id:
-                slot.previous_room_name = self.rooms.get_by_id(slot.room_id).name
+                slot.previous_room_name = (
+                    "Alle Räume" if slot.scope == "all_rooms" else self.rooms.get_by_id(slot.room_id).name
+                )
                 slot.previous_start_time = slot.start_time
                 slot.previous_end_time = slot.end_time
             else:
@@ -259,7 +267,7 @@ class SlotService:
     def move(
         self,
         slot_id: int,
-        room_id: int,
+        room_id: int | None,
         start_time: time,
     ) -> Slot:
         slot = self.get(slot_id)
@@ -273,7 +281,7 @@ class SlotService:
             raise DomainError("Slot liegt außerhalb des Tages")
         return self.update(
             slot_id,
-            SlotUpdate(room_id=room_id, start_time=start_time, end_time=end.time()),
+            SlotUpdate(room_id=None if slot.scope == "all_rooms" else room_id, start_time=start_time, end_time=end.time()),
         )
 
     def resize(
@@ -292,7 +300,8 @@ class SlotService:
         return any(
             other.id != slot.id
             and not other.is_cancelled
+            and (slot.scope == "all_rooms" or other.scope == "all_rooms" or slot.room_id == other.room_id)
             and slot.start_time < other.end_time
             and other.start_time < slot.end_time
-            for other in self.repository.get_for_room(slot.day_id, slot.room_id)
+            for other in self.repository.get_for_day(slot.day_id)
         )

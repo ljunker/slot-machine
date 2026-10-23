@@ -11,6 +11,7 @@ class SlotBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     topic: str
+    scope: Literal["room", "all_rooms"] = "room"
     speaker_ids: list[int] = Field(default_factory=list)
     category_ids: list[int] = Field(default_factory=list)
     description: str | None = None
@@ -29,6 +30,7 @@ class SlotUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     topic: str | None = None
+    scope: Literal["room", "all_rooms"] | None = None
     speaker_ids: list[int] | None = None
     category_ids: list[int] | None = None
     description: str | None = None
@@ -63,7 +65,7 @@ class SlotResponse(SlotBase):
 
 class PlannedSlotResponse(SlotResponse):
     day_id: int
-    room_id: int
+    room_id: int | None
     start_time: time
     end_time: time
 
@@ -79,7 +81,8 @@ class PublicSlotResponse(BaseModel):
 
     id: int
     event_id: int
-    room_id: int
+    scope: Literal["room", "all_rooms"] = "room"
+    room_id: int | None
     topic: str
     speakers: list[PublicSpeaker]
     categories: list[CategorySummary] = Field(default_factory=list)

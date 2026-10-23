@@ -1,6 +1,6 @@
 from datetime import date, time
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.slot import PlannedSlotResponse
 
@@ -30,5 +30,6 @@ class DaySchedule(BaseModel):
     end_time: time
 
     rooms: list[ScheduleRoom]
+    shared_slots: list[PlannedSlotResponse] = Field(default_factory=list)
     collisions: list[CollisionPair]
     speaker_conflicts: list[SpeakerConflict]

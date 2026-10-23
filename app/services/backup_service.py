@@ -50,7 +50,7 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "3"
+FORMAT_VERSION = "4"
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
@@ -318,11 +318,11 @@ def _parse_archive(
                 ["format_version", "source_event_id", "exported_at"],
                 "manifest.csv",
             )
-            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", FORMAT_VERSION}:
+            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", "3", FORMAT_VERSION}:
                 raise DomainError("Nicht unterstützte Backup-Version")
             version = manifest[0]["format_version"]
             archive_order = tuple(
-                name for name in ORDER if version == "3" or name not in {"categories", "slot_categories"}
+                name for name in ORDER if version in {"3", "4"} or name not in {"categories", "slot_categories"}
             )
             required = {"manifest.csv", *(f"{name}.csv" for name in archive_order)}
             if not required.issubset(names):
@@ -336,6 +336,8 @@ def _parse_archive(
             rows: dict[str, list[dict]] = {}
             for name in archive_order:
                 columns = list(_columns(name))
+                if version != "4" and name == "slots":
+                    columns = [column for column in columns if column.name != "scope"]
                 if version == "1" and name == "duties":
                     columns = [column for column in columns if column.name != "sort_order"]
                 raw = _read_csv(
@@ -350,6 +352,9 @@ def _parse_archive(
                     }
                     for row in raw
                 ]
+                if version != "4" and name == "slots":
+                    for row in rows[name]:
+                        row["scope"] = "room"
                 if version == "1" and name == "duties":
                     slots_by_id = {slot["id"]: slot for slot in rows["slots"]}
                     ordered = sorted(
@@ -432,17 +437,23 @@ def _validate(
     for slot in rows["slots"]:
         if not slot["topic"].strip():
             raise DomainError("Leeres Session-Thema im Backup")
+        if slot["scope"] not in {"room", "all_rooms"}:
+            raise DomainError("Ungültiger Session-Geltungsbereich im Backup")
         planned = [
             slot[key] is not None
-            for key in ("day_id", "room_id", "start_time", "end_time")
+            for key in ("day_id", "start_time", "end_time")
         ]
         if len(set(planned)) != 1 or (not planned[0] and slot["is_cancelled"]):
+            raise DomainError("Ungültige Session-Planung im Backup")
+        if (not planned[0] and slot["room_id"] is not None) or (
+            slot["scope"] == "all_rooms" and slot["room_id"] is not None
+        ):
             raise DomainError("Ungültige Session-Planung im Backup")
         if planned[0]:
             day = by_id["event_days"].get(slot["day_id"])
             if (
                 day is None
-                or slot["room_id"] not in by_id["rooms"]
+                or (slot["scope"] == "room" and slot["room_id"] not in by_id["rooms"])
                 or not day["start_time"]
                 <= slot["start_time"]
                 < slot["end_time"]

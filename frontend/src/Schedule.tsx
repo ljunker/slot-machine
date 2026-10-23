@@ -1,12 +1,13 @@
 import { Fragment, useRef, useState } from 'react'
-import type { PointerEvent } from 'react'
+import type { CSSProperties, PointerEvent } from 'react'
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
 import CategoryLabels, { CategoryStripe } from './CategoryLabels'
+import { sharedPresentation } from './sharedSessions'
 
-type SlotPatch = { room_id?: number; start_time?: string; end_time?: string }
-type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number; overProgram: boolean }
+type SlotPatch = { room_id?: number | null; start_time?: string; end_time?: string }
+type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number | null; overProgram: boolean }
 type ActiveDuty = Duty & { day_id: number; start_time: string; end_time: string }
 export type DutyPatch = { kind?: 'general' | 'room'; room_id?: number | null; start_time?: string; end_time?: string }
 type DutyTarget = { roomId: number | null }
@@ -74,11 +75,12 @@ function dutyTitle(duty: Duty): string {
   return duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
 }
 
-export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties }: {
+export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, hasSharedBacklog = false, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties }: {
   schedule: DaySchedule
   helperPlan?: HelperPlan
   focus?: 'program' | 'helpers'
-  backlogPreview?: { roomId: number; start: number; topic: string } | null
+  backlogPreview?: { roomId: number | null; start: number; topic: string } | null
+  hasSharedBacklog?: boolean
   onEdit: (slot: Slot) => void
   onEditDuty?: (duty: Duty) => void
   onChange: (slotId: number, patch: SlotPatch) => Promise<void>
@@ -90,6 +92,10 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const [dutyDrag, setDutyDrag] = useState<DutyDrag | null>(null)
   const dutyDragRef = useRef<DutyDrag | null>(null)
   const suppressDutyClick = useRef<number | null>(null)
+  const shared = schedule.shared_slots ?? []
+  const rooms = schedule.rooms.length || shared.length === 0 && !hasSharedBacklog ? schedule.rooms : [{ id: 0, event_id: 0, name: 'Alle Räume', sort_order: 0, slots: [] }]
+  const sharedLabelWidth = focus === 'helpers' ? '165px' : `calc((100% - ${180 * (rooms.length - 1)}px) / ${rooms.length || 1} - 18px)`
+  const presentation = sharedPresentation(schedule.rooms.flatMap(room => room.slots), shared)
   const start = toMinutes(schedule.start_time)
   const end = toMinutes(schedule.end_time)
   const height = (end - start) * PX_PER_MINUTE
@@ -97,10 +103,10 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const speakerConflictIds = new Set(schedule.speaker_conflicts.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
   const activeDuties = helperPlan.duties.filter((duty): duty is ActiveDuty =>
     duty.status === 'active' && duty.day_id === schedule.day_id && duty.start_time !== null && duty.end_time !== null)
-  const generalDuties = activeDuties.filter(duty => duty.kind === 'general')
-  const roomDuties = schedule.rooms.map(room => activeDuties.filter(duty => duty.room_id === room.id))
+  const generalDuties = activeDuties.filter(duty => duty.room_id === null)
+  const roomDuties = rooms.map(room => activeDuties.filter(duty => duty.room_id === room.id))
   function columnDuties(roomId: number | null) {
-    return roomId === null ? generalDuties : roomDuties[schedule.rooms.findIndex(room => room.id === roomId)] ?? []
+    return roomId === null ? generalDuties : roomDuties[rooms.findIndex(room => room.id === roomId)] ?? []
   }
   const activeDutyIds = new Set(activeDuties.map(duty => duty.id))
   const dutyConflicts = helperPlan.conflicts.filter(pair => activeDutyIds.has(pair.first_duty_id) && activeDutyIds.has(pair.second_duty_id))
@@ -114,11 +120,12 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   }
   const dutyById = new Map(activeDuties.map(duty => [duty.id, duty]))
   const helperById = new Map(helperPlan.duties.flatMap(duty => duty.helpers).map(helper => [helper.id, helper.name]))
-  const slots = schedule.rooms.flatMap(room => room.slots)
+  const slots = [...schedule.rooms.flatMap(room => room.slots), ...shared]
   const now = useNoticeNow(slots)
   const slotById = new Map(slots.map(slot => [slot.id, slot]))
   const roomById = new Map(schedule.rooms.map(room => [room.id, room.name]))
   const speakerById = new Map(slots.flatMap(slot => slot.speakers).map(speaker => [speaker.id, speaker.name]))
+  function roomName(slot: Slot) { return slot.scope === 'all_rooms' ? 'Alle Räume' : roomById.get(slot.room_id!) }
   const hours: number[] = []
   for (let minute = Math.ceil(start / 60) * 60; minute <= end; minute += 60) hours.push(minute)
 
@@ -137,11 +144,11 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       let overProgram = current.overProgram
       if (current.mode === 'move') {
         overProgram = false
-        const columns = document.querySelectorAll<HTMLElement>('[data-room-column]')
+        const columns = document.querySelectorAll<HTMLElement>(slot.scope === 'all_rooms' ? '[data-program-column]' : '[data-room-column]')
         for (const column of columns) {
           const rect = column.getBoundingClientRect()
           if (pointer.clientX >= rect.left && pointer.clientX <= rect.right) {
-            roomId = Number(column.dataset.roomColumn)
+            roomId = slot.scope === 'all_rooms' ? null : Number(column.dataset.roomColumn)
             overProgram = true
             break
           }
@@ -162,7 +169,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       if (!current) return
       if (current.mode === 'move') {
         if (!current.overProgram) return
-        const patch = movePatch(current.slot, current.delta, current.roomId, start, end)
+        const patch = { ...movePatch(current.slot, current.delta, current.roomId ?? 0, start, end), room_id: current.roomId }
         if (patch.room_id !== current.slot.room_id || patch.start_time !== current.slot.start_time.slice(0, 5)) void onChange(current.slot.id, patch)
       } else {
         const patch = resizePatch(current.slot, current.delta, end)
@@ -201,7 +208,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
           const rect = column.getBoundingClientRect()
           if (pointer.clientX < rect.left || pointer.clientX > rect.right) continue
           const roomId = column.dataset.dutyColumn === 'general' ? null : Number(column.dataset.dutyColumn)
-          if (current.duty.kind !== 'session' || roomId !== null) {
+          if (current.duty.kind !== 'session' || (current.duty.room_id === null ? roomId === null : roomId !== null)) {
             target = { roomId }
             targetRect = rect
           }
@@ -279,7 +286,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     >
       <CategoryStripe categories={slot.categories} />
       <div className="slot-grip" onPointerDown={ghost ? undefined : event => begin(event, slot, 'move')} aria-label={`${slot.topic} verschieben`}>
-        <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}</strong>
+        <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}{slot.scope === 'all_rooms' ? ' · Alle Räume' : ''}</strong>
         <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
       </div>
       {slot.speakers.length > 0 && <small>{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
@@ -292,7 +299,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   }
 
   const preview = drag && (drag.mode === 'move'
-    ? movePatch(drag.slot, drag.delta, drag.roomId, start, end)
+    ? movePatch(drag.slot, drag.delta, drag.roomId ?? 0, start, end)
     : resizePatch(drag.slot, drag.delta, end))
   const previewStart = drag && (drag.mode === 'move' ? toMinutes((preview as ReturnType<typeof movePatch>).start_time) : toMinutes(drag.slot.start_time))
   const previewEnd = drag && toMinutes(preview!.end_time)
@@ -346,7 +353,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     const reorderIds = dutyDrag?.reordering && dutyDrag.duty.room_id === roomId ? dutyDrag.reorderIds : null
     const ordered = reorderIds ? duties.map(duty => ({ ...duty, sort_order: reorderIds.indexOf(duty.id) })) : duties
     return <div key={label} className={`duty-column${dutyDrag?.mode === 'move' && dutyDrag.target?.roomId === roomId ? ' drop-target' : ''}`}
-      data-duty-column={roomId ?? 'general'} aria-label={label} style={{ gridColumn: column, gridRow: 3, height }}>
+      data-duty-column={roomId === 0 ? undefined : roomId ?? 'general'} aria-label={label} style={{ gridColumn: column, gridRow: 3, height }}>
       {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
       {duties.length === 0 && <span className="empty-room">Keine Dienste</span>}
       {layoutDuties(ordered).filter(({ duty }) => duty.id !== dutyDrag?.duty.id || !dutyPreview).map(({ duty, lane, lanes }) =>
@@ -362,7 +369,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         const first = slotById.get(conflict.first_slot_id)
         const second = slotById.get(conflict.second_slot_id)
         if (!first || !second) return null
-        return <li key={`${first.id}-${second.id}`}>{conflict.speaker_ids.map(id => speakerById.get(id)).filter(Boolean).join(', ')}: {first.topic} ({roomById.get(first.room_id)}, {first.start_time.slice(0, 5)}–{first.end_time.slice(0, 5)}) und {second.topic} ({roomById.get(second.room_id)}, {second.start_time.slice(0, 5)}–{second.end_time.slice(0, 5)})</li>
+        return <li key={`${first.id}-${second.id}`}>{conflict.speaker_ids.map(id => speakerById.get(id)).filter(Boolean).join(', ')}: {first.topic} ({roomName(first)}, {first.start_time.slice(0, 5)}–{first.end_time.slice(0, 5)}) und {second.topic} ({roomName(second)}, {second.start_time.slice(0, 5)}–{second.end_time.slice(0, 5)})</li>
       })}</ul>
     </section>}
     {dutyConflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Helferkonflikte">
@@ -372,25 +379,26 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     </section>}
     <div className={`schedule-grid helper-schedule-grid${focus === 'helpers' ? ' helper-focus-grid' : ''}`} style={{ gridTemplateColumns: focus === 'helpers'
       ? `72px ${helperColumnWidth(generalDuties)}px ${roomDuties.map(duties => `${helperColumnWidth(duties)}px 180px`).join(' ')}`
-      : `72px 180px ${schedule.rooms.map(() => 'minmax(240px, 1fr) 180px').join(' ')}` }}>
+      : `72px 180px ${rooms.map(() => 'minmax(240px, 1fr) 180px').join(' ')}` }}>
       <div className="time-head" style={{ gridColumn: 1, gridRow: '1 / span 2' }}>Zeit</div>
       <div className="duty-head general-head" style={{ gridColumn: 2, gridRow: '1 / span 2' }}>Allgemeine Dienste</div>
-      {schedule.rooms.map((room, index) => <div className="room-head" key={`head-${room.id}`} style={{ gridColumn: `${3 + index * 2} / span 2`, gridRow: 1 }}>{room.name}</div>)}
-      {schedule.rooms.map((room, index) => <div className="room-subhead" key={`program-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 2 }}>Programm</div>)}
-      {schedule.rooms.map((room, index) => <div className="room-subhead duty-subhead" key={`duty-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 3 : 4) + index * 2, gridRow: 2 }}>Helferdienste</div>)}
+      {rooms.map((room, index) => <div className="room-head" key={`head-${room.id}`} style={{ gridColumn: `${3 + index * 2} / span 2`, gridRow: 1 }}>{room.name}</div>)}
+      {rooms.map((room, index) => <div className="room-subhead" key={`program-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 2 }}>Programm</div>)}
+      {rooms.map((room, index) => <div className="room-subhead duty-subhead" key={`duty-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 3 : 4) + index * 2, gridRow: 2 }}>Helferdienste</div>)}
       <div className="time-axis" style={{ gridColumn: 1, gridRow: 3, height }}>
         {hours.map(minute => <div className="hour-label" key={minute} style={{ top: Math.max(9, Math.min(height - 9, (minute - start) * PX_PER_MINUTE)) }}>{toTime(minute)}</div>)}
       </div>
       {dutyColumn(generalDuties, 'Allgemeine Dienste', 2, null)}
-      {schedule.rooms.map((room, index) => <div
+      {rooms.map((room, index) => <div
         className={`room-column${drag?.roomId === room.id || backlogPreview?.roomId === room.id ? ' drop-target' : ''}`}
-        data-room-column={room.id}
+        data-room-column={room.id || undefined}
+        data-program-column={room.id}
         key={room.id}
         style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 3, height }}
       >
         {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
-        {room.slots.length === 0 && !drag && <span className="empty-room">Noch keine Slots</span>}
-        {layoutSlots(room.slots).filter(({ slot }) => slot.id !== drag?.slot.id || (drag.mode === 'move' && !drag.overProgram)).map(({ slot, lane, lanes }) =>
+        {room.slots.length === 0 && shared.length === 0 && !drag && <span className="empty-room">Noch keine Slots</span>}
+        {layoutSlots([...room.slots, ...presentation.repeated]).filter(({ slot }) => slot.id !== drag?.slot.id || (drag.mode === 'move' && !drag.overProgram)).map(({ slot, lane, lanes }) =>
           card(slot, (toMinutes(slot.start_time) - start) * PX_PER_MINUTE, (toMinutes(slot.end_time) - toMinutes(slot.start_time)) * PX_PER_MINUTE, lane, lanes))}
         {drag && (drag.mode === 'resize' || drag.overProgram) && drag.roomId === room.id && previewStart !== null && previewEnd !== null && card(
           { ...drag.slot, room_id: room.id, start_time: toTime(previewStart), end_time: toTime(previewEnd) },
@@ -400,7 +408,15 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         )}
         {backlogPreview?.roomId === room.id && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * PX_PER_MINUTE, height: 60 * PX_PER_MINUTE }}><strong>{backlogPreview.topic}</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
       </div>)}
-      {schedule.rooms.map((room, index) => dutyColumn(roomDuties[index], `Helferdienste ${room.name}`, (focus === 'helpers' ? 3 : 4) + index * 2, room.id))}
+      {rooms.map((room, index) => dutyColumn(roomDuties[index], `Helferdienste ${room.name}`, (focus === 'helpers' ? 3 : 4) + index * 2, room.id))}
+      {rooms.length > 0 && <div className="shared-slot-layer" data-shared-layer style={{ gridColumn: `${focus === 'helpers' ? 4 : 3} / ${(focus === 'helpers' ? 5 : 4) + (rooms.length - 1) * 2}`, gridRow: 3, height, '--shared-label-width': sharedLabelWidth } as CSSProperties}>
+        {presentation.spanning.filter(slot => slot.id !== drag?.slot.id || drag.mode === 'move' && !drag.overProgram).map(slot =>
+          card(slot, (toMinutes(slot.start_time) - start) * PX_PER_MINUTE, (toMinutes(slot.end_time) - toMinutes(slot.start_time)) * PX_PER_MINUTE, 0, 1))}
+        {drag?.slot.scope === 'all_rooms' && (drag.mode === 'resize' || drag.overProgram) && previewStart !== null && previewEnd !== null && card(
+          { ...drag.slot, start_time: toTime(previewStart), end_time: toTime(previewEnd) },
+          (previewStart - start) * PX_PER_MINUTE, (previewEnd - previewStart) * PX_PER_MINUTE, 0, 1, true)}
+        {backlogPreview?.roomId === null && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * PX_PER_MINUTE, height: 60 * PX_PER_MINUTE }}><strong>{backlogPreview.topic} · Alle Räume</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
+      </div>}
     </div>
   </div>
 }
