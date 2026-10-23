@@ -8,6 +8,7 @@ import app.models
 from app.api.routes import (
     auth,
     backups,
+    categories,
     event_days,
     events,
     helpers,
@@ -88,5 +89,6 @@ app.include_router(
 )
 
 app.include_router(speakers.router, prefix="/api")
+app.include_router(categories.router, prefix="/api")
 app.include_router(helpers.router, prefix="/api")
 app.include_router(backups.router, prefix="/api")

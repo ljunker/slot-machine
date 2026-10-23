@@ -2,6 +2,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.auth import AuthToken, EventMembership
+from app.models.category import Category, slot_categories
 from app.models.duty import Duty
 from app.models.event_day import EventDay
 from app.models.helper import Helper, duty_helpers
@@ -74,8 +75,10 @@ class EventService:
         self.db.execute(delete(Duty).where(Duty.event_id == event_id))
         self.db.execute(delete(Helper).where(Helper.event_id == event_id))
         self.db.execute(delete(slot_speakers).where(slot_speakers.c.slot_id.in_(slot_ids)))
+        self.db.execute(delete(slot_categories).where(slot_categories.c.slot_id.in_(slot_ids)))
         self.db.execute(delete(Slot).where(Slot.event_id == event_id))
         self.db.execute(delete(Speaker).where(Speaker.event_id == event_id))
+        self.db.execute(delete(Category).where(Category.event_id == event_id))
         self.db.execute(delete(EventDay).where(EventDay.event_id == event_id))
         self.db.execute(delete(Room).where(Room.event_id == event_id))
         self.db.execute(delete(AuthToken).where(AuthToken.event_id == event_id))

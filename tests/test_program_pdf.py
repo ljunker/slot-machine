@@ -118,6 +118,34 @@ def test_pdf_days_rooms_speakers_and_fresh_data(client):
     assert "Eröffnung" not in updated
 
 
+def test_pdf_footer_lists_categories_used_on_each_day(client):
+    created = event(client)
+    first = day(client, created["id"], "2026-10-01")
+    second = day(client, created["id"], "2026-10-02")
+    selected_room = room(client, created["id"], "Saal")
+    music = client.post(f"/api/events/{created['id']}/categories", json={
+        "name": "Musik", "color": "#AABBCC"
+    }).json()["id"]
+    dance = client.post(f"/api/events/{created['id']}/categories", json={
+        "name": "Tanz", "color": "#DDEEFF"
+    }).json()["id"]
+    for selected_day, category_id in ((first, music), (second, dance)):
+        response = client.post("/api/slots", json={
+            "day_id": selected_day["id"], "room_id": selected_room["id"],
+            "topic": "Vortrag", "start_time": "10:00", "end_time": "11:00",
+            "category_ids": [category_id],
+        })
+        assert response.status_code == 201, response.text
+
+    pages = PdfReader(BytesIO(client.get(f"/api/events/{created['id']}/program.pdf").content)).pages
+    assert len(pages) == 2
+    first_text, second_text = (page.extract_text() for page in pages)
+    assert "Kategorien" in first_text and "Musik" in first_text
+    assert "Tanz" not in first_text
+    assert "Kategorien" in second_text and "Tanz" in second_text
+    assert "Musik" not in second_text
+
+
 def test_overlapping_slots_use_distinct_lanes():
     def item(identifier, start, end):
         return SlotResponse(

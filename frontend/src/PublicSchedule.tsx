@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { layoutSlots, PX_PER_MINUTE, toMinutes, toTime } from './time'
 import type { PublicDaySchedule, PublicSlot } from './types'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
+import CategoryLabels, { CategoryStripe } from './CategoryLabels'
 
 function speakerNames(slot: PublicSlot): string {
   return slot.speakers.map(speaker => speaker.name).join(', ')
@@ -36,6 +37,7 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
     {selectedSlot && <section className="public-detail" aria-label="Session-Details" ref={detailRef} tabIndex={-1}>
       <button type="button" className="public-detail-close" onClick={() => setSelectedSlot(null)}>Schließen</button>
       <h3>{selectedSlot.topic}</h3>
+      <CategoryLabels categories={selectedSlot.categories} />
       {selectedNotice && <p className={`public-change-notice notice-${selectedNotice.type}`}><strong>{noticeLabel(selectedNotice)}</strong>{previousPlanning(selectedNotice) && <span>Vorher: {previousPlanning(selectedNotice)}</span>}</p>}
       <p>{selectedSlot.start_time.slice(0, 5)}–{selectedSlot.end_time.slice(0, 5)} Uhr · {schedule.rooms.find(item => item.id === selectedSlot.room_id)?.name}</p>
       {selectedSlot.speakers.length > 0 && <p>{speakerNames(selectedSlot)}</p>}
@@ -63,10 +65,14 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
             onClick={() => setSelectedSlot(slot)}
             aria-label={`${slot.topic}, ${slot.start_time.slice(0, 5)} bis ${slot.end_time.slice(0, 5)} Uhr${notice ? `, ${noticeLabel(notice)}` : ''}, Details anzeigen`}
           >
+            <CategoryStripe categories={slot.categories} />
             <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}</strong>
-            <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
+            <span className="public-slot-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
             {slot.speakers.length > 0 && <small>{speakerNames(slot)}</small>}
-            {notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
+            {(slot.categories?.length || notice && !compactNotice) && <span className="public-slot-meta">
+              {notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
+              <CategoryLabels categories={slot.categories} />
+            </span>}
           </button>})}
         </div>)}
       </div>
@@ -96,10 +102,11 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
             const notice = activeNotice(slot, now)
             const previous = notice && previousPlanning(notice)
             return <article className={`public-mobile-slot${notice ? ` notice-${notice.type}` : ''}`} key={slot.id}>
+            <CategoryStripe categories={slot.categories} />
             {slot.description ? <details>
-              <summary><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}{notice && <span className="change-badge">{noticeLabel(notice)}</span>}{previous && <span className="previous-planning">Vorher: {previous}</span>}</summary>
+              <summary><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong><CategoryLabels categories={slot.categories} />{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}{notice && <span className="change-badge">{noticeLabel(notice)}</span>}{previous && <span className="previous-planning">Vorher: {previous}</span>}</summary>
               <p className="public-description">{slot.description}</p>
-            </details> : <div className="public-mobile-summary"><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong>{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}{notice && <span className="change-badge">{noticeLabel(notice)}</span>}{previous && <span className="previous-planning">Vorher: {previous}</span>}</div>}
+            </details> : <div className="public-mobile-summary"><span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span><strong>{slot.topic}</strong><CategoryLabels categories={slot.categories} />{slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}{notice && <span className="change-badge">{noticeLabel(notice)}</span>}{previous && <span className="previous-planning">Vorher: {previous}</span>}</div>}
             <a className="program-link public-session-link" href={`/programm/${slot.event_id}/sessions/${slot.id}`}>Session-Seite öffnen</a>
           </article>})}
       </section>}

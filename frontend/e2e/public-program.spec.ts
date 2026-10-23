@@ -97,3 +97,42 @@ test('zeigt Programm und PDF ohne Anmeldung, sperrt die Planung', async ({ brows
   await expect(page.getByRole('button', { name: 'Anmelden' })).toBeVisible()
   await anonymous.close()
 })
+
+test('zeigt Session-Titel trotz Kategorie und Geändert-Flag vollständig', async ({ page, request }) => {
+  const created = await request.post('/api/events', { data: {
+    name: 'Karten-Test', start_date: '2099-06-01', end_date: '2099-06-01',
+  } })
+  const event = await created.json() as { id: number }
+  const day = await (await request.post(`/api/events/${event.id}/days`, { data: {
+    event_id: event.id, date: '2099-06-01', start_time: '15:00', end_time: '17:00',
+  } })).json() as { id: number }
+  const room = await (await request.post('/api/rooms', { data: {
+    event_id: event.id, name: 'Halle 1',
+  } })).json() as { id: number }
+  await request.post('/api/rooms', { data: { event_id: event.id, name: 'Halle 2' } })
+  const speaker = await (await request.post(`/api/events/${event.id}/speakers`, { data: {
+    name: 'Lars',
+  } })).json() as { id: number }
+  const category = await (await request.post(`/api/events/${event.id}/categories`, { data: {
+    name: 'Anfänger', color: '#00CC00',
+  } })).json() as { id: number }
+  const slot = await (await request.post('/api/slots', { data: {
+    event_id: event.id, day_id: day.id, room_id: room.id, topic: 'Meine Session',
+    start_time: '15:00', end_time: '16:00', speaker_ids: [speaker.id], category_ids: [category.id],
+  } })).json() as { id: number }
+  await request.patch(`/api/slots/${slot.id}`, { data: { description: 'Aktualisiert' } })
+
+  await page.setViewportSize({ width: 900, height: 700 })
+  await page.goto(`/programm/${event.id}`)
+  const card = page.locator('.public-slot.notice-updated')
+  await expect(card).toContainText('Meine Session')
+  await expect(card).toContainText('Anfänger')
+  await expect(card).toContainText('Geändert')
+  const bounds = await card.evaluate(element => {
+    const card = element.getBoundingClientRect()
+    const title = element.querySelector('strong')!.getBoundingClientRect()
+    return { titleTop: title.top, titleHeight: title.height, cardTop: card.top }
+  })
+  expect(bounds.titleHeight).toBeGreaterThan(12)
+  expect(bounds.titleTop).toBeGreaterThanOrEqual(bounds.cardTop + 5)
+})

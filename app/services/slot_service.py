@@ -4,6 +4,7 @@ from time import time as epoch_time
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
+from app.models.category import Category, slot_categories
 from app.models.duty import Duty
 from app.models.helper import duty_helpers
 from app.models.slot import Slot
@@ -83,10 +84,12 @@ class SlotService:
             raise NotFound("Veranstaltung nicht gefunden")
         self._validate(event_id, data.day_id, data.room_id, data.start_time, data.end_time)
         speakers = self._speakers(event_id, data.speaker_ids)
+        categories = self._categories(event_id, data.category_ids)
         slot = self.repository.create(
             data.model_copy(update={"event_id": event_id, "topic": name(data.topic)})
         )
         slot.speakers = speakers
+        slot.categories = categories
         self.db.commit()
         return slot
 
@@ -110,10 +113,13 @@ class SlotService:
         if not will_be_planned and changes.get("is_cancelled") is True:
             raise DomainError("Ungeplante Sessions können nicht abgesagt sein")
         speakers = None
+        categories = None
         if "speaker_ids" in changes:
             speakers = self._speakers(
                 slot.event_id, changes["speaker_ids"]
             )
+        if "category_ids" in changes:
+            categories = self._categories(slot.event_id, changes["category_ids"])
         if "topic" in changes:
             changes["topic"] = name(changes["topic"])
         schedule_changed = was_planned and will_be_planned and any(
@@ -126,6 +132,9 @@ class SlotService:
         ) or (
             speakers is not None
             and {speaker.id for speaker in speakers} != set(slot.speaker_ids)
+        ) or (
+            categories is not None
+            and {category.id for category in categories} != set(slot.category_ids)
         )
         if schedule_changed:
             if day_id == slot.day_id:
@@ -155,6 +164,8 @@ class SlotService:
         slot = self.repository.update(slot, SlotUpdate(**changes))
         if speakers is not None:
             slot.speakers = speakers
+        if categories is not None:
+            slot.categories = categories
         self.db.commit()
         return slot
 
@@ -175,11 +186,29 @@ class SlotService:
         by_id = {speaker.id: speaker for speaker in speakers}
         return [by_id[speaker_id] for speaker_id in speaker_ids]
 
+    def _categories(self, event_id: int, category_ids: list[int] | None) -> list[Category]:
+        if category_ids is None:
+            raise DomainError("Kategorienliste darf nicht null sein")
+        if len(category_ids) != len(set(category_ids)):
+            raise DomainError("Kategorien dürfen nur einmal zugeordnet werden")
+        if not category_ids:
+            return []
+        categories = list(self.db.scalars(
+            select(Category).where(Category.id.in_(category_ids))
+        ).all())
+        if len(categories) != len(category_ids) or any(
+            category.event_id != event_id for category in categories
+        ):
+            raise DomainError("Kategorien gehören nicht zur Veranstaltung")
+        by_id = {category.id: category for category in categories}
+        return [by_id[category_id] for category_id in category_ids]
+
     def delete(self, slot_id: int) -> None:
         slot = self.get(slot_id)
         duty_ids = select(Duty.id).where(Duty.slot_id == slot_id)
         self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
         self.db.execute(delete(Duty).where(Duty.slot_id == slot_id))
+        self.db.execute(delete(slot_categories).where(slot_categories.c.slot_id == slot_id))
         self.repository.delete(slot)
         self.db.commit()
 

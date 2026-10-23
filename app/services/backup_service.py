@@ -27,6 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
+from app.models.category import Category, slot_categories
 from app.models.duty import Duty
 from app.models.event import Event
 from app.models.event_day import EventDay
@@ -34,6 +35,7 @@ from app.models.helper import Helper, duty_helpers
 from app.models.room import Room
 from app.models.slot import Slot
 from app.models.speaker import Speaker, slot_speakers
+from app.services.category_service import category_color
 from app.services.errors import DomainError, NotFound
 from app.services.event_branding import (
     LOGO_EXTENSIONS,
@@ -48,7 +50,7 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "2"
+FORMAT_VERSION = "3"
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
@@ -60,11 +62,13 @@ TABLES = {
     "events": Event,
     "event_days": EventDay,
     "rooms": Room,
+    "categories": Category,
     "slots": Slot,
     "speakers": Speaker,
     "helpers": Helper,
     "duties": Duty,
     "slot_speakers": slot_speakers,
+    "slot_categories": slot_categories,
     "duty_helpers": duty_helpers,
 }
 ORDER = tuple(TABLES)
@@ -196,10 +200,13 @@ def build_backup(db: Session, event_id: int) -> bytes:
             }
         ]
     }
-    for name in ("event_days", "rooms", "slots", "speakers", "helpers", "duties"):
+    for name in ("event_days", "rooms", "categories", "slots", "speakers", "helpers", "duties"):
         rows[name] = _model_rows(db, TABLES[name], event_id)
     rows["slot_speakers"] = _link_rows(
         db, slot_speakers, "slot_id", [r["id"] for r in rows["slots"]]
+    )
+    rows["slot_categories"] = _link_rows(
+        db, slot_categories, "slot_id", [r["id"] for r in rows["slots"]]
     )
     rows["duty_helpers"] = _link_rows(
         db, duty_helpers, "duty_id", [r["id"] for r in rows["duties"]]
@@ -304,25 +311,30 @@ def _parse_archive(
                 for entry in entries
             ):
                 raise DomainError("Datei im Backup ist zu groß")
-            required = {"manifest.csv", *(f"{name}.csv" for name in ORDER)}
+            if "manifest.csv" not in names:
+                raise DomainError("CSV-Dateien im Backup fehlen")
+            manifest = _read_csv(
+                archive.read("manifest.csv"),
+                ["format_version", "source_event_id", "exported_at"],
+                "manifest.csv",
+            )
+            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", FORMAT_VERSION}:
+                raise DomainError("Nicht unterstützte Backup-Version")
+            version = manifest[0]["format_version"]
+            archive_order = tuple(
+                name for name in ORDER if version == "3" or name not in {"categories", "slot_categories"}
+            )
+            required = {"manifest.csv", *(f"{name}.csv" for name in archive_order)}
             if not required.issubset(names):
                 raise DomainError("CSV-Dateien im Backup fehlen")
             if any(
                 name not in required and not name.startswith("media/") for name in names
             ):
                 raise DomainError("Unbekannte Datei im Backup")
-            manifest = _read_csv(
-                archive.read("manifest.csv"),
-                ["format_version", "source_event_id", "exported_at"],
-                "manifest.csv",
-            )
-            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", FORMAT_VERSION}:
-                raise DomainError("Nicht unterstützte Backup-Version")
-            version = manifest[0]["format_version"]
             source_id = int(manifest[0]["source_event_id"])
             datetime.fromisoformat(manifest[0]["exported_at"])
             rows: dict[str, list[dict]] = {}
-            for name in ORDER:
+            for name in archive_order:
                 columns = list(_columns(name))
                 if version == "1" and name == "duties":
                     columns = [column for column in columns if column.name != "sort_order"]
@@ -351,6 +363,9 @@ def _parse_archive(
                     )
                     for index, row in enumerate(ordered):
                         row["sort_order"] = index
+            if version in {"1", "2"}:
+                rows["categories"] = []
+                rows["slot_categories"] = []
             media = {
                 name: archive.read(name) for name in names if name.startswith("media/")
             }
@@ -383,7 +398,7 @@ def _validate(
         raise DomainError("Ungültige Veranstaltung im Backup")
     accent_color(event["accent_color"])
     by_id = {}
-    for name in ("event_days", "rooms", "slots", "speakers", "helpers", "duties"):
+    for name in ("event_days", "rooms", "categories", "slots", "speakers", "helpers", "duties"):
         identifiers = [row["id"] for row in rows[name]]
         if any(identifier <= 0 for identifier in identifiers) or len(
             identifiers
@@ -406,6 +421,14 @@ def _validate(
             for person in rows[name]
         ):
             raise DomainError(f"Ungültige Namen in {name}.csv")
+    category_names = [category["normalized_name"] for category in rows["categories"]]
+    if len(category_names) != len(set(category_names)):
+        raise DomainError("Doppelte Kategorienamen im Backup")
+    for category in rows["categories"]:
+        if (not category["name"].strip()
+            or category["name"].casefold() != category["normalized_name"]):
+            raise DomainError("Ungültiger Kategoriename im Backup")
+        category_color(category["color"])
     for slot in rows["slots"]:
         if not slot["topic"].strip():
             raise DomainError("Leeres Session-Thema im Backup")
@@ -461,6 +484,7 @@ def _validate(
             raise DomainError("Ungültiger Dienst im Backup")
     for name, left, right, left_table, right_table in (
         ("slot_speakers", "slot_id", "speaker_id", "slots", "speakers"),
+        ("slot_categories", "slot_id", "category_id", "slots", "categories"),
         ("duty_helpers", "duty_id", "helper_id", "duties", "helpers"),
     ):
         pairs = [(row[left], row[right]) for row in rows[name]]
@@ -547,7 +571,8 @@ def _delete_event_contents(db: Session, event_id: int) -> tuple[str | None, list
     duty_ids = select(Duty.id).where(Duty.event_id == event_id)
     db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
     db.execute(delete(slot_speakers).where(slot_speakers.c.slot_id.in_(slot_ids)))
-    for model in (Duty, Helper, Slot, Speaker, EventDay, Room):
+    db.execute(delete(slot_categories).where(slot_categories.c.slot_id.in_(slot_ids)))
+    for model in (Duty, Helper, Slot, Speaker, Category, EventDay, Room):
         db.execute(delete(model).where(model.event_id == event_id))
     db.expire_all()
     return old_logo, [name for name in photos if name]
@@ -622,7 +647,7 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
         event.logo_filename = names.get(event_data["logo_filename"])
         db.flush()
         maps: dict[str, dict[int, int]] = {}
-        for name in ("event_days", "rooms", "speakers", "helpers", "slots", "duties"):
+        for name in ("event_days", "rooms", "categories", "speakers", "helpers", "slots", "duties"):
             model = TABLES[name]
             maps[name] = {}
             records = rows[name]
@@ -684,6 +709,17 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
                         "speaker_id": maps["speakers"][row["speaker_id"]],
                     }
                     for row in rows["slot_speakers"]
+                ],
+            )
+        if rows["slot_categories"]:
+            db.execute(
+                slot_categories.insert(),
+                [
+                    {
+                        "slot_id": maps["slots"][row["slot_id"]],
+                        "category_id": maps["categories"][row["category_id"]],
+                    }
+                    for row in rows["slot_categories"]
                 ],
             )
         if rows["duty_helpers"]:

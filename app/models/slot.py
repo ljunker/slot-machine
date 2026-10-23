@@ -75,10 +75,17 @@ class Slot(Base):
         back_populates="slots",
         order_by="Speaker.id",
     )
+    categories = relationship(
+        "Category", secondary="slot_categories", back_populates="slots", order_by="Category.id"
+    )
 
     @property
     def speaker_ids(self) -> list[int]:
         return [speaker.id for speaker in self.speakers]
+
+    @property
+    def category_ids(self) -> list[int]:
+        return [category.id for category in self.categories]
 
     @property
     def change_notice(self) -> dict | None:

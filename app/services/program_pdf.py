@@ -11,9 +11,10 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from sqlalchemy.orm import Session
 
+from app.models.event import Event
+from app.schemas.category import CategorySummary
 from app.schemas.schedule import DaySchedule
 from app.schemas.slot import SlotResponse
-from app.models.event import Event
 from app.services.errors import Conflict
 from app.services.event_branding import logo_path
 from app.services.event_day_service import EventDayService
@@ -120,6 +121,13 @@ def _draw_slot(
     pdf.roundRect(
         x, y, width, height, min(2.5, height / 3, width / 3), fill=1, stroke=1
     )
+    if slot.categories:
+        stripe_height = min(3, height)
+        segment_width = width / len(slot.categories)
+        for index, category in enumerate(slot.categories):
+            pdf.setFillColor(colors.HexColor(category.color))
+            pdf.rect(x + index * segment_width, y + height - stripe_height,
+                     segment_width, stripe_height, fill=1, stroke=0)
 
     # Clip text to its own card. Very short slots remain visible as cards.
     pdf.saveState()
@@ -194,6 +202,27 @@ def _draw_slot(
 def _draw_day(
     pdf: canvas.Canvas, event: Event, schedule: DaySchedule, page: int, pages: int
 ) -> None:
+    categories = sorted({
+        category.id: category
+        for room in schedule.rooms
+        for slot in room.slots
+        for category in slot.categories
+    }.values(), key=lambda category: (category.name.casefold(), category.id))
+    footer_rows: list[list[tuple[CategorySummary, float]]] = []
+    row: list[tuple[CategorySummary, float]] = []
+    row_width = 0.0
+    for category in categories:
+        width = min(170, pdfmetrics.stringWidth(category.name, FONT, 7) + 24)
+        if row and row_width + width > PAGE_WIDTH - 54:
+            footer_rows.append(row)
+            row = []
+            row_width = 0
+        row.append((category, width))
+        row_width += width + 9
+    if row:
+        footer_rows.append(row)
+    grid_bottom = GRID_BOTTOM + (20 + 14 * len(footer_rows) if footer_rows else 0)
+
     title_x = 27
     path = logo_path(event)
     if path is not None and path.is_file():
@@ -218,6 +247,20 @@ def _draw_day(
         pdf.rect(27, PAGE_HEIGHT - 80, PAGE_WIDTH - 54, 3, fill=1, stroke=0)
     pdf.setFont(FONT, 7)
     pdf.drawRightString(PAGE_WIDTH - 27, 19, f"Seite {page}/{pages}")
+    if footer_rows:
+        pdf.setFillColor(colors.HexColor("#35445F"))
+        pdf.setFont(BOLD_FONT, 7)
+        pdf.drawString(27, grid_bottom - 15, "Kategorien")
+        for index, items in enumerate(footer_rows):
+            x = 27.0
+            y = grid_bottom - 31 - 14 * index
+            for category, width in items:
+                pdf.setFillColor(colors.HexColor(category.color))
+                pdf.roundRect(x, y - 1, 9, 8, 1.5, fill=1, stroke=0)
+                pdf.setFillColor(colors.HexColor("#35445F"))
+                pdf.setFont(FONT, 7)
+                pdf.drawString(x + 14, y, _fit(category.name, width - 19, FONT, 7))
+                x += width + 9
 
     if not schedule.rooms:
         pdf.setFont(FONT, 11)
@@ -229,13 +272,13 @@ def _draw_day(
     room_width = (GRID_RIGHT - GRID_LEFT) / len(schedule.rooms)
     start = _seconds(schedule.start_time)
     end = _seconds(schedule.end_time)
-    scale = (GRID_TOP - GRID_BOTTOM) / (end - start)
+    scale = (GRID_TOP - grid_bottom) / (end - start)
     pdf.setFillColor(colors.HexColor("#F7F9FD"))
     pdf.rect(
         GRID_LEFT,
-        GRID_BOTTOM,
+        grid_bottom,
         GRID_RIGHT - GRID_LEFT,
-        GRID_TOP - GRID_BOTTOM,
+        GRID_TOP - grid_bottom,
         fill=1,
         stroke=0,
     )
@@ -244,13 +287,13 @@ def _draw_day(
     pdf.setLineWidth(0.5)
     for index, room in enumerate(schedule.rooms):
         room_x = GRID_LEFT + index * room_width
-        pdf.line(room_x, GRID_BOTTOM, room_x, GRID_TOP)
+        pdf.line(room_x, grid_bottom, room_x, GRID_TOP)
         pdf.setFillColor(colors.HexColor("#35445F"))
         pdf.setFont(BOLD_FONT, 8)
         room_name = _fit(room.name, room_width - 6, BOLD_FONT, 8)
         if room_name:
             pdf.drawString(room_x + 3, GRID_TOP + 9, room_name)
-    pdf.line(GRID_RIGHT, GRID_BOTTOM, GRID_RIGHT, GRID_TOP)
+    pdf.line(GRID_RIGHT, grid_bottom, GRID_RIGHT, GRID_TOP)
 
     ticks = sorted(
         {start, end} | set(range((int(start) // 3600 + 1) * 3600, int(end), 3600))
@@ -263,7 +306,7 @@ def _draw_day(
         pdf.setFillColor(colors.HexColor("#536887"))
         pdf.drawRightString(
             GRID_LEFT - 5,
-            max(GRID_BOTTOM, min(GRID_TOP - 6, y - 2)),
+            max(grid_bottom, min(GRID_TOP - 6, y - 2)),
             f"{int(second) // 3600:02d}:{int(second) // 60 % 60:02d}",
         )
 
@@ -291,13 +334,14 @@ def build_program_pdf(db: Session, event_id: int) -> bytes:
         raise Conflict("Für diese Veranstaltung sind noch keine Tage angelegt")
     _register_fonts()
     schedule_service = ScheduleService(db)
+    schedules = [schedule_service.get_day_schedule(day.id) for day in days]
     output = BytesIO()
     pdf = canvas.Canvas(output, pagesize=(PAGE_WIDTH, PAGE_HEIGHT), pageCompression=1)
     pdf.setTitle(f"Programm - {event.name}")
     pdf.setAuthor("Event Scheduler")
-    for index, day in enumerate(days, start=1):
+    for index, schedule in enumerate(schedules, start=1):
         _draw_day(
-            pdf, event, schedule_service.get_day_schedule(day.id), index, len(days)
+            pdf, event, schedule, index, len(schedules)
         )
         pdf.showPage()
     pdf.save()

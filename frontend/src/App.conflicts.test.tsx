@@ -30,7 +30,7 @@ function mockApi(failOverview = false) {
     if (path === '/events') body = [event]
     else if (path === '/events/1/days') body = days
     else if (path === '/events/1/rooms') body = [{ id: 2, event_id: 1, name: 'Saal', sort_order: 0 }]
-    else if (path === '/events/1/speakers' || path === '/events/1/unplanned-sessions' || path === '/events/1/helpers') body = []
+    else if (path === '/events/1/speakers' || path === '/events/1/categories' || path === '/events/1/unplanned-sessions' || path === '/events/1/helpers') body = []
     else if (path === '/events/1/helper-plan') body = { duties: [], conflicts: [] }
     else if (path === '/schedule/days/11') body = schedule(11)
     else if (path === '/schedule/days/12') {

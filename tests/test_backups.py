@@ -46,8 +46,9 @@ def alter_archive(content, remove=None, replace=None, add=None):
         ZipFile(BytesIO(content)) as source,
         ZipFile(output, "w", ZIP_DEFLATED) as target,
     ):
+        removed = {remove} if isinstance(remove, str) else set(remove or [])
         for item in source.infolist():
-            if item.filename != remove:
+            if item.filename not in removed:
                 target.writestr(
                     item.filename,
                     replace.get(item.filename, source.read(item.filename))
@@ -251,7 +252,7 @@ def test_duty_order_roundtrip_and_legacy_backup(client):
     ]
 
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"2,", b"1,", 1)
+        manifest = archive.read("manifest.csv").replace(b"3,", b"1,", 1)
         source = csv.reader(StringIO(archive.read("duties.csv").decode("utf-8")))
         rows = list(source)
         order_index = rows[0].index("sort_order")
@@ -260,6 +261,7 @@ def test_duty_order_roundtrip_and_legacy_backup(client):
         writer.writerows([cell for index, cell in enumerate(row) if index != order_index] for row in rows)
         legacy = alter_archive(
             backup,
+                remove={"categories.csv", "slot_categories.csv"},
             replace={
                 "manifest.csv": manifest,
                 "duties.csv": output.getvalue().encode("utf-8"),
@@ -284,9 +286,10 @@ def test_invalid_archives_do_not_change_data(client, monkeypatch, tmp_path):
     )
     backup = client.get(f"/api/backups/events/{event_id}").content
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"2,", b"99,", 1)
+        manifest = archive.read("manifest.csv").replace(b"3,", b"99,", 1)
     invalid = [
         b"not a zip",
+            alter_archive(backup, remove="manifest.csv"),
         alter_archive(backup, remove="media/logo.png"),
         alter_archive(backup, replace={"manifest.csv": manifest}),
         alter_archive(backup, add=("../evil", b"bad")),

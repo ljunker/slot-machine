@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
-import type { Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
+import type { Category, Event, EventDay, Room, Slot, Speaker, UnplannedSession } from './types'
 import { toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
 import { formatDate } from './date'
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
-export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, createUnplanned = false, onSave, onDeleteLogo, onClearRescheduledNotice, onDelete, onClose }: {
+export default function Editor({ kind, event, day, days, room, slot, rooms, speakers, categories = [], createUnplanned = false, onSave, onDeleteLogo, onClearRescheduledNotice, onDelete, onClose }: {
   kind: EditorKind
   event?: Event
   day?: EventDay
@@ -16,6 +16,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   slot?: Slot | UnplannedSession
   rooms: Room[]
   speakers: Speaker[]
+  categories?: Category[]
   createUnplanned?: boolean
   onSave: (body: Record<string, unknown>, logo?: File | null) => Promise<boolean>
   onDeleteLogo?: (() => Promise<void>) | null
@@ -37,6 +38,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     : day?.end_time.slice(0, 5) ?? '18:00')
   const [topic, setTopic] = useState(slot?.topic ?? '')
   const [speakerIds, setSpeakerIds] = useState<number[]>(slot?.speaker_ids ?? [])
+  const [categoryIds, setCategoryIds] = useState<number[]>(slot?.category_ids ?? [])
   const [description, setDescription] = useState(slot?.description ?? '')
   const [roomId, setRoomId] = useState(slot?.room_id ?? rooms[0]?.id ?? 0)
   const [dayId, setDayId] = useState(slot?.day_id ?? day?.id ?? days[0]?.id ?? 0)
@@ -66,7 +68,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     else if (kind === 'day') body = { date, start_time: start, end_time: end }
     else if (kind === 'room') body = { name }
     else body = {
-      topic, speaker_ids: speakerIds, description: description || null,
+      topic, speaker_ids: speakerIds, category_ids: categoryIds, description: description || null,
       day_id: planned ? dayId : null,
       room_id: planned ? roomId : null,
       start_time: planned ? start : null,
@@ -114,6 +116,10 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
         <fieldset className="speaker-picker"><legend>Redner</legend>
           {speakers.length === 0 && <p className="muted">Lege zuerst ein Rednerprofil an.</p>}
           {speakers.map(person => <label key={person.id}><input type="checkbox" checked={speakerIds.includes(person.id)} onChange={e => setSpeakerIds(current => e.target.checked ? [...current, person.id] : current.filter(id => id !== person.id))} />{person.name}</label>)}
+        </fieldset>
+        <fieldset className="speaker-picker"><legend>Kategorien</legend>
+          {categories.length === 0 && <p className="muted">Noch keine Kategorien angelegt.</p>}
+          {categories.map(category => <label key={category.id}><input type="checkbox" checked={categoryIds.includes(category.id)} onChange={event => setCategoryIds(current => event.target.checked ? [...current, category.id] : current.filter(id => id !== category.id))} /><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</label>)}
         </fieldset>
         <label>Beschreibung<textarea value={description} onChange={e => setDescription(e.target.value)} /></label>
         {planned && <>

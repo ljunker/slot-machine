@@ -9,14 +9,16 @@ import ConflictOverview from './ConflictOverview'
 import Schedule from './Schedule'
 import type { DutyPatch } from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
+import CategoryEditor from './CategoryEditor'
+import CategoryLabels from './CategoryLabels'
 import ThemeControl from './ThemeControl'
 import BackupRestore from './BackupRestore'
 import { TeamManagement, UserManagement } from './TeamManagement'
-import type { CurrentUser, DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
+import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
 
-type Panel = { kind: EditorKind | 'speaker' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
+type Panel = { kind: EditorKind | 'speaker' | 'category' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number; start: number; topic: string }
 
 export default function App({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout?: () => void }) {
@@ -26,6 +28,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const [dayId, setDayId] = useState<number | null>(null)
   const [rooms, setRooms] = useState<Room[]>([])
   const [speakers, setSpeakers] = useState<Speaker[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [helpers, setHelpers] = useState<Helper[]>([])
   const [helperPlan, setHelperPlan] = useState<HelperPlan>({ duties: [], conflicts: [] })
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
@@ -50,12 +53,13 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
     try {
       const eventList = await request<Event[]>('/events')
       const selectedEvent = eventList.find(item => item.id === preferredEvent)?.id ?? eventList[0]?.id ?? null
-      const [dayList, roomList, speakerList, unplannedList, helperList, loadedHelperPlan] = selectedEvent === null
-        ? [[], [], [], [], [], { duties: [], conflicts: [] }] as [EventDay[], Room[], Speaker[], UnplannedSession[], Helper[], HelperPlan]
+      const [dayList, roomList, speakerList, categoryList, unplannedList, helperList, loadedHelperPlan] = selectedEvent === null
+        ? [[], [], [], [], [], [], { duties: [], conflicts: [] }] as [EventDay[], Room[], Speaker[], Category[], UnplannedSession[], Helper[], HelperPlan]
         : await Promise.all([
           request<EventDay[]>(`/events/${selectedEvent}/days`),
           request<Room[]>(`/events/${selectedEvent}/rooms`),
           request<Speaker[]>(`/events/${selectedEvent}/speakers`),
+          request<Category[]>(`/events/${selectedEvent}/categories`),
           request<UnplannedSession[]>(`/events/${selectedEvent}/unplanned-sessions`),
           request<Helper[]>(`/events/${selectedEvent}/helpers`),
           request<HelperPlan>(`/events/${selectedEvent}/helper-plan`),
@@ -69,6 +73,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
       setDayId(selectedDay)
       setRooms(roomList)
       setSpeakers(speakerList)
+      setCategories(categoryList)
       setHelpers(helperList)
       setHelperPlan(loadedHelperPlan)
       setSchedule(daySchedule)
@@ -111,6 +116,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
     ? schedule?.rooms.flatMap(item => item.slots).find(item => item.id === panel.id) ?? unplanned.find(item => item.id === panel.id)
     : undefined
   const selectedSpeaker = panel?.kind === 'speaker' ? speakers.find(item => item.id === panel.id) : undefined
+  const selectedCategory = panel?.kind === 'category' ? categories.find(item => item.id === panel.id) : undefined
   const selectedHelper = panel?.kind === 'helper' ? helpers.find(item => item.id === panel.id) : undefined
   const selectedDuty = panel?.kind === 'duty' ? helperPlan.duties.find(item => item.id === panel.id) : undefined
 
@@ -146,7 +152,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
 
   async function remove(): Promise<boolean> {
     if (!panel || panel.id === null) return false
-    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, helper: `/helpers/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
+    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, category: `/categories/${panel.id}`, helper: `/helpers/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
     try {
       await write<void>('DELETE', path)
       await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
@@ -169,6 +175,19 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
     } catch (cause) {
       if (saved) await loadAll(eventId, dayId)
       if (saved && panel.id === null) setPanel({ kind: 'speaker', id: saved.id })
+      setError((cause as Error).message)
+      return false
+    }
+  }
+
+  async function saveCategory(body: { name: string; color: string }): Promise<boolean> {
+    if (panel?.kind !== 'category' || eventId === null) return false
+    try {
+      await write<Category>(panel.id === null ? 'POST' : 'PATCH',
+        panel.id === null ? `/events/${eventId}/categories` : `/categories/${panel.id}`, body)
+      await loadAll(eventId, dayId)
+      return true
+    } catch (cause) {
       setError((cause as Error).message)
       return false
     }
@@ -349,11 +368,18 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
+          <div className="section-heading"><h2>Kategorien</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'category', id: null })}>+ Kategorie</button>}</div>
+          {categories.length === 0 && <p className="muted">Noch keine Kategorien</p>}
+          <div className="room-list">{categories.map(category => <div className="room-row" key={category.id}>
+            {isAdmin ? <button type="button" className="room-name category-name" onClick={() => setPanel({ kind: 'category', id: category.id })}><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</button> : <span className="room-name category-name"><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</span>}
+          </div>)}</div>
+        </section>}
+        {selectedEvent && <section>
           <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2><button className="text-button" onClick={() => setPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button></div>
           {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
           <div className="unplanned-list">{unplanned.map(session => <div className="unplanned-row" key={session.id}>
             <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} onPointerDown={event => beginBacklogDrag(event, session)}>⠿</button>
-            <button type="button" className="unplanned-name" onClick={() => setPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small></button>
+            <button type="button" className="unplanned-name" onClick={() => setPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
           </div>)}</div>
           {unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
         </section>}
@@ -410,6 +436,13 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         onDeletePhoto={panel.id === null ? null : deleteSpeakerPhoto}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
+      {panel?.kind === 'category' && isAdmin && <CategoryEditor
+        key={`category-${panel.id ?? 'new'}`}
+        category={selectedCategory}
+        onSave={saveCategory}
+        onDelete={panel.id === null ? null : remove}
+        onClose={() => setPanel(current => current === panel ? null : current)}
+      />}
       {panel?.kind === 'helper' && <HelperEditor
         key={`helper-${panel.id ?? 'new'}`}
         helper={selectedHelper}
@@ -431,7 +464,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
-      {panel && panel.kind !== 'speaker' && panel.kind !== 'helper' && panel.kind !== 'duty' && <Editor
+      {panel && panel.kind !== 'speaker' && panel.kind !== 'category' && panel.kind !== 'helper' && panel.kind !== 'duty' && <Editor
         key={`${panel.kind}-${panel.id ?? 'new'}-${panel.createUnplanned ? 'unplanned' : 'planned'}`}
         kind={panel.kind}
         event={panel.kind === 'event' ? events.find(item => item.id === panel.id) : selectedEvent}
@@ -441,6 +474,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         slot={selectedSlot}
         rooms={rooms}
         speakers={speakers}
+        categories={categories}
         createUnplanned={panel.createUnplanned}
         onSave={save}
         onDeleteLogo={panel.kind === 'event' && panel.id !== null ? deleteEventLogo : null}

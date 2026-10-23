@@ -158,6 +158,14 @@ button:disabled { cursor: default; opacity: .35; }
 .speaker-picker legend { color: var(--subtext); font-size: 12px; font-weight: 700; }
 .speaker-picker label { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
 .speaker-picker input { width: auto; }
+.category-name { display: flex; align-items: center; gap: 8px; }
+.category-dot { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #0002; }
+.category-labels { display: inline-flex; flex-wrap: wrap; gap: 3px; max-width: 100%; vertical-align: middle; }
+.category-label { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 1px 5px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.category-stripe { position: absolute; top: 0; left: 0; right: 0; height: 4px; display: flex; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.category-stripe > span { flex: 1; min-width: 0; }
+.public-mobile-slot { position: relative; overflow: hidden; }
+.public-mobile-slot > .category-stripe { height: 5px; }
 .speaker-photo { display: grid; justify-items: start; gap: 6px; }
 .speaker-photo img { display: block; max-width: 100%; max-height: 160px; border-radius: 7px; }
 .speaker-sessions { margin-top: 24px; border-top: 1px solid var(--border-soft); }
@@ -195,6 +203,10 @@ button:disabled { cursor: default; opacity: .35; }
 .public-slot:hover, .public-slot:focus-visible { background: var(--card-hover); z-index: 3; }
 .public-slot strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .public-slot span, .public-slot small { color: var(--subtext); font-size: 11px; }
+.public-slot > strong, .public-slot > .public-slot-time, .public-slot > small { flex-shrink: 0; }
+.public-slot-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; width: 100%; min-height: 0; overflow: hidden; }
+.public-slot-meta .category-labels { flex: 0 1 auto; min-width: 0; }
+.public-slot-meta .change-badge { flex: 0 0 auto; }
 .public-detail { position: relative; margin-bottom: 16px; padding: 17px 55px 17px 20px; background: var(--surface); border: 1px solid var(--card-border); border-radius: 12px; box-shadow: 0 3px 15px var(--shadow); }
 .public-detail h3 { margin: 0 0 7px; }
 .public-detail p { margin: 5px 0; }

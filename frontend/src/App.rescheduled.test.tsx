@@ -36,7 +36,7 @@ it('removes one rescheduled notice in the editor and all remaining notices for t
     if (path === '/events') body = [event]
     else if (path === '/events/1/days') body = [day]
     else if (path === '/events/1/rooms') body = [{ id: 2, event_id: 1, name: 'Saal', sort_order: 0 }]
-    else if (path === '/events/1/speakers' || path === '/events/1/unplanned-sessions' || path === '/events/1/helpers') body = []
+    else if (path === '/events/1/speakers' || path === '/events/1/categories' || path === '/events/1/unplanned-sessions' || path === '/events/1/helpers') body = []
     else if (path === '/events/1/helper-plan') body = { duties: [], conflicts: [] }
     else if (path === '/schedule/days/11') body = {
       day_id: 11, date: day.date, start_time: day.start_time, end_time: day.end_time,

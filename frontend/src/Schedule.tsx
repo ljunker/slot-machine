@@ -3,6 +3,7 @@ import type { PointerEvent } from 'react'
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
+import CategoryLabels, { CategoryStripe } from './CategoryLabels'
 
 type SlotPatch = { room_id?: number; start_time?: string; end_time?: string }
 type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number; overProgram: boolean }
@@ -276,11 +277,13 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       onDoubleClick={ghost ? undefined : () => onEdit(slot)}
       onKeyDown={ghost ? undefined : event => { if (event.key === 'Enter') onEdit(slot) }}
     >
+      <CategoryStripe categories={slot.categories} />
       <div className="slot-grip" onPointerDown={ghost ? undefined : event => begin(event, slot, 'move')} aria-label={`${slot.topic} verschieben`}>
         <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}</strong>
         <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
       </div>
       {slot.speakers.length > 0 && <small>{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
+      <CategoryLabels categories={slot.categories} />
       {!ghost && notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
       {!ghost && speakerConflictIds.has(slot.id) && <span className="slot-conflict-badge">Rednerkonflikt</span>}
       {!ghost && <button className="slot-edit" type="button" onClick={() => onEdit(slot)} aria-label={`${slot.topic} bearbeiten`}>Bearbeiten</button>}

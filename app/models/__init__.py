@@ -1,4 +1,5 @@
 from app.models.auth import AuthSession, AuthThrottle, AuthToken, EventMembership, User
+from app.models.category import Category
 from app.models.duty import Duty
 from app.models.event import Event
 from app.models.event_day import EventDay
@@ -11,6 +12,7 @@ __all__ = [
     "AuthSession",
     "AuthThrottle",
     "AuthToken",
+    "Category",
     "Duty",
     "Event",
     "EventDay",

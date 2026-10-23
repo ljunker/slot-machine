@@ -46,7 +46,7 @@ class SlotRepository:
         return list(self.db.scalars(statement).all())
 
     def create(self, data: SlotCreate) -> Slot:
-        values = data.model_dump(exclude={"speaker_ids"})
+        values = data.model_dump(exclude={"speaker_ids", "category_ids"})
         if values["event_id"] is None and values["day_id"] is not None:
             day = self.db.get(EventDay, values["day_id"])
             values["event_id"] = day.event_id if day else None
@@ -62,7 +62,7 @@ class SlotRepository:
         slot: Slot,
         data: SlotUpdate,
     ) -> Slot:
-        update_data = data.model_dump(exclude_unset=True, exclude={"speaker_ids"})
+        update_data = data.model_dump(exclude_unset=True, exclude={"speaker_ids", "category_ids"})
 
         for field, value in update_data.items():
             setattr(slot, field, value)

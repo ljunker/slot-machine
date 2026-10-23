@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.category import CategorySummary
 from app.schemas.speaker import SpeakerSummary
 
 
@@ -11,6 +12,7 @@ class SlotBase(BaseModel):
 
     topic: str
     speaker_ids: list[int] = Field(default_factory=list)
+    category_ids: list[int] = Field(default_factory=list)
     description: str | None = None
 
     day_id: int | None = None
@@ -28,6 +30,7 @@ class SlotUpdate(BaseModel):
 
     topic: str | None = None
     speaker_ids: list[int] | None = None
+    category_ids: list[int] | None = None
     description: str | None = None
 
     start_time: time | None = None
@@ -53,6 +56,7 @@ class SlotResponse(SlotBase):
     id: int
     event_id: int
     speakers: list[SpeakerSummary]
+    categories: list[CategorySummary] = Field(default_factory=list)
     is_cancelled: bool = False
     change_notice: ChangeNotice | None = None
 
@@ -78,6 +82,7 @@ class PublicSlotResponse(BaseModel):
     room_id: int
     topic: str
     speakers: list[PublicSpeaker]
+    categories: list[CategorySummary] = Field(default_factory=list)
     description: str | None
     start_time: time
     end_time: time
