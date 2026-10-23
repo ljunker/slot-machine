@@ -44,7 +44,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [showUsers, setShowUsers] = useState(false)
-  const [clearingRescheduledNotices, setClearingRescheduledNotices] = useState(false)
+  const [clearingChangeNotices, setClearingChangeNotices] = useState(false)
   const loadNumber = useRef(0)
 
   async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
@@ -217,14 +217,14 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
     } catch (cause) { setError((cause as Error).message) }
   }
 
-  async function clearEventRescheduledNotices() {
-    if (eventId === null || !window.confirm('Alle Verschoben-Flags dieser Veranstaltung entfernen?')) return
-    setClearingRescheduledNotices(true)
+  async function clearEventChangeNotices() {
+    if (eventId === null || !window.confirm('Alle Verschoben- und Geändert-Flags dieser Veranstaltung entfernen? Abgesagte Sessions bleiben abgesagt.')) return
+    setClearingChangeNotices(true)
     try {
-      await write<void>('DELETE', `/events/${eventId}/rescheduled-notices`)
+      await write<void>('DELETE', `/events/${eventId}/change-notices`)
       await loadAll(eventId, dayId)
     } catch (cause) { setError((cause as Error).message) }
-    finally { setClearingRescheduledNotices(false) }
+    finally { setClearingChangeNotices(false) }
   }
 
   async function saveHelper(name: string): Promise<boolean> {
@@ -348,7 +348,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           {selectedEvent && <p className="muted">{formatDate(selectedEvent.start_date)} bis {formatDate(selectedEvent.end_date)}</p>}
           {selectedEvent && isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
           {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowTeam(true)}>Team verwalten</button>}
-          {selectedEvent && <button type="button" className="text-button clear-rescheduled-button" disabled={clearingRescheduledNotices} onClick={() => void clearEventRescheduledNotices()}>Alle Verschoben Flags entfernen</button>}
+          {selectedEvent && <button type="button" className="text-button clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
         </section>
         {selectedEvent && <section>
           <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>

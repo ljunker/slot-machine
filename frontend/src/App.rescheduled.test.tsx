@@ -15,11 +15,15 @@ const slots: Slot[] = [1, 2].map(id => ({
   start_time: id === 1 ? '10:00:00' : '13:00:00', end_time: id === 1 ? '11:00:00' : '14:00:00',
   is_cancelled: false, change_notice: rescheduled,
 }))
+const cancelled: Slot = {
+  ...slots[0], id: 3, topic: 'Dritter', is_cancelled: true,
+  change_notice: { type: 'cancelled', expires_at: null, previous_start_time: null, previous_end_time: null, previous_room_name: null },
+}
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-it('removes one rescheduled notice in the editor and all remaining notices for the event', async () => {
-  let currentSlots = slots
+it('removes one rescheduled notice in the editor and all change notices for the event', async () => {
+  let currentSlots = [...slots, cancelled]
   const confirm = vi.fn(() => true)
   vi.stubGlobal('confirm', confirm)
   const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
@@ -27,8 +31,8 @@ it('removes one rescheduled notice in the editor and all remaining notices for t
     if (options?.method === 'DELETE') {
       if (path === '/slots/1/rescheduled-notice') {
         currentSlots = currentSlots.map(slot => slot.id === 1 ? { ...slot, change_notice: { type: 'updated', expires_at: expiresAt, previous_start_time: null, previous_end_time: null, previous_room_name: null } } : slot)
-      } else if (path === '/events/1/rescheduled-notices') {
-        currentSlots = currentSlots.map(slot => slot.id === 2 ? { ...slot, change_notice: null } : slot)
+      } else if (path === '/events/1/change-notices') {
+        currentSlots = currentSlots.map(slot => slot.is_cancelled ? slot : { ...slot, change_notice: null })
       } else throw new Error(`Unexpected DELETE: ${path}`)
       return new Response(null, { status: 204 })
     }
@@ -58,11 +62,12 @@ it('removes one rescheduled notice in the editor and all remaining notices for t
   expect(fetchMock).toHaveBeenCalledWith('/api/slots/1/rescheduled-notice', expect.objectContaining({ method: 'DELETE' }))
 
   confirm.mockReturnValueOnce(false)
-  fireEvent.click(screen.getByRole('button', { name: 'Alle Verschoben Flags entfernen' }))
-  expect(fetchMock).not.toHaveBeenCalledWith('/api/events/1/rescheduled-notices', expect.anything())
-  fireEvent.click(screen.getByRole('button', { name: 'Alle Verschoben Flags entfernen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Änderungs-Flags entfernen' }))
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/events/1/change-notices', expect.anything())
+  fireEvent.click(screen.getByRole('button', { name: 'Alle Änderungs-Flags entfernen' }))
   await waitFor(() => expect(container.querySelectorAll('.slot-card.notice-rescheduled')).toHaveLength(0))
-  expect(confirm).toHaveBeenCalledWith('Alle Verschoben-Flags dieser Veranstaltung entfernen?')
-  expect(container.querySelectorAll('.slot-card.notice-updated')).toHaveLength(1)
-  expect(fetchMock).toHaveBeenCalledWith('/api/events/1/rescheduled-notices', expect.objectContaining({ method: 'DELETE' }))
+  expect(confirm).toHaveBeenCalledWith('Alle Verschoben- und Geändert-Flags dieser Veranstaltung entfernen? Abgesagte Sessions bleiben abgesagt.')
+  expect(container.querySelectorAll('.slot-card.notice-updated')).toHaveLength(0)
+  expect(container.querySelectorAll('.slot-card.notice-cancelled')).toHaveLength(1)
+  expect(fetchMock).toHaveBeenCalledWith('/api/events/1/change-notices', expect.objectContaining({ method: 'DELETE' }))
 })

@@ -235,6 +235,22 @@ class SlotService:
         )
         self.db.commit()
 
+    def clear_event_change_notices(self, event_id: int) -> None:
+        if self.events.get_by_id(event_id) is None:
+            raise NotFound("Veranstaltung nicht gefunden")
+        self.db.execute(
+            update(Slot)
+            .where(Slot.event_id == event_id)
+            .values(
+                schedule_changed_at=None,
+                content_changed_at=None,
+                previous_room_name=None,
+                previous_start_time=None,
+                previous_end_time=None,
+            )
+        )
+        self.db.commit()
+
     def get_unplanned_for_event(self, event_id: int) -> list[Slot]:
         if self.events.get_by_id(event_id) is None:
             raise NotFound("Veranstaltung nicht gefunden")

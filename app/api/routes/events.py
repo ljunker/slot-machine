@@ -67,6 +67,13 @@ def clear_event_rescheduled_notices(event_id: int, db: Session = Depends(get_db)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.delete("/{event_id}/change-notices", status_code=status.HTTP_204_NO_CONTENT)
+def clear_event_change_notices(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id)
+    SlotService(db).clear_event_change_notices(event_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @public_router.get("/{event_id}/program.pdf")
 def get_program_pdf(event_id: int, db: Session = Depends(get_db)):
     data = build_program_pdf(db, event_id)

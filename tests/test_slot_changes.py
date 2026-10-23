@@ -224,6 +224,49 @@ def test_clear_event_rescheduled_notices_across_days_only_in_selected_event(clie
     assert "Abgesagt" in pdf_text
 
 
+def test_clear_event_change_notices_preserves_cancellations_and_other_events(client, db):
+    day, (first_room, second_room) = make_program(client)
+    event_id = first_room["event_id"]
+    client.patch(f"/api/events/{event_id}", json={"end_date": "2026-10-02"})
+    next_day = client.post(
+        f"/api/events/{event_id}/days",
+        json={"event_id": event_id, "date": "2026-10-02", "start_time": "09:00", "end_time": "18:00"},
+    ).json()
+    moved = make_slot(client, day, first_room, "Verschoben")
+    updated = make_slot(client, next_day, first_room, "Geändert")
+    cancelled = make_slot(client, day, first_room, "Abgesagt")
+    other_day, (other_room, _) = make_program(client)
+    other = make_slot(client, other_day, other_room, "Andere Veranstaltung")
+    client.patch(f"/api/slots/{moved['id']}", json={"room_id": second_room["id"]})
+    client.patch(f"/api/slots/{moved['id']}", json={"topic": "Neues Thema"})
+    client.patch(f"/api/slots/{updated['id']}", json={"topic": "Neuer Titel"})
+    client.patch(f"/api/slots/{cancelled['id']}", json={"is_cancelled": True})
+    client.patch(f"/api/slots/{other['id']}", json={"topic": "Anderer Titel"})
+
+    path = f"/api/events/{event_id}/change-notices"
+    assert client.delete(path).status_code == 204
+    assert client.delete(path).status_code == 204
+    assert client.delete("/api/events/999999/change-notices").status_code == 404
+    for slot in (moved, updated, cancelled):
+        saved = db.get(Slot, slot["id"])
+        assert saved.schedule_changed_at is None
+        assert saved.content_changed_at is None
+        assert (saved.previous_room_name, saved.previous_start_time, saved.previous_end_time) == (None, None, None)
+    assert db.get(Slot, cancelled["id"]).is_cancelled is True
+    assert db.get(Slot, other["id"]).content_changed_at is not None
+    notices = {
+        slot["id"]: slot["change_notice"]
+        for event_day in (day, next_day)
+        for room in client.get(f"/api/schedule/days/{event_day['id']}").json()["rooms"]
+        for slot in room["slots"]
+    }
+    assert notices[moved["id"]] is None
+    assert notices[updated["id"]] is None
+    assert notices[cancelled["id"]]["type"] == "cancelled"
+    assert client.get(f"/api/events/{event_id}/sessions/{updated['id']}").json()["change_notice"] is None
+    assert client.get(f"/api/events/{other_room['event_id']}/sessions/{other['id']}").json()["change_notice"]["type"] == "updated"
+
+
 def test_legacy_slot_migration_is_repeatable(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
     with engine.begin() as connection:
