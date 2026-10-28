@@ -18,6 +18,7 @@ services:
       - schedule_data:/data
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)"]
       interval: 10s
@@ -31,6 +32,7 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+    restart: unless-stopped
 
 volumes:
   schedule_data:
