@@ -5,7 +5,7 @@ import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 
 const slot = (id: number, dayId: number, roomId: number, topic: string, start: string, end: string): Slot => ({
   id, event_id: 1, day_id: dayId, room_id: roomId, topic, start_time: start, end_time: end,
-  speaker_ids: [8], speakers: [{ id: 8, name: 'Ada' }], description: null,
+  speaker_required: true, speaker_ids: [8], speakers: [{ id: 8, name: 'Ada' }], description: null,
   is_cancelled: false, change_notice: null,
 })
 

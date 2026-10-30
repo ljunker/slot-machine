@@ -8,7 +8,7 @@ import type { DaySchedule, Duty, Slot } from './types'
 
 const shared: Slot = {
   id: 5, event_id: 1, day_id: 2, scope: 'all_rooms', room_id: null, topic: 'Mittagspause',
-  speaker_ids: [], speakers: [], description: 'Gemeinsam essen',
+  speaker_required: true, speaker_ids: [], speakers: [], description: 'Gemeinsam essen',
   start_time: '12:00:00', end_time: '13:00:00', is_cancelled: false, change_notice: null,
 }
 const schedule: DaySchedule = {

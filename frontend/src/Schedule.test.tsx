@@ -9,8 +9,8 @@ const schedule: DaySchedule = {
   speaker_conflicts: [],
   rooms: [
     { id: 1, event_id: 1, name: 'A', sort_order: 0, slots: [
-      { id: 1, event_id: 1, day_id: 1, room_id: 1, topic: 'Erster', speaker_ids: [], speakers: [], description: null, start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null },
-      { id: 2, event_id: 1, day_id: 1, room_id: 1, topic: 'Zweiter', speaker_ids: [], speakers: [], description: null, start_time: '10:30:00', end_time: '11:30:00', is_cancelled: false, change_notice: null },
+      { id: 1, event_id: 1, day_id: 1, room_id: 1, topic: 'Erster', speaker_required: true, speaker_ids: [], speakers: [], description: null, start_time: '10:00:00', end_time: '11:00:00', is_cancelled: false, change_notice: null },
+      { id: 2, event_id: 1, day_id: 1, room_id: 1, topic: 'Zweiter', speaker_required: true, speaker_ids: [], speakers: [], description: null, start_time: '10:30:00', end_time: '11:30:00', is_cancelled: false, change_notice: null },
     ] },
     { id: 2, event_id: 1, name: 'B', sort_order: 1, slots: [] },
   ],
@@ -58,8 +58,8 @@ describe('schedule interactions', () => {
   })
 
   it('names speaker conflicts across rooms', () => {
-    const other = { ...schedule.rooms[0].slots[1], room_id: 2, speaker_ids: [5], speakers: [{ id: 5, name: 'Ada' }] }
-    const first = { ...schedule.rooms[0].slots[0], speaker_ids: [5], speakers: [{ id: 5, name: 'Ada' }] }
+    const other = { ...schedule.rooms[0].slots[1], room_id: 2, speaker_required: true, speaker_ids: [5], speakers: [{ id: 5, name: 'Ada' }] }
+    const first = { ...schedule.rooms[0].slots[0], speaker_required: true, speaker_ids: [5], speakers: [{ id: 5, name: 'Ada' }] }
     const changed: DaySchedule = {
       ...schedule,
       collisions: [],

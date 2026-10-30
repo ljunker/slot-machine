@@ -55,7 +55,7 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "5"
+FORMAT_VERSION = "6"
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
@@ -334,11 +334,11 @@ def _parse_archive(
                 ["format_version", "source_event_id", "exported_at"],
                 "manifest.csv",
             )
-            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", "3", "4", FORMAT_VERSION}:
+            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", "3", "4", "5", FORMAT_VERSION}:
                 raise DomainError("Nicht unterstützte Backup-Version")
             version = manifest[0]["format_version"]
             archive_order = tuple(
-                name for name in (ORDER if version == FORMAT_VERSION else LEGACY_ORDER)
+                name for name in (LEGACY_ORDER if version in {"1", "2", "3", "4"} else ORDER)
                 if version not in {"1", "2"} or name not in {"categories", "slot_categories"}
             )
             required = {"manifest.csv", *(f"{name}.csv" for name in archive_order)}
@@ -353,9 +353,11 @@ def _parse_archive(
             rows: dict[str, list[dict]] = {}
             for name in archive_order:
                 columns = list(_columns(name))
+                if version != FORMAT_VERSION and name == "slots":
+                    columns = [column for column in columns if column.name != "speaker_required"]
                 if version in {"1", "2", "3"} and name == "slots":
                     columns = [column for column in columns if column.name != "scope"]
-                if version != FORMAT_VERSION and name == "duties":
+                if version in {"1", "2", "3", "4"} and name == "duties":
                     columns = [column for column in columns if column.name != "capacity"]
                 if version == "1" and name == "duties":
                     columns = [column for column in columns if column.name != "sort_order"]
@@ -371,6 +373,9 @@ def _parse_archive(
                     }
                     for row in raw
                 ]
+                if version != FORMAT_VERSION and name == "slots":
+                    for row in rows[name]:
+                        row["speaker_required"] = True
                 if version in {"1", "2", "3"} and name == "slots":
                     for row in rows[name]:
                         row["scope"] = "room"
@@ -393,7 +398,7 @@ def _parse_archive(
             rows.setdefault("helpers", [])
             rows.setdefault("duty_helpers", [])
             rows.setdefault("duty_assignments", [])
-            if version != FORMAT_VERSION:
+            if version in {"1", "2", "3", "4"}:
                 for duty in rows["duties"]:
                     duty["capacity"] = 1
             media = {

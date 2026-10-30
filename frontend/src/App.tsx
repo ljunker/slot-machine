@@ -6,6 +6,7 @@ import type { EditorKind } from './Editor'
 import DutyEditor from './DutyEditor'
 import { DutyDetails, SlotDetails } from './ReadOnlyDetails'
 import ConflictOverview from './ConflictOverview'
+import Dashboard from './Dashboard'
 import Schedule from './Schedule'
 import type { DutyPatch } from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
@@ -40,10 +41,11 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [helpers, setHelpers] = useState<DutyParticipant[]>([])
   const [helperPlan, setHelperPlan] = useState<HelperPlan>({ duties: [], conflicts: [] })
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
-  const [view, setView] = useState<'schedule' | 'helpers' | 'conflicts'>('schedule')
+  const [view, setView] = useState<'schedule' | 'helpers' | 'conflicts' | 'dashboard'>('schedule')
   const [overviewSchedules, setOverviewSchedules] = useState<DaySchedule[] | null>(null)
   const [overviewError, setOverviewError] = useState('')
-  const [overviewRetry, setOverviewRetry] = useState(0)
+  const [dashboardDayId, setDashboardDayId] = useState<number | null>(null)
+  const [loadError, setLoadError] = useState('')
   const [unplanned, setUnplanned] = useState<UnplannedSession[]>([])
   const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
   const [panel, setPanel] = useState<Panel | null>(null)
@@ -56,10 +58,20 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [showAccount, setShowAccount] = useState(false)
   const [clearingChangeNotices, setClearingChangeNotices] = useState(false)
   const loadNumber = useRef(0)
+  const overviewLoadNumber = useRef(0)
+  const isSuperadmin = currentUser.is_superadmin
+  const isAdmin = isSuperadmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'admin')
+  const canPlan = isAdmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'editor')
+  const isDashboard = view === 'dashboard' && isAdmin
+  const isOverview = view === 'conflicts' || isDashboard
 
   async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
     const number = ++loadNumber.current
+    ++overviewLoadNumber.current
     setLoading(true)
+    setLoadError('')
+    setOverviewSchedules(null)
+    setOverviewError('')
     try {
       const eventList = await request<Event[]>('/events')
       const selectedEvent = eventList.find(item => item.id === preferredEvent)?.id ?? eventList[0]?.id ?? null
@@ -92,7 +104,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       setError('')
       return true
     } catch (cause) {
-      if (number === loadNumber.current) setError((cause as Error).message)
+      if (number === loadNumber.current) {
+        setError((cause as Error).message)
+        setLoadError((cause as Error).message)
+      }
       return false
     } finally {
       if (number === loadNumber.current) setLoading(false)
@@ -102,26 +117,33 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   useEffect(() => { void loadAll(null, null) }, [])
 
   useEffect(() => {
-    if (view !== 'conflicts' || eventId === null) return
+    if (!isOverview || eventId === null || loading || loadError) return
     let active = true
+    const number = ++overviewLoadNumber.current
     setOverviewSchedules(null)
     setOverviewError('')
     Promise.all(days.map(day => request<DaySchedule>(`/schedule/days/${day.id}`)))
-      .then(loaded => { if (active) setOverviewSchedules(loaded) })
-      .catch((cause: Error) => { if (active) setOverviewError(cause.message) })
+      .then(loaded => { if (active && number === overviewLoadNumber.current) setOverviewSchedules(loaded) })
+      .catch((cause: Error) => { if (active && number === overviewLoadNumber.current) setOverviewError(cause.message) })
     return () => { active = false }
-  }, [view, eventId, days, overviewRetry])
+  }, [isOverview, eventId, days, loading, loadError])
 
-  async function openConflictEntry(targetDayId: number, kind: 'slot' | 'duty', id: number) {
-    if (!await loadAll(eventId, targetDayId)) return
-    setView('schedule')
+  useEffect(() => { setDashboardDayId(null) }, [eventId])
+
+  useEffect(() => {
+    if (view === 'dashboard' && !isAdmin) {
+      setView('schedule')
+      setPanel(null)
+    }
+  }, [view, isAdmin])
+
+  async function openOverviewEntry(targetDayId: number | null, kind: 'slot' | 'duty', id: number) {
+    if (targetDayId !== null && !await loadAll(eventId, targetDayId)) return
+    if (!isDashboard) setView('schedule')
     setPanel({ kind, id })
   }
 
   const selectedEvent = events.find(item => item.id === eventId)
-  const isSuperadmin = currentUser.is_superadmin
-  const isAdmin = isSuperadmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'admin')
-  const canPlan = isAdmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'editor')
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot'
@@ -382,7 +404,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" onClick={() => { setPanel(null); if (view === 'conflicts') setView('schedule'); void loadAll(eventId, day.id) }}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            <button type="button" onClick={() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id) }}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
             {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>}
           </div>)}</div>
         </section>}
@@ -429,25 +451,36 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       </nav>
       <main className="main-area">
         {selectedEvent && <div className="planning-views" role="group" aria-label="Planungsansicht">
+          {isAdmin && <button type="button" aria-pressed={isDashboard} onClick={() => { setPanel(null); setView('dashboard') }}>Dashboard</button>}
           <button type="button" aria-pressed={view === 'schedule'} onClick={() => setView('schedule')}>Tagesplan</button>
           <button type="button" aria-pressed={view === 'helpers'} onClick={() => setView('helpers')}>Helferplan</button>
           <button type="button" aria-pressed={view === 'conflicts'} onClick={() => { setPanel(null); setView('conflicts') }}>Konflikte</button>
         </div>}
-        <div className="plan-heading"><div><span className="eyebrow">{view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatDate(selectedDay.date) : 'Programm'}</h2><p>{view === 'conflicts' ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
+        <div className="plan-heading"><div><span className="eyebrow">{isDashboard ? 'PLANUNGSSTAND' : view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatDate(selectedDay.date) : 'Programm'}</h2><p>{isOverview ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
-            {selectedEvent && canPlan && view !== 'conflicts' && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
-            {selectedDay && canPlan && view !== 'conflicts' && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+            {selectedEvent && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
+            {selectedDay && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
-        {view !== 'conflicts' && loading && <p className="state-message">Lade Programm …</p>}
-        {view !== 'conflicts' && !loading && schedule && <Schedule readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
-        {view !== 'conflicts' && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {canPlan && view !== 'conflicts' && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
-        {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
-        {view === 'conflicts' && !loading && overviewError && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError}<br /><button className="text-button" type="button" onClick={() => setOverviewRetry(value => value + 1)}>Erneut versuchen</button></div>}
-        {view === 'conflicts' && !loading && overviewSchedules && !overviewError && <ConflictOverview readOnly={!canPlan} schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openConflictEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openConflictEntry(day, 'duty', duty)} />}
+        {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
+        {!isOverview && !loading && schedule && <Schedule readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
+        {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
+        {canPlan && !isOverview && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
+        {isDashboard && selectedEvent && <Dashboard
+          days={days} rooms={rooms} speakerCount={speakers.length} schedules={overviewSchedules}
+          helperPlan={helperPlan} unplanned={unplanned}
+          dayId={days.some(day => day.id === dashboardDayId) ? dashboardDayId : null}
+          onDayChange={setDashboardDayId}
+          loading={loading || (!overviewSchedules && !overviewError && !loadError)}
+          error={overviewError || loadError} onRefresh={() => void loadAll(eventId, dayId)}
+          onOpenSlot={(day, slot) => void openOverviewEntry(day, 'slot', slot)}
+          onOpenDuty={(day, duty) => void openOverviewEntry(day, 'duty', duty)}
+        />}
+        {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError && !loadError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
+        {view === 'conflicts' && !loading && (overviewError || loadError) && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError || loadError}<br /><button className="text-button" type="button" onClick={() => void loadAll(eventId, dayId)}>Erneut versuchen</button></div>}
+        {view === 'conflicts' && !loading && overviewSchedules && !overviewError && !loadError && <ConflictOverview readOnly={!canPlan} schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openOverviewEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openOverviewEntry(day, 'duty', duty)} />}
       </main>
       {canPlan && panel?.kind === 'speaker' && <SpeakerEditor
         key={`speaker-${panel.id ?? 'new'}`}

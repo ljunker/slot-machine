@@ -106,7 +106,7 @@ class SlotService:
         slot = self.get(slot_id)
         changes = data.model_dump(exclude_unset=True)
         required_patch(
-            changes, {"topic", "is_cancelled", "scope"}
+            changes, {"topic", "is_cancelled", "scope", "speaker_required"}
         )
         day_id = changes.get("day_id", slot.day_id)
         room_id = changes.get("room_id", slot.room_id)

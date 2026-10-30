@@ -53,6 +53,10 @@ class Slot(Base):
         nullable=True,
     )
 
+    speaker_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+
     start_time: Mapped[time | None] = mapped_column(
         Time,
         nullable=True,

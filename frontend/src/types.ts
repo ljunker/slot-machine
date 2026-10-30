@@ -46,6 +46,7 @@ export type Slot = {
   room_id: number | null
   topic: string
   speaker_ids: number[]
+  speaker_required: boolean
   category_ids?: number[]
   categories?: CategorySummary[]
   speakers: SpeakerSummary[]

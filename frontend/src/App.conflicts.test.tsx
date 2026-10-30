@@ -12,7 +12,7 @@ const days: EventDay[] = [
 ]
 const slots: Slot[] = [1, 2].map(id => ({
   id, event_id: 1, day_id: 12, room_id: 2, topic: id === 1 ? 'Erster' : 'Zweiter',
-  speaker_ids: [], speakers: [], description: null, start_time: id === 1 ? '10:00:00' : '10:30:00',
+  speaker_required: true, speaker_ids: [], speakers: [], description: null, start_time: id === 1 ? '10:00:00' : '10:30:00',
   end_time: id === 1 ? '11:00:00' : '11:30:00', is_cancelled: false, change_notice: null,
 }))
 const schedule = (dayId: number): DaySchedule => ({

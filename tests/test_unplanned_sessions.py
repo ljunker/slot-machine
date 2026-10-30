@@ -4,7 +4,9 @@ from pypdf import PdfReader
 from sqlalchemy import create_engine, text
 from sqlalchemy import event as sqlalchemy_event
 
+from app.db.migrate_shared_sessions import migrate_shared_sessions
 from app.db.migrate_slot_changes import migrate_slot_changes
+from app.db.migrate_speaker_requirement import migrate_speaker_requirement
 from app.db.migrate_unplanned_sessions import migrate_unplanned_sessions
 
 
@@ -145,6 +147,9 @@ def test_existing_sqlite_database_migrates_without_losing_links(tmp_path):
     migrate_slot_changes(engine)
     migrate_unplanned_sessions(engine)
     migrate_unplanned_sessions(engine)
+    migrate_speaker_requirement(engine)
+    migrate_shared_sessions(engine)
+    migrate_speaker_requirement(engine)
     with engine.connect() as connection:
         assert connection.execute(text("SELECT id, event_id, day_id, room_id, topic, start_time, end_time FROM slots")).one() == (5, 1, 2, 3, "Alt", "10:00", "11:00")
         assert connection.execute(text("SELECT slot_id, speaker_id FROM slot_speakers")).one() == (5, 4)

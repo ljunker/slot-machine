@@ -38,6 +38,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     : day?.end_time.slice(0, 5) ?? '18:00')
   const [topic, setTopic] = useState(slot?.topic ?? '')
   const [speakerIds, setSpeakerIds] = useState<number[]>(slot?.speaker_ids ?? [])
+  const [speakerRequired, setSpeakerRequired] = useState(slot?.speaker_required ?? true)
   const [categoryIds, setCategoryIds] = useState<number[]>(slot?.category_ids ?? [])
   const [description, setDescription] = useState(slot?.description ?? '')
   const [roomId, setRoomId] = useState(slot?.room_id ?? rooms[0]?.id ?? 0)
@@ -69,7 +70,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
     else if (kind === 'day') body = { date, start_time: start, end_time: end }
     else if (kind === 'room') body = { name }
     else body = {
-      topic, speaker_ids: speakerIds, category_ids: categoryIds, description: description || null,
+      topic, speaker_ids: speakerIds, speaker_required: speakerRequired, category_ids: categoryIds, description: description || null,
       day_id: planned ? dayId : null,
       scope,
       room_id: planned && scope === 'room' ? roomId : null,
@@ -116,6 +117,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
       {kind === 'slot' && <>
         <label>Thema<input required maxLength={255} value={topic} onChange={e => setTopic(e.target.value)} /></label>
         <fieldset className="speaker-picker"><legend>Redner</legend>
+          <label><input type="checkbox" checked={speakerRequired} onChange={e => setSpeakerRequired(e.target.checked)} />Redner erforderlich</label>
           {speakers.length === 0 && <p className="muted">Lege zuerst ein Rednerprofil an.</p>}
           {speakers.map(person => <label key={person.id}><input type="checkbox" checked={speakerIds.includes(person.id)} onChange={e => setSpeakerIds(current => e.target.checked ? [...current, person.id] : current.filter(id => id !== person.id))} />{person.name}</label>)}
         </fieldset>

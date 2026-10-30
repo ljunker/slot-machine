@@ -26,7 +26,8 @@ def migrate_shared_sessions(engine: Engine) -> None:
                         table.to_metadata(metadata)
                     temporary = Slot.__table__.to_metadata(metadata, name="slots_shared_new")
                     temporary.create(connection)
-                    names = [column.name for column in Slot.__table__.columns if column.name != "scope"]
+                    names = [column.name for column in Slot.__table__.columns
+                             if column.name != "scope" and column.name in columns]
                     fields = ", ".join(names)
                     connection.exec_driver_sql(
                         f"INSERT INTO slots_shared_new ({fields}, scope) SELECT {fields}, 'room' FROM slots"

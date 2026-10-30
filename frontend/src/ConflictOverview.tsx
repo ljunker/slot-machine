@@ -78,18 +78,19 @@ export function collectConflicts(schedules: DaySchedule[], helperPlan: HelperPla
   return entries.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key))
 }
 
-export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, onOpenDuty, readOnly = false }: {
+export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, onOpenDuty, readOnly = false, scopeLabel = 'dieser Veranstaltung' }: {
   readOnly?: boolean
+  scopeLabel?: string
   schedules: DaySchedule[]
   helperPlan: HelperPlan
   onOpenSlot: (dayId: number, slotId: number) => void
   onOpenDuty: (dayId: number, dutyId: number) => void
 }) {
   const entries = collectConflicts(schedules, helperPlan)
-  if (entries.length === 0) return <div className="empty-state">Keine Konflikte in dieser Veranstaltung.</div>
+  if (entries.length === 0) return <div className="empty-state">Keine Konflikte in {scopeLabel}.</div>
 
   return <section className="conflict-overview" aria-label="Konfliktübersicht">
-    <p className="conflict-count">{entries.length} {entries.length === 1 ? 'Konflikt' : 'Konflikte'} in dieser Veranstaltung</p>
+    <p className="conflict-count">{entries.length} {entries.length === 1 ? 'Konflikt' : 'Konflikte'} in {scopeLabel}</p>
     <ol className="conflict-list">{entries.map(entry => <li key={entry.key} className={`conflict-item conflict-${entry.kind}`}>
       <div className="conflict-heading">
         <strong>{entry.kind === 'room' ? 'Raumkonflikt' : entry.kind === 'speaker' ? 'Rednerkonflikt' : `Helferkonflikt: ${entry.people[0]}`}</strong>

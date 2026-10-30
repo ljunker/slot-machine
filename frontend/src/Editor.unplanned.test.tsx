@@ -7,7 +7,7 @@ const days: EventDay[] = [{ id: 2, event_id: 1, date: '2026-10-01', start_time: 
 const rooms: Room[] = [{ id: 3, event_id: 1, name: 'Saal', sort_order: 0 }]
 const session: UnplannedSession = {
   id: 4, event_id: 1, day_id: null, room_id: null, start_time: null, end_time: null,
-  topic: 'Vortrag', speaker_ids: [], speakers: [], description: null,
+  topic: 'Vortrag', speaker_required: true, speaker_ids: [], speakers: [], description: null,
   is_cancelled: false, change_notice: null,
 }
 

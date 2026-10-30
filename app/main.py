@@ -26,6 +26,7 @@ from app.db.migrate_event_branding import migrate_event_branding
 from app.db.migrate_helper_accounts import migrate_helper_accounts
 from app.db.migrate_shared_sessions import migrate_shared_sessions
 from app.db.migrate_slot_changes import migrate_slot_changes
+from app.db.migrate_speaker_requirement import migrate_speaker_requirement
 from app.db.migrate_speakers import migrate_legacy_speakers
 from app.db.migrate_unplanned_sessions import migrate_unplanned_sessions
 from app.services.errors import DomainError
@@ -38,6 +39,7 @@ async def lifespan(application: FastAPI):
     migrate_slot_changes(engine)
     migrate_legacy_speakers(engine)
     migrate_unplanned_sessions(engine)
+    migrate_speaker_requirement(engine)
     migrate_shared_sessions(engine)
     migrate_duty_order(engine)
     migrate_helper_accounts(engine)

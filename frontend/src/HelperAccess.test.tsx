@@ -6,7 +6,7 @@ import DutySignup from './DutySignup'
 import type { CurrentUser, Duty, Slot } from './types'
 
 const currentUser: CurrentUser = { id: 9, name: 'Ada', email: 'ada@example.invalid', is_superadmin: false, event_roles: { '1': 'helper', '2': 'editor' }, csrf_token: 'test' }
-const slot: Slot = { id: 3, event_id: 1, day_id: 4, room_id: 5, topic: 'Vortrag', description: 'Details zum Vortrag', start_time: '10:00:00', end_time: '11:00:00', speaker_ids: [], speakers: [], is_cancelled: false, change_notice: null }
+const slot: Slot = { id: 3, event_id: 1, day_id: 4, room_id: 5, topic: 'Vortrag', description: 'Details zum Vortrag', start_time: '10:00:00', end_time: '11:00:00', speaker_required: true, speaker_ids: [], speakers: [], is_cancelled: false, change_notice: null }
 const duty: Duty = { id: 6, event_id: 1, kind: 'general', title: 'Einlass', user_ids: [], users: [], capacity: 1, day_id: 4, date: '2026-10-01', room_id: null, slot_id: null, session_topic: null, start_time: '10:00:00', end_time: '12:00:00', sort_order: 0, status: 'active' }
 
 function mockApi(user = currentUser) {

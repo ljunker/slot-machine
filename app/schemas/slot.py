@@ -13,6 +13,7 @@ class SlotBase(BaseModel):
     topic: str
     scope: Literal["room", "all_rooms"] = "room"
     speaker_ids: list[int] = Field(default_factory=list)
+    speaker_required: bool = True
     category_ids: list[int] = Field(default_factory=list)
     description: str | None = None
 
@@ -32,6 +33,7 @@ class SlotUpdate(BaseModel):
     topic: str | None = None
     scope: Literal["room", "all_rooms"] | None = None
     speaker_ids: list[int] | None = None
+    speaker_required: bool | None = None
     category_ids: list[int] | None = None
     description: str | None = None
 

@@ -11,7 +11,7 @@ const expiresAt = Math.floor(Date.now() / 1000) + 3600
 const rescheduled = { type: 'rescheduled' as const, expires_at: expiresAt, previous_start_time: '09:00:00', previous_end_time: '10:00:00', previous_room_name: 'Saal' }
 const slots: Slot[] = [1, 2].map(id => ({
   id, event_id: 1, day_id: 11, room_id: 2, topic: id === 1 ? 'Erster' : 'Zweiter',
-  speaker_ids: [], speakers: [], description: null,
+  speaker_required: true, speaker_ids: [], speakers: [], description: null,
   start_time: id === 1 ? '10:00:00' : '13:00:00', end_time: id === 1 ? '11:00:00' : '14:00:00',
   is_cancelled: false, change_notice: rescheduled,
 }))
