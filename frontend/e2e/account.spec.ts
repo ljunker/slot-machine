@@ -6,7 +6,7 @@ async function login(page: Page, email: string, password: string) {
   await page.getByLabel('E-Mail', { exact: true }).fill(email)
   await page.getByLabel('Passwort', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Anmelden' }).click()
-  await expect(page.getByRole('button', { name: 'Mein Konto' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Menü', exact: true })).toBeVisible()
 }
 
 for (const viewport of [
@@ -44,8 +44,9 @@ for (const viewport of [
       await page.getByRole('button', { name: /^2\. Oktober 2026/ }).click()
       await page.getByRole('button', { name: 'Helferplan', exact: true }).click()
       await expect(page.locator(`[data-duty-id="${duty.id}"]`)).toContainText('Ada Helferin')
-      const opener = page.getByRole('button', { name: 'Mein Konto' })
+      const opener = page.getByRole('button', { name: 'Menü', exact: true })
       await opener.click()
+      await page.getByRole('button', { name: 'Mein Konto', exact: true }).click()
       let dialog = page.getByRole('dialog', { name: 'Mein Konto' })
       await expect(dialog.getByLabel('Name', { exact: true })).toBeFocused()
       await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Ada Helferin')
@@ -59,6 +60,7 @@ for (const viewport of [
       await expect(dialog).toHaveCount(0)
       await expect(opener).toBeFocused()
       await page.keyboard.press('Enter')
+      await page.getByRole('button', { name: 'Mein Konto', exact: true }).click()
       dialog = page.getByRole('dialog', { name: 'Mein Konto' })
       await dialog.getByLabel('Name', { exact: true }).fill('  Ada  Müller  ')
       await dialog.getByRole('button', { name: 'Namen speichern' }).click()
@@ -104,6 +106,7 @@ for (const viewport of [
       await expect(opener).toBeVisible()
       await expect(page.locator('.account-name')).toContainText('Ada Müller')
       await opener.click()
+      await page.getByRole('button', { name: 'Mein Konto', exact: true }).click()
       for (const label of ['Aktuelles Passwort', 'Neues Passwort', 'Neues Passwort wiederholen']) {
         await expect(page.getByLabel(label, { exact: true })).toHaveValue('')
       }

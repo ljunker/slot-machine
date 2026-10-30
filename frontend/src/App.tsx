@@ -12,6 +12,8 @@ import SpeakerEditor from './SpeakerEditor'
 import CategoryEditor from './CategoryEditor'
 import CategoryLabels from './CategoryLabels'
 import ThemeControl from './ThemeControl'
+import HeaderMenu from './HeaderMenu'
+import type { HeaderMenuAction } from './HeaderMenu'
 import BackupRestore from './BackupRestore'
 import AccountDialog from './AccountDialog'
 import { TeamManagement, UserManagement } from './TeamManagement'
@@ -341,17 +343,24 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     window.addEventListener('pointercancel', cancel)
   }
 
+  const headerActions: HeaderMenuAction[] = [
+    { label: 'Mein Konto', onClick: () => { setShowTeam(false); setShowUsers(false); setShowRestore(false); setShowAccount(true) } },
+  ]
+  if (isSuperadmin) headerActions.push({ label: 'Benutzer', onClick: () => setShowUsers(true) })
+  if (isSuperadmin || selectedEvent && isAdmin) headerActions.push({ label: 'Restore', onClick: () => setShowRestore(true) })
+  if (isSuperadmin) headerActions.push({ label: '+ Veranstaltung', disabled: loading, onClick: () => setPanel({ kind: 'event', id: null }) })
+  if (onLogout) headerActions.push({ label: 'Abmelden', separatorBefore: true, onClick: onLogout })
+
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
       <div className="header-actions">
-        <ThemeControl />
-        <span className="account-name">{currentUser.name ? `${currentUser.name} · ` : ''}{currentUser.email}</span>
-        <button className="header-secondary" onClick={() => { setShowTeam(false); setShowUsers(false); setShowRestore(false); setShowAccount(true) }}>Mein Konto</button>
-        {onLogout && <button className="header-secondary" onClick={onLogout}>Abmelden</button>}
-        {isSuperadmin && <button className="header-secondary" onClick={() => setShowUsers(true)}>Benutzer</button>}
-        {(isSuperadmin || selectedEvent && isAdmin) && <button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button>}
-        {isSuperadmin && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>}
+        <ThemeControl variant="segmented" />
+        <div className="account-name">
+          {currentUser.name && <strong title={currentUser.name}>{currentUser.name}</strong>}
+          <span title={currentUser.email}>{currentUser.email}</span>
+        </div>
+        <HeaderMenu actions={headerActions} />
       </div>
     </header>
     {notice && <div className="state-message" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Schließen</button></div>}

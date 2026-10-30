@@ -25,7 +25,7 @@ export const test = base.extend({
     await page.getByRole('textbox', { name: 'E-Mail' }).fill(credentials.email)
     await page.getByLabel('Passwort').fill(credentials.password)
     await page.getByRole('button', { name: 'Anmelden' }).click()
-    await expect(page.getByRole('button', { name: 'Abmelden' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Menü', exact: true }).or(page.getByRole('heading', { name: 'Namen festlegen' }))).toBeVisible()
     if (await page.getByRole('heading', { name: 'Namen festlegen' }).isVisible()) {
       await page.getByLabel('Name', { exact: true }).fill('E2E Admin')
       await page.getByRole('button', { name: 'Speichern' }).click()

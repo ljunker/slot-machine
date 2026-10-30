@@ -2,6 +2,7 @@ import { expect, test } from './fixtures'
 
 test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.goto('/')
+  await page.getByRole('button', { name: 'Menü', exact: true }).click()
   await page.getByRole('button', { name: '+ Veranstaltung' }).click()
   await page.getByLabel('Name').fill('Browserkonferenz')
   await page.getByLabel('Startdatum').fill('2026-10-01')

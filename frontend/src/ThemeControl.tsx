@@ -1,7 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 type Preference = 'system' | 'light' | 'dark'
 const storageKey = 'slot-machine-theme'
+const options: { value: Preference; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Hell' },
+  { value: 'dark', label: 'Dunkel' },
+]
+
+function ThemeIcon({ value }: { value: Preference }) {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {value === 'system' && <><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8m-4-4v4" /></>}
+    {value === 'light' && <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></>}
+    {value === 'dark' && <path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z" />}
+  </svg>
+}
 
 function storedPreference(): Preference {
   try {
@@ -17,8 +30,9 @@ function applyTheme(preference: Preference) {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
 }
 
-export default function ThemeControl() {
+export default function ThemeControl({ variant = 'select' }: { variant?: 'select' | 'segmented' }) {
   const [preference, setPreference] = useState<Preference>(storedPreference)
+  const groupName = useId()
 
   useEffect(() => {
     applyTheme(preference)
@@ -43,6 +57,13 @@ export default function ThemeControl() {
       else window.localStorage.setItem(storageKey, value)
     } catch { /* Theme still applies for this page. */ }
   }
+
+  if (variant === 'segmented') return <div className="theme-control theme-control--segmented" role="radiogroup" aria-label="Darstellung">
+    {options.map(option => <label key={option.value} className="theme-option" title={option.label}>
+      <input type="radio" name={groupName} value={option.value} aria-label={option.label} checked={preference === option.value} onChange={() => choose(option.value)} />
+      <span className="theme-option-icon"><ThemeIcon value={option.value} /></span>
+    </label>)}
+  </div>
 
   return <label className="theme-control">Darstellung
     <select aria-label="Darstellung" value={preference} onChange={event => choose(event.target.value as Preference)}>

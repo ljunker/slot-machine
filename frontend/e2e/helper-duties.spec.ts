@@ -304,9 +304,11 @@ test('Helfer legt Namen fest und übernimmt Dienste ohne Bearbeitungsrechte', as
   await page.getByLabel('Name', { exact: true }).fill('Ada Helferin')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('button', { name: 'Helferplan', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Menü', exact: true }).click()
   for (const name of ['+ Dienst', '+ Slot', '+ Session', '+ Helfer', 'Team verwalten', 'Restore', 'Alle Änderungs-Flags entfernen']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
+  await page.getByRole('button', { name: 'Menü', exact: true }).click()
   await expect(page.locator('.slot-resize, .duty-resize')).toHaveCount(0)
   await page.getByRole('button', { name: 'Lesbare Session ansehen', exact: true }).click()
   await expect(page.getByLabel('Sessiondetails')).toContainText('Details für Helfer')
