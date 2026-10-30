@@ -13,6 +13,7 @@ import CategoryEditor from './CategoryEditor'
 import CategoryLabels from './CategoryLabels'
 import ThemeControl from './ThemeControl'
 import BackupRestore from './BackupRestore'
+import AccountDialog from './AccountDialog'
 import { TeamManagement, UserManagement } from './TeamManagement'
 import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
@@ -21,7 +22,12 @@ import { formatDate } from './date'
 type Panel = { kind: EditorKind | 'speaker' | 'category' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number | null; start: number; topic: string }
 
-export default function App({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout?: () => void }) {
+export default function App({ currentUser, onLogout, onProfileChange, onPasswordChanged }: {
+  currentUser: CurrentUser
+  onLogout?: () => void
+  onProfileChange?: (user: CurrentUser) => void
+  onPasswordChanged?: () => void
+}) {
   const [events, setEvents] = useState<Event[]>([])
   const [eventId, setEventId] = useState<number | null>(null)
   const [days, setDays] = useState<EventDay[]>([])
@@ -45,6 +51,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [showUsers, setShowUsers] = useState(false)
+  const [showAccount, setShowAccount] = useState(false)
   const [clearingChangeNotices, setClearingChangeNotices] = useState(false)
   const loadNumber = useRef(0)
 
@@ -337,7 +344,15 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
-      <div className="header-actions"><ThemeControl /><span className="account-name">{currentUser.email}</span>{onLogout && <button className="header-secondary" onClick={onLogout}>Abmelden</button>}{isSuperadmin && <button className="header-secondary" onClick={() => setShowUsers(true)}>Benutzer</button>}{(isSuperadmin || selectedEvent && isAdmin) && <button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button>}{isSuperadmin && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>}</div>
+      <div className="header-actions">
+        <ThemeControl />
+        <span className="account-name">{currentUser.name ? `${currentUser.name} · ` : ''}{currentUser.email}</span>
+        <button className="header-secondary" onClick={() => { setShowTeam(false); setShowUsers(false); setShowRestore(false); setShowAccount(true) }}>Mein Konto</button>
+        {onLogout && <button className="header-secondary" onClick={onLogout}>Abmelden</button>}
+        {isSuperadmin && <button className="header-secondary" onClick={() => setShowUsers(true)}>Benutzer</button>}
+        {(isSuperadmin || selectedEvent && isAdmin) && <button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button>}
+        {isSuperadmin && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>}
+      </div>
     </header>
     {notice && <div className="state-message" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Schließen</button></div>}
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError('')}>Schließen</button></div>}
@@ -480,6 +495,10 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
       }} onClose={() => setShowRestore(false)} />}
       {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
       {showUsers && isSuperadmin && <UserManagement currentUserId={currentUser.id} onClose={() => setShowUsers(false)} />}
+      {showAccount && <AccountDialog currentUser={currentUser} onProfileSaved={async updated => {
+        onProfileChange?.(updated)
+        return loadAll(eventId, dayId)
+      }} onPasswordChanged={() => onPasswordChanged?.()} onClose={() => setShowAccount(false)} />}
     </div>
   </div>
 }

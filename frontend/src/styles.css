@@ -278,6 +278,15 @@ button:disabled { cursor: default; opacity: .35; }
 .backup-preview p { margin: 0; font-size: 13px; line-height: 1.4; }
 .backup-preview .danger { justify-self: start; }
 .backup-error { margin: 0; color: var(--danger-text); font-size: 13px; }
+.account-dialog { margin: auto; border: 1px solid var(--border); max-height: calc(100dvh - 36px); }
+.account-dialog:not([open]) { display: none; }
+.account-dialog::backdrop { background: #0009; }
+.account-dialog form { display: grid; gap: 12px; }
+.account-dialog form + form { border-top: 1px solid var(--border); padding-top: 18px; }
+.account-dialog h3, .account-dialog p { margin: 0; }
+.account-dialog p { color: var(--subtext); font-size: 13px; line-height: 1.5; }
+.account-dialog .account-email { overflow-wrap: anywhere; }
+.account-dialog [role="alert"] { color: var(--danger-text); }
 .public-header-content { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
 .public-title { display: flex; align-items: center; gap: 18px; min-width: 0; }
 .public-title h1 { overflow-wrap: anywhere; }

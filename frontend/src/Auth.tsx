@@ -60,6 +60,7 @@ export function NameForm({ onSave, onLogout }: { onSave: (user: CurrentUser) => 
 export function AuthGate() {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     let active = true
@@ -73,16 +74,22 @@ export function AuthGate() {
 
   async function logout() {
     await write<void>('POST', '/auth/logout')
+    endSession('')
+  }
+
+  function endSession(notice: string) {
     setCsrfToken(null)
     setUser(null)
+    setMessage(notice)
   }
 
   if (loading) return <main className="auth-page"><p role="status">Prüfe Anmeldung …</p></main>
   if (user && !user.name) return <NameForm onSave={setUser} onLogout={() => void logout()} />
-  if (user) return <App currentUser={user} onLogout={() => void logout()} />
+  if (user) return <App currentUser={user} onLogout={() => void logout()} onProfileChange={setUser} onPasswordChanged={() => endSession('Passwort geändert. Bitte erneut anmelden.')} />
   return <main className="auth-page"><section className="auth-card">
     <h1>Programmplanung</h1><p>Für die Planung anmelden.</p>
-    <LoginForm onLogin={setUser} />
+    {message && <p role="status">{message}</p>}
+    <LoginForm onLogin={next => { setMessage(''); setUser(next) }} />
     <a href="/passwort-zuruecksetzen">Passwort vergessen?</a>
   </section></main>
 }

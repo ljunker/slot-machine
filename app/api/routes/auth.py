@@ -8,7 +8,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
-from app.models.auth import AuthSession, AuthToken, EventMembership, User
+from app.models.auth import AuthSession, AuthThrottle, AuthToken, EventMembership, User
 from app.models.event import Event
 from app.services.auth import (
     COOKIE_NAME,
@@ -53,6 +53,12 @@ class EmailInput(BaseModel):
 class ResetInput(BaseModel):
     token: str
     password: str
+
+
+class PasswordChangeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str
+    new_password: str
 
 
 class AcceptInput(BaseModel):
@@ -147,6 +153,28 @@ def update_me(data: ProfileInput, request: Request, user: User = Depends(require
 @router.post("/logout", status_code=204)
 def logout(request: Request, response: Response, user: User = Depends(require_user), db: Session = Depends(get_db)):
     db.delete(request.state.auth_session)
+    db.commit()
+    response.status_code = 204
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return response
+
+
+@router.post("/password-change", status_code=204)
+def change_password(
+    data: PasswordChangeInput, response: Response,
+    user: User = Depends(require_user), db: Session = Depends(get_db),
+):
+    keys = throttle_keys("password-change", user.email)
+    check_throttle(db, keys)
+    if not password_matches(user.password_hash, data.current_password):
+        record_attempt(db, keys)
+        raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch")
+    user.password_hash = password_hash(data.new_password)
+    db.execute(update(AuthToken).where(
+        AuthToken.kind == "reset", AuthToken.user_id == user.id, AuthToken.consumed_at.is_(None),
+    ).values(consumed_at=now()))
+    db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
+    db.execute(delete(AuthThrottle).where(AuthThrottle.key.in_(keys)))
     db.commit()
     response.status_code = 204
     response.delete_cookie(COOKIE_NAME, path="/")
