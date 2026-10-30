@@ -25,7 +25,7 @@ router = APIRouter(tags=["Speakers"], dependencies=[Depends(require_user)])
 
 @router.get("/events/{event_id}/speakers", response_model=list[SpeakerResponse])
 def list_speakers(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
-    authorize_event(db, user, event_id)
+    authorize_event(db, user, event_id, "helper")
     return SpeakerService(db).list_for_event(event_id)
 
 
@@ -41,7 +41,7 @@ def create_speaker(event_id: int, data: SpeakerCreate, db: Session = Depends(get
 
 @router.get("/speakers/{speaker_id}", response_model=SpeakerDetail)
 def get_speaker(speaker_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
-    authorize_object(db, user, Speaker, speaker_id)
+    authorize_object(db, user, Speaker, speaker_id, "helper")
     service = SpeakerService(db)
     speaker = service.get(speaker_id)
     return SpeakerDetail(
@@ -74,7 +74,7 @@ async def upload_photo(
 
 @router.get("/speakers/{speaker_id}/photo")
 def get_photo(speaker_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
-    authorize_object(db, user, Speaker, speaker_id)
+    authorize_object(db, user, Speaker, speaker_id, "helper")
     speaker = SpeakerService(db).get(speaker_id)
     if not speaker.photo_filename:
         raise NotFound("Foto nicht gefunden")

@@ -1,8 +1,8 @@
-import csv
-from io import BytesIO, StringIO
+from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from conftest import legacy_archive, make_account
 from PIL import Image
 from sqlalchemy import select
 
@@ -85,9 +85,7 @@ def test_roundtrip_replace_and_create(client, db, monkeypatch, tmp_path):
             "website": "https://example.org",
         },
     ).json()["id"]
-    helper_id = client.post(
-        f"/api/events/{event_id}/helpers", json={"name": "Bo"}
-    ).json()["id"]
+    helper_id = make_account(db, event_id, "Bo")["id"]
     slot = client.post(
         "/api/slots",
         json={
@@ -115,7 +113,7 @@ def test_roundtrip_replace_and_create(client, db, monkeypatch, tmp_path):
         json={
             "kind": "session",
             "slot_id": slot,
-            "helper_ids": [helper_id],
+            "user_ids": [helper_id],
             "title": "Technik",
         },
     )
@@ -154,7 +152,7 @@ def test_roundtrip_replace_and_create(client, db, monkeypatch, tmp_path):
             "manifest.csv",
             "events.csv",
             "slots.csv",
-            "duty_helpers.csv",
+            "duty_assignments.csv",
             "media/logo.png",
             f"media/speakers/{speaker}.png",
         } <= set(archive.namelist())
@@ -188,7 +186,7 @@ def test_roundtrip_replace_and_create(client, db, monkeypatch, tmp_path):
     assert (
         len(
             client.get(f"/api/events/{event_id}/helper-plan").json()["duties"][0][
-                "helpers"
+                "users"
             ]
         )
         == 1
@@ -251,29 +249,7 @@ def test_duty_order_roundtrip_and_legacy_backup(client):
         "Parkeinweisung", "Registration", "Getränke"
     ]
 
-    with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"4,", b"1,", 1)
-        slot_rows = list(csv.reader(StringIO(archive.read("slots.csv").decode("utf-8"))))
-        scope_index = slot_rows[0].index("scope")
-        slot_output = StringIO(newline="")
-        csv.writer(slot_output).writerows(
-            [cell for index, cell in enumerate(row) if index != scope_index] for row in slot_rows
-        )
-        source = csv.reader(StringIO(archive.read("duties.csv").decode("utf-8")))
-        rows = list(source)
-        order_index = rows[0].index("sort_order")
-        output = StringIO(newline="")
-        writer = csv.writer(output, lineterminator="\r\n")
-        writer.writerows([cell for index, cell in enumerate(row) if index != order_index] for row in rows)
-        legacy = alter_archive(
-            backup,
-                remove={"categories.csv", "slot_categories.csv"},
-            replace={
-                "manifest.csv": manifest,
-                "slots.csv": slot_output.getvalue().encode("utf-8"),
-                "duties.csv": output.getvalue().encode("utf-8"),
-            },
-        )
+    legacy = legacy_archive(backup, "1")
     restored = upload(client, legacy, endpoint="restore")
     assert restored.status_code == 200, restored.text
     duties = client.get(
@@ -293,7 +269,7 @@ def test_invalid_archives_do_not_change_data(client, monkeypatch, tmp_path):
     )
     backup = client.get(f"/api/backups/events/{event_id}").content
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"4,", b"99,", 1)
+        manifest = archive.read("manifest.csv").replace(b"5,", b"99,", 1)
     invalid = [
         b"not a zip",
             alter_archive(backup, remove="manifest.csv"),

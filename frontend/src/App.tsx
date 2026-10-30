@@ -4,7 +4,7 @@ import { request, uploadImage, write } from './api'
 import Editor from './Editor'
 import type { EditorKind } from './Editor'
 import DutyEditor from './DutyEditor'
-import HelperEditor from './HelperEditor'
+import { DutyDetails, SlotDetails } from './ReadOnlyDetails'
 import ConflictOverview from './ConflictOverview'
 import Schedule from './Schedule'
 import type { DutyPatch } from './Schedule'
@@ -14,11 +14,11 @@ import CategoryLabels from './CategoryLabels'
 import ThemeControl from './ThemeControl'
 import BackupRestore from './BackupRestore'
 import { TeamManagement, UserManagement } from './TeamManagement'
-import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, Helper, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
+import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
 
-type Panel = { kind: EditorKind | 'speaker' | 'category' | 'helper' | 'duty'; id: number | null; createUnplanned?: boolean }
+type Panel = { kind: EditorKind | 'speaker' | 'category' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number | null; start: number; topic: string }
 
 export default function App({ currentUser, onLogout }: { currentUser: CurrentUser; onLogout?: () => void }) {
@@ -29,7 +29,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const [rooms, setRooms] = useState<Room[]>([])
   const [speakers, setSpeakers] = useState<Speaker[]>([])
   const [categories, setCategories] = useState<Category[]>([])
-  const [helpers, setHelpers] = useState<Helper[]>([])
+  const [helpers, setHelpers] = useState<DutyParticipant[]>([])
   const [helperPlan, setHelperPlan] = useState<HelperPlan>({ duties: [], conflicts: [] })
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
   const [view, setView] = useState<'schedule' | 'helpers' | 'conflicts'>('schedule')
@@ -40,6 +40,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
   const [panel, setPanel] = useState<Panel | null>(null)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
@@ -54,14 +55,15 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
       const eventList = await request<Event[]>('/events')
       const selectedEvent = eventList.find(item => item.id === preferredEvent)?.id ?? eventList[0]?.id ?? null
       const [dayList, roomList, speakerList, categoryList, unplannedList, helperList, loadedHelperPlan] = selectedEvent === null
-        ? [[], [], [], [], [], [], { duties: [], conflicts: [] }] as [EventDay[], Room[], Speaker[], Category[], UnplannedSession[], Helper[], HelperPlan]
+        ? [[], [], [], [], [], [], { duties: [], conflicts: [] }] as [EventDay[], Room[], Speaker[], Category[], UnplannedSession[], DutyParticipant[], HelperPlan]
         : await Promise.all([
           request<EventDay[]>(`/events/${selectedEvent}/days`),
           request<Room[]>(`/events/${selectedEvent}/rooms`),
           request<Speaker[]>(`/events/${selectedEvent}/speakers`),
           request<Category[]>(`/events/${selectedEvent}/categories`),
           request<UnplannedSession[]>(`/events/${selectedEvent}/unplanned-sessions`),
-          request<Helper[]>(`/events/${selectedEvent}/helpers`),
+          currentUser.is_superadmin || currentUser.event_roles[String(selectedEvent)] !== 'helper'
+            ? request<DutyParticipant[]>(`/events/${selectedEvent}/duty-participants`) : Promise.resolve([]),
           request<HelperPlan>(`/events/${selectedEvent}/helper-plan`),
         ])
       const selectedDay = dayList.find(item => item.id === preferredDay)?.id ?? dayList[0]?.id ?? null
@@ -110,6 +112,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   const selectedEvent = events.find(item => item.id === eventId)
   const isSuperadmin = currentUser.is_superadmin
   const isAdmin = isSuperadmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'admin')
+  const canPlan = isAdmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'editor')
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot'
@@ -117,7 +120,6 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
     : undefined
   const selectedSpeaker = panel?.kind === 'speaker' ? speakers.find(item => item.id === panel.id) : undefined
   const selectedCategory = panel?.kind === 'category' ? categories.find(item => item.id === panel.id) : undefined
-  const selectedHelper = panel?.kind === 'helper' ? helpers.find(item => item.id === panel.id) : undefined
   const selectedDuty = panel?.kind === 'duty' ? helperPlan.duties.find(item => item.id === panel.id) : undefined
 
   async function save(body: Record<string, unknown>, logo?: File | null): Promise<boolean> {
@@ -152,7 +154,7 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
 
   async function remove(): Promise<boolean> {
     if (!panel || panel.id === null) return false
-    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, category: `/categories/${panel.id}`, helper: `/helpers/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
+    const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, category: `/categories/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
     try {
       await write<void>('DELETE', path)
       await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
@@ -227,13 +229,14 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
     finally { setClearingChangeNotices(false) }
   }
 
-  async function saveHelper(name: string): Promise<boolean> {
-    if (panel?.kind !== 'helper' || eventId === null) return false
+  async function signup(duty: Duty, leave: boolean) {
     try {
-      await write<Helper>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/helpers` : `/helpers/${panel.id}`, { name })
+      await write<Duty>(leave ? 'DELETE' : 'PUT', `/duties/${duty.id}/signup`)
       await loadAll(eventId, dayId)
-      return true
-    } catch (cause) { setError((cause as Error).message); return false }
+    } catch (cause) {
+      await loadAll(eventId, dayId)
+      setError((cause as Error).message)
+    }
   }
 
   async function saveDuty(body: Record<string, unknown>): Promise<boolean> {
@@ -334,21 +337,22 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
   return <div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
-      <div className="header-actions"><ThemeControl /><span className="account-name">{currentUser.email}</span>{onLogout && <button className="header-secondary" onClick={onLogout}>Abmelden</button>}{isSuperadmin && <button className="header-secondary" onClick={() => setShowUsers(true)}>Benutzer</button>}{(isSuperadmin || selectedEvent && isAdmin) && <button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button>}{isSuperadmin && <button className="primary" onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>}</div>
+      <div className="header-actions"><ThemeControl /><span className="account-name">{currentUser.email}</span>{onLogout && <button className="header-secondary" onClick={onLogout}>Abmelden</button>}{isSuperadmin && <button className="header-secondary" onClick={() => setShowUsers(true)}>Benutzer</button>}{(isSuperadmin || selectedEvent && isAdmin) && <button className="header-secondary" onClick={() => setShowRestore(true)}>Restore</button>}{isSuperadmin && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'event', id: null })}>+ Veranstaltung</button>}</div>
     </header>
+    {notice && <div className="state-message" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Schließen</button></div>}
     {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError('')}>Schließen</button></div>}
     <div className="workspace">
-      <nav className="sidebar" aria-label="Planung">
+      <nav className="sidebar" aria-label="Planung" inert={loading}>
         <section>
           <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
-          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { setPanel(null); void loadAll(Number(e.target.value), null) }}>
+          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { setPanel(null); setShowTeam(false); setShowRestore(false); void loadAll(Number(e.target.value), null) }}>
             {events.length === 0 && <option value="">Keine Veranstaltung</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
           {selectedEvent && <p className="muted">{formatDate(selectedEvent.start_date)} bis {formatDate(selectedEvent.end_date)}</p>}
           {selectedEvent && isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
           {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowTeam(true)}>Team verwalten</button>}
-          {selectedEvent && <button type="button" className="text-button clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
+          {selectedEvent && canPlan && <button type="button" className="text-button clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
         </section>
         {selectedEvent && <section>
           <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
@@ -375,15 +379,15 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2><button className="text-button" onClick={() => setPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button></div>
+          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2>{canPlan && <button className="text-button" onClick={() => setPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button>}</div>
           {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
           <div className="unplanned-list">{unplanned.map(session => <div className="unplanned-row" key={session.id}>
-            <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} onPointerDown={event => beginBacklogDrag(event, session)}>⠿</button>
+            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} onPointerDown={event => beginBacklogDrag(event, session)}>⠿</button>}
             <button type="button" className="unplanned-name" onClick={() => setPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
           </div>)}</div>
-          {unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
+          {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
         </section>}
-        {selectedEvent && <section>
+        {selectedEvent && canPlan && <section>
           <div className="section-heading"><h2>Redner</h2><button className="text-button" onClick={() => setPanel({ kind: 'speaker', id: null })}>+ Redner</button></div>
           {speakers.length === 0 && <p className="muted">Noch keine Redner</p>}
           <div className="room-list">{speakers.map(person => <div className="room-row" key={person.id}>
@@ -391,18 +395,11 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Helfer</h2><button className="text-button" onClick={() => setPanel({ kind: 'helper', id: null })}>+ Helfer</button></div>
-          {helpers.length === 0 && <p className="muted">Noch keine Helfer</p>}
-          <div className="room-list">{helpers.map(person => <div className="room-row" key={person.id}>
-            <button type="button" className="room-name" onClick={() => setPanel({ kind: 'helper', id: person.id })}>{person.name}</button>
-          </div>)}</div>
-        </section>}
-        {selectedEvent && <section>
           <div className="section-heading"><h2>Dienste ({helperPlan.duties.length})</h2></div>
           {helperPlan.duties.length === 0 && <p className="muted">Noch keine Dienste</p>}
           <div className="duty-list">{helperPlan.duties.map(duty => <button type="button" key={duty.id} onClick={() => setPanel({ kind: 'duty', id: duty.id })}>
             <strong>{duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}</strong>
-            <small>{duty.date ? formatDate(duty.date) : 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.helpers.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}</small>
+            <small>{duty.date ? formatDate(duty.date) : 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.users.length ? duty.users.map(helper => helper.name).join(', ') : 'Offen'} · {duty.user_ids.length}/{duty.capacity} Plätze</small>
           </button>)}</div>
         </section>}
       </nav>
@@ -416,19 +413,19 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
-            {selectedEvent && view !== 'conflicts' && <button className="primary" onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
-            {selectedDay && view !== 'conflicts' && <button className="primary" onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+            {selectedEvent && canPlan && view !== 'conflicts' && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
+            {selectedDay && canPlan && view !== 'conflicts' && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
         {view !== 'conflicts' && loading && <p className="state-message">Lade Programm …</p>}
-        {view !== 'conflicts' && !loading && schedule && <Schedule schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
+        {view !== 'conflicts' && !loading && schedule && <Schedule readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
         {view !== 'conflicts' && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {view !== 'conflicts' && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
+        {canPlan && view !== 'conflicts' && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
         {view === 'conflicts' && !loading && overviewError && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError}<br /><button className="text-button" type="button" onClick={() => setOverviewRetry(value => value + 1)}>Erneut versuchen</button></div>}
-        {view === 'conflicts' && !loading && overviewSchedules && !overviewError && <ConflictOverview schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openConflictEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openConflictEntry(day, 'duty', duty)} />}
+        {view === 'conflicts' && !loading && overviewSchedules && !overviewError && <ConflictOverview readOnly={!canPlan} schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openConflictEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openConflictEntry(day, 'duty', duty)} />}
       </main>
-      {panel?.kind === 'speaker' && <SpeakerEditor
+      {canPlan && panel?.kind === 'speaker' && <SpeakerEditor
         key={`speaker-${panel.id ?? 'new'}`}
         speaker={selectedSpeaker}
         onSave={saveSpeaker}
@@ -443,16 +440,8 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
-      {panel?.kind === 'helper' && <HelperEditor
-        key={`helper-${panel.id ?? 'new'}`}
-        helper={selectedHelper}
-        duties={helperPlan.duties.filter(duty => duty.helper_ids.includes(panel.id ?? -1))}
-        onSave={saveHelper}
-        onDelete={panel.id === null ? null : remove}
-        onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })}
-        onClose={() => setPanel(current => current === panel ? null : current)}
-      />}
-      {panel?.kind === 'duty' && <DutyEditor
+      {canPlan && panel?.kind === 'duty' && <DutyEditor
+        currentUserId={currentUser.id} onSignup={signup}
         key={`duty-${panel.id ?? 'new'}`}
         duty={selectedDuty}
         days={days}
@@ -464,7 +453,9 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
-      {panel && panel.kind !== 'speaker' && panel.kind !== 'category' && panel.kind !== 'helper' && panel.kind !== 'duty' && <Editor
+      {!canPlan && selectedDuty && <DutyDetails duty={selectedDuty} rooms={rooms} currentUserId={currentUser.id} onSignup={signup} onClose={() => setPanel(null)} />}
+      {!canPlan && selectedSlot && <SlotDetails slot={selectedSlot} onClose={() => setPanel(null)} />}
+      {canPlan && panel && panel.kind !== 'speaker' && panel.kind !== 'category' && panel.kind !== 'duty' && <Editor
         key={`${panel.kind}-${panel.id ?? 'new'}-${panel.createUnplanned ? 'unplanned' : 'planned'}`}
         kind={panel.kind}
         event={panel.kind === 'event' ? events.find(item => item.id === panel.id) : selectedEvent}
@@ -482,12 +473,12 @@ export default function App({ currentUser, onLogout }: { currentUser: CurrentUse
         onDelete={panel.id === null || panel.kind === 'event' && !isSuperadmin ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
       />}
-      {showRestore && <BackupRestore events={events} selectedEventId={eventId} allowCreate={isSuperadmin} onComplete={async restoredId => {
+      {showRestore && isAdmin && <BackupRestore events={events} selectedEventId={eventId} allowCreate={isSuperadmin} onComplete={async (restoredId, warnings = []) => {
         setPanel(null)
-        if (await loadAll(restoredId, null)) setShowRestore(false)
+        if (await loadAll(restoredId, null)) { setShowRestore(false); setNotice(warnings.join(' ')) }
         else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
-      {showTeam && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
+      {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
       {showUsers && isSuperadmin && <UserManagement currentUserId={currentUser.id} onClose={() => setShowUsers(false)} />}
     </div>
   </div>

@@ -3,7 +3,7 @@ import secrets
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
@@ -73,7 +73,7 @@ def token_record(db: Session, raw: str, kind: Literal["invite", "reset"]) -> Aut
 
 def issue_invitation(
     db: Session, email: str, *, event_id: int | None = None,
-    role: Literal["admin", "editor"] | None = None, is_superadmin: bool = False,
+    role: Literal["admin", "editor", "helper"] | None = None, is_superadmin: bool = False,
 ) -> None:
     normalized = normalize_email(email)
     event = db.get(Event, event_id) if event_id is not None else None
@@ -126,6 +126,21 @@ def login(data: LoginInput, response: Response, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def me(request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    return user_info(db, user, request.state.auth_session)
+
+
+class ProfileInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+
+
+@router.patch("/me")
+def update_me(data: ProfileInput, request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)):
+    display = " ".join(data.name.split())
+    if not 1 <= len(display) <= 255:
+        raise HTTPException(status_code=422, detail="Name muss 1 bis 255 Zeichen haben")
+    user.name = display
+    db.commit()
     return user_info(db, user, request.state.auth_session)
 
 

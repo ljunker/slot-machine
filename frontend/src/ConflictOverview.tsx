@@ -31,7 +31,7 @@ export function collectConflicts(schedules: DaySchedule[], helperPlan: HelperPla
   const entries: ConflictEntry[] = []
   const dayById = new Map(schedules.map(day => [day.day_id, day]))
   const dutyById = new Map(helperPlan.duties.map(duty => [duty.id, duty]))
-  const helperNames = new Map(helperPlan.duties.flatMap(duty => duty.helpers).map(helper => [helper.id, helper.name]))
+  const helperNames = new Map(helperPlan.duties.flatMap(duty => duty.users).map(helper => [helper.id, helper.name]))
 
   for (const day of schedules) {
     const slots = [...day.rooms.flatMap(room => room.slots), ...(day.shared_slots ?? [])]
@@ -64,7 +64,7 @@ export function collectConflicts(schedules: DaySchedule[], helperPlan: HelperPla
     const day = dayById.get(first.day_id)
     if (!day) continue
     const roomNames = new Map(day.rooms.map(room => [room.id, room.name]))
-    for (const helperId of pair.helper_ids) entries.push({
+    for (const helperId of pair.user_ids) entries.push({
       key: `helper-${day.day_id}-${first.id}-${second.id}-${helperId}`,
       kind: 'helper', date: day.date, dayId: day.day_id,
       startTime: first.start_time > second.start_time ? first.start_time : second.start_time,
@@ -78,7 +78,8 @@ export function collectConflicts(schedules: DaySchedule[], helperPlan: HelperPla
   return entries.sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime) || a.kind.localeCompare(b.kind) || a.key.localeCompare(b.key))
 }
 
-export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, onOpenDuty }: {
+export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, onOpenDuty, readOnly = false }: {
+  readOnly?: boolean
   schedules: DaySchedule[]
   helperPlan: HelperPlan
   onOpenSlot: (dayId: number, slotId: number) => void
@@ -99,7 +100,7 @@ export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, on
         key={participant.id}
         type="button"
         onClick={() => entry.kind === 'helper' ? onOpenDuty(entry.dayId, participant.id) : onOpenSlot(entry.dayId, participant.id)}
-        aria-label={`${participant.label} am ${formatDate(entry.date)} bearbeiten`}
+        aria-label={`${participant.label} am ${formatDate(entry.date)} ${readOnly ? 'ansehen' : 'bearbeiten'}`}
       ><strong>{participant.label}</strong><small>{participant.detail}</small></button>)}</div>
     </li>)}</ol>
   </section>

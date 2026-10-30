@@ -13,7 +13,7 @@ router = APIRouter(tags=["Categories"], dependencies=[Depends(require_user)])
 
 @router.get("/events/{event_id}/categories", response_model=list[CategoryResponse])
 def list_categories(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
-    authorize_event(db, user, event_id)
+    authorize_event(db, user, event_id, "helper")
     return CategoryService(db).list_for_event(event_id)
 
 

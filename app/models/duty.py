@@ -4,12 +4,13 @@ from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.helper import duty_helpers
+from app.models.helper import duty_users
 
 
 class Duty(Base):
     __tablename__ = "duties"
     __table_args__ = (
+        CheckConstraint("capacity > 0", name="duty_capacity_positive"),
         CheckConstraint(
             "(kind = 'general' AND day_id IS NOT NULL AND room_id IS NULL AND slot_id IS NULL "
             "AND start_time IS NOT NULL AND end_time IS NOT NULL) OR "
@@ -31,6 +32,5 @@ class Duty(Base):
     start_time: Mapped[time | None] = mapped_column(Time)
     end_time: Mapped[time | None] = mapped_column(Time)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    helpers = relationship(
-        "Helper", secondary=duty_helpers, back_populates="duties", order_by="Helper.id"
-    )
+    capacity: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    users = relationship("User", secondary=duty_users, order_by="User.id")

@@ -23,6 +23,7 @@ from app.db.base import Base
 from app.db.database import engine
 from app.db.migrate_duty_order import migrate_duty_order
 from app.db.migrate_event_branding import migrate_event_branding
+from app.db.migrate_helper_accounts import migrate_helper_accounts
 from app.db.migrate_shared_sessions import migrate_shared_sessions
 from app.db.migrate_slot_changes import migrate_slot_changes
 from app.db.migrate_speakers import migrate_legacy_speakers
@@ -39,6 +40,7 @@ async def lifespan(application: FastAPI):
     migrate_unplanned_sessions(engine)
     migrate_shared_sessions(engine)
     migrate_duty_order(engine)
+    migrate_helper_accounts(engine)
     yield
 
 

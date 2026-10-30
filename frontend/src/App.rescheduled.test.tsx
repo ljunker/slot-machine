@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import App from './App'
 import type { CurrentUser, DaySchedule, Event, EventDay, Slot } from './types'
 
-const currentUser: CurrentUser = { id: 1, email: 'admin@example.invalid', is_superadmin: true, event_roles: {}, csrf_token: 'test' }
+const currentUser: CurrentUser = { id: 1, email: 'admin@example.invalid', name: 'Testperson', is_superadmin: true, event_roles: {}, csrf_token: 'test' }
 
 const event: Event = { id: 1, name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-01', accent_color: null, logo_url: null }
 const day: EventDay = { id: 11, event_id: 1, date: '2099-06-01', start_time: '09:00:00', end_time: '18:00:00' }
@@ -40,7 +40,7 @@ it('removes one rescheduled notice in the editor and all change notices for the 
     if (path === '/events') body = [event]
     else if (path === '/events/1/days') body = [day]
     else if (path === '/events/1/rooms') body = [{ id: 2, event_id: 1, name: 'Saal', sort_order: 0 }]
-    else if (path === '/events/1/speakers' || path === '/events/1/categories' || path === '/events/1/unplanned-sessions' || path === '/events/1/helpers') body = []
+    else if (path === '/events/1/speakers' || path === '/events/1/categories' || path === '/events/1/unplanned-sessions' || path === '/events/1/duty-participants') body = []
     else if (path === '/events/1/helper-plan') body = { duties: [], conflicts: [] }
     else if (path === '/schedule/days/11') body = {
       day_id: 11, date: day.date, start_time: day.start_time, end_time: day.end_time,

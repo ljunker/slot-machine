@@ -4,7 +4,7 @@ import App from './App'
 import type { CurrentUser } from './types'
 
 const user = (role: 'admin' | 'editor'): CurrentUser => ({
-  id: 3, email: 'person@example.invalid', is_superadmin: false,
+  id: 3, email: 'person@example.invalid', name: 'Testperson', is_superadmin: false,
   event_roles: { '1': role }, csrf_token: 'test',
 })
 

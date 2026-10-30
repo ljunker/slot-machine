@@ -42,7 +42,7 @@ it('creates shared sessions without rooms and retains scope when unplanning', as
 })
 
 it.each(['program', 'helpers'] as const)('spans room columns and keeps shared duties in the general column in %s view', focus => {
-  const duty: Duty = { id: 7, event_id: 1, kind: 'session', title: null, helper_ids: [], helpers: [],
+  const duty: Duty = { id: 7, event_id: 1, kind: 'session', title: null, capacity: 1, user_ids: [], users: [],
     day_id: 2, date: '2026-10-01', room_id: null, slot_id: 5, session_topic: 'Mittagspause',
     start_time: '12:00:00', end_time: '13:00:00', sort_order: 0, status: 'active' }
   const onEdit = vi.fn()

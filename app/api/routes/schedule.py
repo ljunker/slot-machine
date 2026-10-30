@@ -24,7 +24,7 @@ def get_day_schedule(
     db: Session = Depends(get_db),
     user: User = Depends(require_user),
 ):
-    authorize_object(db, user, EventDay, day_id)
+    authorize_object(db, user, EventDay, day_id, "helper")
     service = ScheduleService(db)
 
     return service.get_day_schedule(day_id)

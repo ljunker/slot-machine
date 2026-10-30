@@ -17,7 +17,7 @@ from app.db.database import get_db
 from app.models.auth import AuthSession, AuthThrottle, EventMembership, User
 from app.models.event import Event
 
-Role = Literal["admin", "editor"]
+Role = Literal["admin", "editor", "helper"]
 SESSION_SECONDS = 12 * 60 * 60
 INVITATION_SECONDS = 48 * 60 * 60
 RESET_SECONDS = 60 * 60
@@ -166,8 +166,9 @@ def authorize_event(db: Session, user: User, event_id: int, required: Role = "ed
     )
     if membership is None:
         raise HTTPException(status_code=404, detail="Veranstaltung nicht gefunden")
-    if required == "admin" and membership.role != "admin":
-        raise HTTPException(status_code=403, detail="Veranstaltungsadmin-Recht erforderlich")
+    levels = {"helper": 0, "editor": 1, "admin": 2}
+    if levels.get(membership.role, -1) < levels[required]:
+        raise HTTPException(status_code=403, detail="Keine ausreichende Veranstaltungsrolle")
 
 
 def authorize_object(db: Session, user: User, model, object_id: int, required: Role = "editor") -> int:
@@ -185,6 +186,7 @@ def user_info(db: Session, user: User, session: AuthSession) -> dict:
     return {
         "id": user.id,
         "email": user.email,
+        "name": user.name,
         "is_superadmin": user.is_superadmin,
         "event_roles": {str(event_id): role for event_id, role in roles},
         "csrf_token": session.csrf_token,

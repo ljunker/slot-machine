@@ -1,7 +1,7 @@
-import csv
-from io import BytesIO, StringIO
+from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from conftest import legacy_archive
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
@@ -107,7 +107,7 @@ def test_categories_in_public_pdf_and_backup(client):
 
     backup = client.get(f"/api/backups/events/{source}").content
     with ZipFile(BytesIO(backup)) as archive:
-        assert archive.read("manifest.csv").splitlines()[1].startswith(b"4,")
+        assert archive.read("manifest.csv").splitlines()[1].startswith(b"5,")
         assert len(archive.read("slot_categories.csv").splitlines()) == 28
     invalid = BytesIO()
     with ZipFile(BytesIO(backup)) as original, ZipFile(invalid, "w", ZIP_DEFLATED) as output:
@@ -134,23 +134,7 @@ def test_categories_in_public_pdf_and_backup(client):
         item["name"] for item in cats
     }
 
-    legacy = BytesIO()
-    with ZipFile(BytesIO(backup)) as original, ZipFile(legacy, "w", ZIP_DEFLATED) as output:
-        for filename in original.namelist():
-            if filename in {"categories.csv", "slot_categories.csv"}:
-                continue
-            content = original.read(filename)
-            if filename == "manifest.csv":
-                content = content.replace(b"4,", b"2,", 1)
-            if filename == "slots.csv":
-                rows = list(csv.reader(StringIO(content.decode("utf-8"))))
-                scope_index = rows[0].index("scope")
-                slot_output = StringIO(newline="")
-                csv.writer(slot_output).writerows(
-                    [cell for index, cell in enumerate(row) if index != scope_index] for row in rows
-                )
-                content = slot_output.getvalue().encode("utf-8")
-            output.writestr(filename, content)
+    legacy = BytesIO(legacy_archive(backup, "2"))
     older = client.post("/api/backups/restore", files={
         "backup": ("backup.zip", legacy.getvalue(), "application/zip")
     })

@@ -1,22 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import DutySignup from './DutySignup'
 import { formatDate } from './date'
-import type { Duty, DutyKind, EventDay, Helper, Room, Slot, UnplannedSession } from './types'
+import type { Duty, DutyKind, EventDay, DutyParticipant, Room, Slot, UnplannedSession } from './types'
 
-export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, helpers, onSave, onDelete, onClose }: {
+export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, helpers, onSave, onDelete, onClose, currentUserId, onSignup }: {
+  currentUserId: number
+  onSignup: (duty: Duty, leave: boolean) => Promise<void>
   duty?: Duty
   days: EventDay[]
   selectedDay?: EventDay
   rooms: Room[]
   sessions: (Slot | UnplannedSession)[]
-  helpers: Helper[]
+  helpers: DutyParticipant[]
   onSave: (body: Record<string, unknown>) => Promise<boolean>
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
 }) {
   const [kind, setKind] = useState<DutyKind>(duty?.kind ?? 'general')
+  const [capacity, setCapacity] = useState(duty?.capacity ?? 1)
   const [title, setTitle] = useState(duty?.title ?? '')
-  const [helperIds, setHelperIds] = useState<number[]>(duty?.helper_ids ?? [])
+  const [helperIds, setHelperIds] = useState<number[]>(duty?.user_ids ?? [])
+  useEffect(() => { setHelperIds(duty?.user_ids ?? []) }, [duty])
+  const availableHelpers = [...helpers, ...(duty?.users ?? []).filter(user => !helpers.some(person => person.id === user.id)).map(user => ({ ...user, email: user.is_active ? '' : 'gesperrt' }))]
   const [dayId, setDayId] = useState(duty?.day_id ?? selectedDay?.id ?? days[0]?.id ?? 0)
   const [roomId, setRoomId] = useState(duty?.room_id ?? rooms[0]?.id ?? 0)
   const [slotId, setSlotId] = useState(duty?.slot_id ?? sessions[0]?.id ?? 0)
@@ -30,7 +36,7 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
   async function submit(event: FormEvent) {
     event.preventDefault()
     const body = {
-      kind, title: title.trim() || null, helper_ids: helperIds,
+      kind, capacity, title: title.trim() || null, user_ids: helperIds,
       day_id: kind === 'session' ? null : dayId,
       room_id: kind === 'room' ? roomId : null,
       slot_id: kind === 'session' ? slotId : null,
@@ -48,14 +54,16 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
 
   return <aside className="editor" aria-label={`Dienst ${duty ? 'bearbeiten' : 'anlegen'}`}>
     <div className="editor-heading"><h2>Dienst {duty ? 'bearbeiten' : 'anlegen'}</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
+    {duty && <DutySignup duty={duty} currentUserId={currentUserId} onSignup={onSignup} />}
     <form onSubmit={submit}>
+      <label>Höchstzahl Helfer<input type="number" required min={1} max={2147483647} step={1} value={capacity} onChange={event => setCapacity(Number(event.target.value))} /></label>
       <label>Dienstart<select aria-label="Dienstart" value={kind} onChange={event => setKind(event.target.value as DutyKind)}>
         <option value="general">Allgemeiner Dienst</option><option value="room">Raumdienst</option><option value="session">Session-Dienst</option>
       </select></label>
       <label>Titel (optional)<input maxLength={255} value={title} onChange={event => setTitle(event.target.value)} /></label>
       <fieldset className="speaker-picker"><legend>Helfer</legend>
-        {helpers.length === 0 && <p className="muted">Noch keine Helfer angelegt. Dienst bleibt offen.</p>}
-        {helpers.map(person => <label key={person.id}><input type="checkbox" checked={helperIds.includes(person.id)} onChange={event => setHelperIds(current => event.target.checked ? [...current, person.id] : current.filter(id => id !== person.id))} />{person.name}</label>)}
+        {availableHelpers.length === 0 && <p className="muted">Noch keine aktiven Teamkonten mit Namen vorhanden. Dienst bleibt offen.</p>}
+        {availableHelpers.map(person => <label key={person.id}><input type="checkbox" checked={helperIds.includes(person.id)} onChange={event => setHelperIds(current => event.target.checked ? [...current, person.id] : current.filter(id => id !== person.id))} />{person.name} · {person.email}</label>)}
       </fieldset>
       {kind === 'session' ? <label>Session<select aria-label="Session" required value={slotId || ''} onChange={event => setSlotId(Number(event.target.value))}>
         {availableSessions.length === 0 && <option value="">Keine Session vorhanden</option>}

@@ -2,12 +2,14 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.api.routes.auth import issue_invitation
 from app.db.database import get_db
 from app.models.auth import AuthSession, EventMembership, User
+from app.models.duty import Duty
+from app.models.helper import duty_users
 from app.services.auth import (
     active_superadmin_count,
     authorize_event,
@@ -21,7 +23,7 @@ router = APIRouter(tags=["Users"], dependencies=[Depends(require_user)])
 
 class InvitationInput(BaseModel):
     email: str
-    role: Literal["admin", "editor"]
+    role: Literal["admin", "editor", "helper"]
 
 
 class EmailInput(BaseModel):
@@ -29,7 +31,7 @@ class EmailInput(BaseModel):
 
 
 class RoleInput(BaseModel):
-    role: Literal["admin", "editor"]
+    role: Literal["admin", "editor", "helper"]
 
 
 class UserUpdate(BaseModel):
@@ -39,7 +41,7 @@ class UserUpdate(BaseModel):
 
 def member_data(db: Session, membership: EventMembership) -> dict:
     user = db.get(User, membership.user_id)
-    return {"user_id": user.id, "email": user.email, "role": membership.role, "is_active": user.is_active}
+    return {"user_id": user.id, "email": user.email, "name": user.name, "role": membership.role, "is_active": user.is_active}
 
 
 def get_membership(db: Session, event_id: int, user_id: int) -> EventMembership:
@@ -98,6 +100,12 @@ def remove_member(event_id: int, user_id: int, db: Session = Depends(get_db), us
     authorize_event(db, user, event_id, "admin")
     membership = get_membership(db, event_id, user_id)
     keep_last_admin(db, membership)
+    # Mitgliedschaft und Belegungen werden in derselben Transaktion entfernt.
+    identifiers = db.scalars(select(Duty.id).where(Duty.event_id == event_id).order_by(Duty.id)).all()
+    for duty_id in identifiers:
+        db.execute(update(Duty).where(Duty.id == duty_id).values(capacity=Duty.capacity))
+    duty_ids = select(Duty.id).where(Duty.event_id == event_id)
+    db.execute(delete(duty_users).where(duty_users.c.user_id == user_id, duty_users.c.duty_id.in_(duty_ids)))
     db.delete(membership)
     db.commit()
     return Response(status_code=204)

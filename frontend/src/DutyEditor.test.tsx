@@ -10,22 +10,24 @@ it('creates an open duty and then allows multiple helpers on a room duty', async
     days: [{ id: 1, event_id: 1, date: '2026-10-01', start_time: '09:00:00', end_time: '18:00:00' }],
     rooms: [{ id: 2, event_id: 1, name: 'Saal A', sort_order: 0 }],
     sessions: [],
-    helpers: [{ id: 3, event_id: 1, name: 'Ada' }, { id: 4, event_id: 1, name: 'Ben' }],
+    helpers: [{ id: 3, is_active: true, email: 'person@example.invalid', name: 'Ada' }, { id: 4, is_active: true, email: 'person@example.invalid', name: 'Ben' }],
+    currentUserId: 1, onSignup: vi.fn(async () => {}),
     onSave, onDelete: null, onClose: vi.fn(),
   }
   const { unmount } = render(<DutyEditor {...props} />)
   fireEvent.submit(screen.getByRole('button', { name: 'Speichern' }).closest('form')!)
   await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-    kind: 'general', helper_ids: [], day_id: 1,
+    kind: 'general', user_ids: [], day_id: 1,
   })))
   unmount()
   onSave.mockClear()
   render(<DutyEditor {...props} />)
   fireEvent.change(screen.getByLabelText('Dienstart'), { target: { value: 'room' } })
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Ada' }))
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Ben' }))
+  fireEvent.change(screen.getByLabelText('Höchstzahl Helfer'), { target: { value: '2' } })
+  fireEvent.click(screen.getByRole('checkbox', { name: /Ada/ }))
+  fireEvent.click(screen.getByRole('checkbox', { name: /Ben/ }))
   fireEvent.submit(screen.getByRole('button', { name: 'Speichern' }).closest('form')!)
   await vi.waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-    kind: 'room', room_id: 2, helper_ids: [3, 4],
+    kind: 'room', room_id: 2, user_ids: [3, 4],
   })))
 })

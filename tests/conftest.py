@@ -30,7 +30,7 @@ def client(db):
 
     app.dependency_overrides[get_db] = override_db
     try:
-        db.add(User(email="test@example.invalid", password_hash=password_hash("Testpassword123!"), is_superadmin=True))
+        db.add(User(name="Testadmin", email="test@example.invalid", password_hash=password_hash("Testpassword123!"), is_superadmin=True))
         db.commit()
         test_client = TestClient(app)
         login = test_client.post("/api/auth/login", json={"email": "test@example.invalid", "password": "Testpassword123!"})
@@ -39,3 +39,46 @@ def client(db):
         yield test_client
     finally:
         app.dependency_overrides.clear()
+
+
+def make_account(db, event_id, name, role="helper"):
+    from uuid import uuid4
+
+    from app.models.auth import EventMembership
+    user = User(name=name, email=f"{uuid4().hex}@example.invalid", password_hash=password_hash("Testpassword123!"))
+    db.add(user)
+    db.flush()
+    db.add(EventMembership(event_id=event_id, user_id=user.id, role=role))
+    db.commit()
+    return {"id": user.id, "name": user.name, "email": user.email, "is_active": user.is_active}
+
+
+def legacy_archive(content, version):
+    import csv
+    from io import BytesIO, StringIO
+    from zipfile import ZipFile
+    output = BytesIO()
+    with ZipFile(BytesIO(content)) as source, ZipFile(output, "w") as target:
+        for filename in source.namelist():
+            if filename == "duty_assignments.csv" or (version in {"1", "2"} and filename in {"categories.csv", "slot_categories.csv"}):
+                continue
+            data = source.read(filename)
+            if filename == "manifest.csv":
+                data = data.replace(b"5,", version.encode() + b",", 1)
+            omit = set()
+            if filename == "duties.csv":
+                omit.add("capacity")
+                if version == "1":
+                    omit.add("sort_order")
+            if filename == "slots.csv" and version in {"1", "2", "3"}:
+                omit.add("scope")
+            if omit:
+                rows = list(csv.reader(StringIO(data.decode())))
+                indices = [i for i, key in enumerate(rows[0]) if key not in omit]
+                text = StringIO(newline="")
+                csv.writer(text).writerows([row[i] for i in indices] for row in rows)
+                data = text.getvalue().encode()
+            target.writestr(filename, data)
+        target.writestr("helpers.csv", "id,event_id,name,normalized_name\r\n")
+        target.writestr("duty_helpers.csv", "duty_id,helper_id\r\n")
+    return output.getvalue()

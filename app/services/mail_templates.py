@@ -19,10 +19,10 @@ def _invitation_body(introduction: str, link: str) -> str:
     ))
 
 
-def event_invitation_mail(event_name: str, role: Literal["admin", "editor"], link: str) -> tuple[str, str]:
+def event_invitation_mail(event_name: str, role: Literal["admin", "editor", "helper"], link: str) -> tuple[str, str]:
     name = " ".join(event_name.split())
     short_name = name if len(name) <= 100 else name[:99].rstrip() + "…"
-    role_name = {"admin": "Veranstaltungsadmin", "editor": "Veranstaltungsbearbeiter"}[role]
+    role_name = {"admin": "Veranstaltungsadmin", "editor": "Veranstaltungsbearbeiter", "helper": "Helfer"}[role]
     subject = f"Einladung zur Programmplanung: {short_name}"
     body = _invitation_body(
         f"Du wurdest für die Veranstaltung „{name}“ mit der Rolle „{role_name}“ "

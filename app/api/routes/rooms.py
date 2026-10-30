@@ -18,7 +18,7 @@ router = APIRouter(tags=["Rooms"], dependencies=[Depends(require_user)])
 
 @router.get("/events/{event_id}/rooms", response_model=list[RoomResponse])
 def get_rooms(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
-    authorize_event(db, user, event_id)
+    authorize_event(db, user, event_id, "helper")
     return RoomService(db).get_for_event(event_id)
 
 

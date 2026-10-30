@@ -16,7 +16,7 @@ def create_event(client, name="Konferenz"):
 
 
 def create_user(db, email, event_id, role):
-    user = User(email=email, password_hash=password_hash("Testpassword123!"))
+    user = User(name="Testperson", email=email, password_hash=password_hash("Testpassword123!"))
     db.add(user)
     db.flush()
     db.add(EventMembership(event_id=event_id, user_id=user.id, role=role))
@@ -66,11 +66,11 @@ def test_anonymous_public_program_and_private_routes(client, db):
         "event_id": event_id, "day_id": day_id, "room_id": room_id,
         "topic": "Vortrag", "start_time": "10:00", "end_time": "11:00",
     }).json()["id"]
-    client.post(f"/api/events/{event_id}/helpers", json={"name": "Privat"})
+
     guest = TestClient(app)
     for path in (
         "/api/events", f"/api/events/{event_id}/rooms", f"/api/schedule/days/{day_id}",
-        f"/api/events/{event_id}/helpers", f"/api/backups/events/{event_id}",
+        f"/api/events/{event_id}/duty-participants", f"/api/backups/events/{event_id}",
         f"/api/events/{event_id}/members",
     ):
         assert guest.get(path).status_code == 401, path
@@ -113,7 +113,7 @@ def test_editor_admin_and_cross_event_access(client, db):
     assert editor.post("/api/events", json={"name": "Nein"}).status_code == 403
     assert editor.delete(f"/api/events/{own}").status_code == 403
     assert editor.patch(f"/api/slots/{slot}", json={"topic": "Bearbeitet"}).status_code == 200
-    assert editor.post(f"/api/events/{own}/helpers", json={"name": "Helfer"}).status_code == 201
+    assert editor.get(f"/api/events/{own}/duty-participants").status_code == 200
     assert editor.post("/api/slots", json={"event_id": foreign, "topic": "Fremd"}).status_code == 404
     assert admin.get(f"/api/backups/events/{own}").status_code == 200
     assert admin.patch(f"/api/events/{own}", json={"name": "Neu"}).status_code == 200

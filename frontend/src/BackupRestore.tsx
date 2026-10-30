@@ -4,6 +4,7 @@ import type { Event } from './types'
 
 type Preview = {
   name: string
+  warnings?: string[]
   source_event_id: number
   target_event_id: number | null
   mode: 'create' | 'replace'
@@ -28,7 +29,7 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
   events: Event[]
   selectedEventId: number | null
   allowCreate?: boolean
-  onComplete: (eventId: number) => Promise<void>
+  onComplete: (eventId: number, warnings?: string[]) => Promise<void>
   onClose: () => void
 }) {
   const [file, setFile] = useState<File | null>(null)
@@ -63,7 +64,7 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
     try {
       const result = await sendBackup('restore', file, targetId)
       if (result.event_id === undefined) throw new Error('Restore lieferte keine Veranstaltung')
-      await onComplete(result.event_id)
+      await onComplete(result.event_id, result.warnings ?? [])
     } catch (cause) {
       setError((cause as Error).message)
     } finally {
@@ -85,6 +86,7 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
       </label>
       <button type="button" className="primary" disabled={!file || busy} onClick={() => void inspect()}>Vorschau prüfen</button>
       {preview && <div className="backup-preview">
+        {preview.warnings?.map(warning => <p role="status" key={warning}>{warning}</p>)}
         <strong>Backup: {preview.name}</strong>
         <p>{targetId === null ? 'Neue Veranstaltung' : `Ersetzt: ${targetName}`}</p>
         {targetId !== null && <p>Bestehende Session-Links können danach andere Inhalte zeigen.</p>}

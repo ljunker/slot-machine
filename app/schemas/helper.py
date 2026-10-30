@@ -4,20 +4,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class HelperCreate(BaseModel):
-    name: str
-
-
-class HelperUpdate(BaseModel):
-    name: str | None = None
-
-
-class HelperResponse(BaseModel):
+class DutyUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    event_id: int
     name: str
+    is_active: bool
+
+
+class DutyParticipant(DutyUser):
+    email: str
 
 
 class DutyCreate(BaseModel):
@@ -25,7 +21,8 @@ class DutyCreate(BaseModel):
 
     kind: Literal["general", "room", "session"]
     title: str | None = None
-    helper_ids: list[int] = Field(default_factory=list)
+    capacity: int = Field(default=1, gt=0, le=2**31 - 1, strict=True)
+    user_ids: list[int] = Field(default_factory=list)
     day_id: int | None = None
     room_id: int | None = None
     slot_id: int | None = None
@@ -38,7 +35,8 @@ class DutyUpdate(BaseModel):
 
     kind: Literal["general", "room", "session"] | None = None
     title: str | None = None
-    helper_ids: list[int] | None = None
+    capacity: int | None = Field(default=None, gt=0, le=2**31 - 1, strict=True)
+    user_ids: list[int] | None = None
     day_id: int | None = None
     room_id: int | None = None
     slot_id: int | None = None
@@ -59,8 +57,9 @@ class DutyResponse(BaseModel):
     event_id: int
     kind: Literal["general", "room", "session"]
     title: str | None
-    helper_ids: list[int]
-    helpers: list[HelperResponse]
+    user_ids: list[int]
+    capacity: int
+    users: list[DutyUser]
     day_id: int | None
     date: date | None
     room_id: int | None
@@ -75,7 +74,7 @@ class DutyResponse(BaseModel):
 class DutyConflict(BaseModel):
     first_duty_id: int
     second_duty_id: int
-    helper_ids: list[int]
+    user_ids: list[int]
 
 
 class HelperPlan(BaseModel):

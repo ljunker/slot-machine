@@ -309,3 +309,11 @@ button:disabled { cursor: default; opacity: .35; }
 .previous-planning { color: var(--subtext); font-size: 12px; }
 button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, .slot-card:focus-visible, .duty-card:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 @media (max-width: 600px) { .app-header { align-items: flex-start; } .header-actions { flex-direction: column; align-items: flex-end; gap: 8px; } .public-header-content { flex-wrap: wrap; } .public-title { gap: 10px; } .public-logo { width: 72px; height: 54px; } .public-logo img { max-width: 56px; max-height: 38px; } }
+
+.duty-signup { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0; }
+.duty-signup button { font-size: 0.75rem; padding: 3px 8px; }
+.duty-card .duty-signup { margin: 2px 0; padding: 0; gap: 2px 4px; }
+.duty-card .duty-signup button { font-size: 10px; padding: 2px 4px; }
+.session-description { white-space: pre-wrap; }
+
+.schedule-readonly .slot-grip, .schedule-readonly .duty-grip { cursor: default; }

@@ -1,11 +1,11 @@
-from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.models.auth import EventMembership, User
 from app.models.duty import Duty
 from app.models.event import Event
 from app.models.event_day import EventDay
-from app.models.helper import Helper, duty_helpers
+from app.models.helper import duty_users
 from app.models.room import Room
 from app.models.slot import Slot
 from app.schemas.helper import (
@@ -14,13 +14,11 @@ from app.schemas.helper import (
     DutyOrder,
     DutyResponse,
     DutyUpdate,
-    HelperCreate,
+    DutyUser,
     HelperPlan,
-    HelperResponse,
-    HelperUpdate,
 )
 from app.services.errors import Conflict, DomainError, NotFound
-from app.services.validation import name, required_patch, time_range
+from app.services.validation import required_patch, time_range
 
 
 class HelperService:
@@ -31,73 +29,24 @@ class HelperService:
         if self.db.get(Event, event_id) is None:
             raise NotFound("Veranstaltung nicht gefunden")
 
-    def get_helper(self, helper_id: int) -> Helper:
-        helper = self.db.get(Helper, helper_id)
-        if helper is None:
-            raise NotFound("Helfer nicht gefunden")
-        return helper
-
-    def list_helpers(self, event_id: int) -> list[Helper]:
+    def list_participants(self, event_id: int) -> list[User]:
         self._event(event_id)
-        return list(
-            self.db.scalars(
-                select(Helper)
-                .where(Helper.event_id == event_id)
-                .order_by(Helper.name, Helper.id)
-            ).all()
-        )
+        member = select(EventMembership.id).where(
+            EventMembership.event_id == event_id, EventMembership.user_id == User.id
+        ).exists()
+        return list(self.db.scalars(select(User).where(
+            User.is_active, User.name.is_not(None), or_(User.is_superadmin, member)
+        ).order_by(User.name, User.email, User.id)))
 
-    def _helper_name(
-        self, event_id: int, value: str, own_id: int | None = None
-    ) -> tuple[str, str]:
-        display = name(value)
-        if len(display) > 255:
-            raise DomainError("Helfername ist zu lang")
-        normalized = display.casefold()
-        other = self.db.scalar(
-            select(Helper.id).where(
-                Helper.event_id == event_id, Helper.normalized_name == normalized
-            )
-        )
-        if other is not None and other != own_id:
-            raise Conflict("Helfername existiert bereits")
-        return display, normalized
-
-    def create_helper(self, event_id: int, data: HelperCreate) -> Helper:
-        self._event(event_id)
-        display, normalized = self._helper_name(event_id, data.name)
-        helper = Helper(event_id=event_id, name=display, normalized_name=normalized)
-        self.db.add(helper)
-        try:
-            self.db.commit()
-        except IntegrityError as error:
-            self.db.rollback()
-            raise Conflict("Helfername existiert bereits") from error
-        return helper
-
-    def update_helper(self, helper_id: int, data: HelperUpdate) -> Helper:
-        helper = self.get_helper(helper_id)
-        changes = data.model_dump(exclude_unset=True)
-        required_patch(changes, {"name"})
-        if "name" in changes:
-            helper.name, helper.normalized_name = self._helper_name(
-                helper.event_id, changes["name"], helper.id
-            )
-        try:
-            self.db.commit()
-        except IntegrityError as error:
-            self.db.rollback()
-            raise Conflict("Helfername existiert bereits") from error
-        return helper
-
-    def delete_helper(self, helper_id: int) -> None:
-        helper = self.get_helper(helper_id)
-        self.db.execute(
-            delete(duty_helpers).where(duty_helpers.c.helper_id == helper_id)
-        )
-        self.db.delete(helper)
-        self.db.commit()
+    def _lock_duty(self, duty_id: int) -> Duty:
+        # Ein UPDATE sperrt die Zeile auch unter SQLite, wo FOR UPDATE wirkungslos ist.
+        result = self.db.execute(update(Duty).where(Duty.id == duty_id).values(
+            capacity=Duty.capacity
+        ).execution_options(synchronize_session=False))
+        if result.rowcount != 1:
+            raise NotFound("Dienst nicht gefunden")
         self.db.expire_all()
+        return self.get_duty(duty_id)
 
     def get_duty(self, duty_id: int) -> Duty:
         duty = self.db.get(Duty, duty_id)
@@ -108,22 +57,43 @@ class HelperService:
     def get_duty_response(self, duty_id: int) -> DutyResponse:
         return self._response(self.get_duty(duty_id))
 
-    def _helpers(self, event_id: int, helper_ids: list[int] | None) -> list[Helper]:
-        if helper_ids is None:
+    def _users(self, event_id: int, user_ids: list[int] | None, retained: set[int] | None = None) -> list[User]:
+        if user_ids is None:
             raise DomainError("Helferliste darf nicht null sein")
-        if len(helper_ids) != len(set(helper_ids)):
+        if len(user_ids) != len(set(user_ids)):
             raise DomainError("Helfer dürfen nur einmal zugeordnet werden")
-        if not helper_ids:
-            return []
-        helpers = list(
-            self.db.scalars(select(Helper).where(Helper.id.in_(helper_ids))).all()
-        )
-        if len(helpers) != len(helper_ids) or any(
-            helper.event_id != event_id for helper in helpers
-        ):
-            raise DomainError("Helfer gehören nicht zur Veranstaltung")
-        by_id = {helper.id: helper for helper in helpers}
-        return [by_id[helper_id] for helper_id in helper_ids]
+        eligible = {user.id: user for user in self.list_participants(event_id)}
+        # Gesperrte Konten bleiben belegbar, solange ihre bestehende Zuordnung erhalten wird.
+        for user_id in retained or set():
+            eligible[user_id] = self.db.get(User, user_id)
+        if any(user_id not in eligible for user_id in user_ids):
+            raise DomainError("Helfer brauchen ein aktives, benanntes Konto mit Veranstaltungszugriff")
+        return [eligible[user_id] for user_id in user_ids]
+
+    @staticmethod
+    def _check_capacity(capacity: int, users: list[User]) -> None:
+        if len(users) > capacity:
+            raise Conflict("Höchstzahl der Helfer überschritten")
+
+    def signup(self, duty_id: int, user: User, *, leave: bool = False) -> DutyResponse:
+        duty = self._lock_duty(duty_id)
+        # Rechte nach Erwerb der Schreibsperre erneut prüfen (paralleler Teamaustritt).
+        from app.services.auth import authorize_event
+        authorize_event(self.db, user, duty.event_id, "helper")
+        if not user.is_active:
+            raise DomainError("Konto ist gesperrt")
+        assigned = any(person.id == user.id for person in duty.users)
+        if leave:
+            duty.users = [person for person in duty.users if person.id != user.id]
+        elif not assigned:
+            if not user.name:
+                raise DomainError("Bitte zuerst einen Namen festlegen")
+            if self._response(duty).status != "active":
+                raise Conflict("Dieser Dienst ist nicht aktiv")
+            self._check_capacity(duty.capacity, [*duty.users, user])
+            duty.users.append(user)
+        self.db.commit()
+        return self._response(duty)
 
     def _validated(self, event_id: int, values: dict) -> dict:
         kind = values["kind"]
@@ -200,8 +170,9 @@ class HelperService:
             event_id=duty.event_id,
             kind=duty.kind,
             title=duty.title,
-            helper_ids=[helper.id for helper in duty.helpers],
-            helpers=[HelperResponse.model_validate(helper) for helper in duty.helpers],
+            user_ids=[helper.id for helper in duty.users],
+            capacity=duty.capacity,
+            users=[DutyUser.model_validate(user) for user in duty.users],
             day_id=day_id,
             date=day.date if day else None,
             room_id=room_id,
@@ -215,14 +186,15 @@ class HelperService:
 
     def create_duty(self, event_id: int, data: DutyCreate) -> DutyResponse:
         self._event(event_id)
-        values = self._validated(event_id, data.model_dump(exclude={"helper_ids"}))
-        helpers = self._helpers(event_id, data.helper_ids)
+        values = self._validated(event_id, data.model_dump(exclude={"user_ids"}))
+        users = self._users(event_id, data.user_ids)
+        self._check_capacity(data.capacity, users)
         sort_order = (
             self.db.scalar(select(func.max(Duty.sort_order)).where(Duty.event_id == event_id))
             or 0
         ) + 1
         duty = Duty(event_id=event_id, sort_order=sort_order, **values)
-        duty.helpers = helpers
+        duty.users = users
         self.db.add(duty)
         self.db.commit()
         return self._response(duty)
@@ -254,13 +226,14 @@ class HelperService:
         return [self._response(active[duty_id]) for duty_id in data.duty_ids]
 
     def update_duty(self, duty_id: int, data: DutyUpdate) -> DutyResponse:
-        duty = self.get_duty(duty_id)
+        duty = self._lock_duty(duty_id)
         changes = data.model_dump(exclude_unset=True)
-        required_patch(changes, {"kind", "helper_ids"})
+        required_patch(changes, {"kind", "user_ids", "capacity"})
         values = {
             key: getattr(duty, key)
             for key in (
                 "kind",
+                "capacity",
                 "title",
                 "day_id",
                 "room_id",
@@ -270,24 +243,24 @@ class HelperService:
             )
         }
         values.update(
-            {key: value for key, value in changes.items() if key != "helper_ids"}
+            {key: value for key, value in changes.items() if key != "user_ids"}
         )
         values = self._validated(duty.event_id, values)
-        helpers = (
-            self._helpers(duty.event_id, changes["helper_ids"])
-            if "helper_ids" in changes
-            else None
+        users = (
+            self._users(duty.event_id, changes["user_ids"], {user.id for user in duty.users})
+            if "user_ids" in changes
+            else list(duty.users)
         )
+        self._check_capacity(values["capacity"], users)
         for key, value in values.items():
             setattr(duty, key, value)
-        if helpers is not None:
-            duty.helpers = helpers
+        duty.users = users
         self.db.commit()
         return self._response(duty)
 
     def delete_duty(self, duty_id: int) -> None:
-        duty = self.get_duty(duty_id)
-        self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id == duty.id))
+        duty = self._lock_duty(duty_id)
+        self.db.execute(delete(duty_users).where(duty_users.c.duty_id == duty.id))
         self.db.delete(duty)
         self.db.commit()
 
@@ -301,12 +274,12 @@ class HelperService:
         responses = [self._response(duty) for duty in duties]
         conflicts: list[DutyConflict] = []
         for index, first in enumerate(responses):
-            if first.status != "active" or not first.helper_ids:
+            if first.status != "active" or not first.user_ids:
                 continue
             for second in responses[index + 1 :]:
                 if second.status != "active" or first.day_id != second.day_id:
                     continue
-                shared = sorted(set(first.helper_ids).intersection(second.helper_ids))
+                shared = sorted(set(first.user_ids).intersection(second.user_ids))
                 if (
                     not shared
                     or first.start_time >= second.end_time
@@ -321,7 +294,7 @@ class HelperService:
                     DutyConflict(
                         first_duty_id=first.id,
                         second_duty_id=second.id,
-                        helper_ids=shared,
+                        user_ids=shared,
                     )
                 )
         return HelperPlan(duties=responses, conflicts=conflicts)

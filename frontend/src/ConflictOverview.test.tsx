@@ -24,13 +24,13 @@ const schedules: DaySchedule[] = [
     ], collisions: [], speaker_conflicts: [{ first_slot_id: 3, second_slot_id: 4, speaker_ids: [8] }] },
 ]
 const duty = (id: number, title: string): Duty => ({
-  id, event_id: 1, kind: 'room', title, helper_ids: [9], helpers: [{ id: 9, event_id: 1, name: 'Ben' }],
+  id, event_id: 1, kind: 'room', title, capacity: 1, user_ids: [9], users: [{ id: 9, is_active: true, name: 'Ben' }],
   day_id: 12, date: '2099-06-02', room_id: 2, slot_id: null, session_topic: null,
   start_time: '11:00:00', end_time: '12:00:00', sort_order: id, status: 'active',
 })
 const helperPlan: HelperPlan = {
   duties: [duty(21, 'Aufbau'), duty(22, 'Einlass')],
-  conflicts: [{ first_duty_id: 21, second_duty_id: 22, helper_ids: [9] }],
+  conflicts: [{ first_duty_id: 21, second_duty_id: 22, user_ids: [9] }],
 }
 
 afterEach(cleanup)
@@ -51,16 +51,16 @@ it('sorts all conflict types across days and opens the selected entry', () => {
 })
 
 it('lists one conflict per helper with time and both duties', () => {
-  const helper2 = { id: 2, event_id: 1, name: 'Helfer 2' }
-  const helper4 = { id: 4, event_id: 1, name: 'Helfer 4' }
+  const helper2 = { id: 2, is_active: true, name: 'Helfer 2' }
+  const helper4 = { id: 4, is_active: true, name: 'Helfer 4' }
   const general: Duty = { ...duty(31, 'Getränke'), kind: 'general', room_id: null,
-    start_time: '15:00:00', end_time: '17:00:00', helper_ids: [2, 4], helpers: [helper2, helper4] }
+    start_time: '15:00:00', end_time: '17:00:00', user_ids: [2, 4], users: [helper2, helper4] }
   const room1: Duty = { ...duty(32, 'Caller-Betreuung'), start_time: '16:00:00', end_time: '17:00:00',
-    helper_ids: [2], helpers: [helper2] }
-  const room2: Duty = { ...room1, id: 33, room_id: 3, helper_ids: [4], helpers: [helper4] }
+    user_ids: [2], users: [helper2] }
+  const room2: Duty = { ...room1, id: 33, room_id: 3, user_ids: [4], users: [helper4] }
   const plan: HelperPlan = { duties: [general, room1, room2], conflicts: [
-    { first_duty_id: 31, second_duty_id: 32, helper_ids: [2] },
-    { first_duty_id: 31, second_duty_id: 33, helper_ids: [4] },
+    { first_duty_id: 31, second_duty_id: 32, user_ids: [2] },
+    { first_duty_id: 31, second_duty_id: 33, user_ids: [4] },
   ] }
 
   const { container } = render(<ConflictOverview schedules={[{ ...schedules[1], speaker_conflicts: [] }]} helperPlan={plan} onOpenSlot={() => {}} onOpenDuty={() => {}} />)
@@ -75,10 +75,10 @@ it('lists one conflict per helper with time and both duties', () => {
 })
 
 it('splits a shared duty pair into one entry per helper', () => {
-  const helpers = [{ id: 2, event_id: 1, name: 'Helfer 2' }, { id: 4, event_id: 1, name: 'Helfer 4' }]
-  const first: Duty = { ...duty(41, 'Getränke'), kind: 'general', room_id: null, helper_ids: [2, 4], helpers }
-  const second: Duty = { ...duty(42, 'Einlass'), helper_ids: [2, 4], helpers }
-  const plan: HelperPlan = { duties: [first, second], conflicts: [{ first_duty_id: 41, second_duty_id: 42, helper_ids: [2, 4] }] }
+  const helpers = [{ id: 2, is_active: true, name: 'Helfer 2' }, { id: 4, is_active: true, name: 'Helfer 4' }]
+  const first: Duty = { ...duty(41, 'Getränke'), kind: 'general', room_id: null, user_ids: [2, 4], users: helpers }
+  const second: Duty = { ...duty(42, 'Einlass'), user_ids: [2, 4], users: helpers }
+  const plan: HelperPlan = { duties: [first, second], conflicts: [{ first_duty_id: 41, second_duty_id: 42, user_ids: [2, 4] }] }
   const entries = collectConflicts([{ ...schedules[1], speaker_conflicts: [] }], plan)
   expect(entries.map(entry => entry.people)).toEqual([['Helfer 2'], ['Helfer 4']])
 })

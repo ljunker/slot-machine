@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, test, createTeamAccount } from './fixtures'
 import type { Locator } from '@playwright/test'
 
 test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page, request }) => {
@@ -23,19 +23,18 @@ test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page,
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator('[data-duty-id]').first()).toContainText('Offen')
 
-  for (const name of ['Ada', 'Ben']) {
-    await page.getByRole('button', { name: '+ Helfer' }).click()
-    await page.getByLabel('Name').fill(name)
-    await page.getByRole('button', { name: 'Speichern' }).click()
-  }
+  for (const name of ['Ada', 'Ben']) createTeamAccount(event.id, name)
+  await page.reload()
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
   await page.getByRole('button', { name: '+ Dienst' }).click()
   await page.getByLabel('Dienstart').selectOption('room')
   await page.getByLabel('Titel (optional)').fill('Einlass')
+  await page.getByLabel('Höchstzahl Helfer').fill('2')
   await page.getByRole('combobox', { name: /^Raum/ }).selectOption({ label: 'Saal A' })
   await page.getByLabel('Beginn').fill('10:00')
   await page.getByLabel('Ende').fill('11:00')
-  await page.getByRole('checkbox', { name: 'Ada' }).check()
-  await page.getByRole('checkbox', { name: 'Ben' }).check()
+  await page.getByRole('checkbox', { name: /Ada/ }).check()
+  await page.getByRole('checkbox', { name: /Ben/ }).check()
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator('[aria-label="Helferdienste Saal A"] [data-duty-id]')).toContainText('Ada, Ben')
   await expect(page.locator('[aria-label="Helferdienste Saal B"] [data-duty-id]')).toHaveCount(0)
@@ -47,14 +46,14 @@ test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page,
   await expect(page.getByText('Einlass')).toHaveCount(0)
   await expect(page.getByText('Ada')).toHaveCount(0)
 
-  const helpers = await (await request.get(`/api/events/${event.id}/helpers`)).json()
+  const helpers = await (await request.get(`/api/events/${event.id}/duty-participants`)).json()
   const ada = helpers.find((person: { name: string }) => person.name === 'Ada')
   const slot = await (await request.post('/api/slots', { data: {
     event_id: event.id, day_id: day.id, room_id: roomA.id, topic: 'Vortrag',
     start_time: '10:15', end_time: '10:45',
   } })).json()
   const sessionDuty = await (await request.post(`/api/events/${event.id}/duties`, { data: {
-    kind: 'session', slot_id: slot.id, helper_ids: [ada.id],
+    kind: 'session', slot_id: slot.id, user_ids: [ada.id],
   } })).json()
   await page.goto('/')
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
@@ -72,8 +71,7 @@ test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page,
   await page.reload()
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
   await expect(page.locator(`[data-duty-id="${sessionDuty.id}"]`)).toHaveCount(0)
-  await page.getByRole('button', { name: 'Ada', exact: true }).click()
-  await expect(page.locator('.helper-duties')).toContainText('Abgesagt')
+  await expect(page.locator('.duty-list')).toContainText('Abgesagt')
 })
 
 test('gibt parallelen Diensten im Helferplan Platz, auch bei schmalem Fenster', async ({ page, request }) => {
@@ -91,7 +89,7 @@ test('gibt parallelen Diensten im Helferplan Platz, auch bei schmalem Fenster', 
   for (const title of ['Einlass', 'Technik', 'Info']) {
     await request.post(`/api/events/${event.id}/duties`, { data: {
       kind: 'room', title, day_id: day.id, room_id: room.id,
-      start_time: '10:00', end_time: '11:00', helper_ids: [],
+      start_time: '10:00', end_time: '11:00', user_ids: [],
     } })
   }
   await page.setViewportSize({ width: 700, height: 800 })
@@ -286,4 +284,43 @@ test('ordnet allgemeine, Raum- und Session-Dienste dauerhaft innerhalb ihrer Spa
   expect([savedSession.room_id, savedSession.start_time, savedSession.end_time]).toEqual([room.id, '15:00:00', '17:00:00'])
   const savedGeneral = await (await request.get(`/api/duties/${general[0].id}`)).json()
   expect([savedGeneral.start_time, savedGeneral.end_time]).toEqual(['15:00:00', '17:00:00'])
+})
+
+
+test('Helfer legt Namen fest und übernimmt Dienste ohne Bearbeitungsrechte', async ({ request, browser }) => {
+  const event = await (await request.post('/api/events', { data: { name: 'Selbst eintragen', start_date: '2026-10-01', end_date: '2026-10-01' } })).json()
+  const day = await (await request.post(`/api/events/${event.id}/days`, { data: { event_id: event.id, date: '2026-10-01', start_time: '09:00', end_time: '18:00' } })).json()
+  const room = await (await request.post('/api/rooms', { data: { event_id: event.id, name: 'Saal' } })).json()
+  await request.post('/api/slots', { data: { event_id: event.id, day_id: day.id, room_id: room.id, topic: 'Lesbare Session', description: 'Details für Helfer', start_time: '10:00', end_time: '11:00' } })
+  const duty = await (await request.post(`/api/events/${event.id}/duties`, { data: { kind: 'general', title: 'Einlass', day_id: day.id, start_time: '10:00', end_time: '11:00' } })).json()
+  const account = createTeamAccount(event.id, null)
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  await page.goto('/')
+  await page.getByLabel('E-Mail', { exact: true }).fill(account.email)
+  await page.getByLabel('Passwort', { exact: true }).fill(account.password)
+  await page.getByRole('button', { name: 'Anmelden' }).click()
+  await expect(page.getByRole('heading', { name: 'Namen festlegen' })).toBeVisible()
+  await page.getByLabel('Name', { exact: true }).fill('Ada Helferin')
+  await page.getByRole('button', { name: 'Speichern' }).click()
+  await expect(page.getByRole('button', { name: 'Helferplan', exact: true })).toBeVisible()
+  for (const name of ['+ Dienst', '+ Slot', '+ Session', '+ Helfer', 'Team verwalten', 'Restore', 'Alle Änderungs-Flags entfernen']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  await expect(page.locator('.slot-resize, .duty-resize')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Lesbare Session ansehen', exact: true }).click()
+  await expect(page.getByLabel('Sessiondetails')).toContainText('Details für Helfer')
+  await expect(page.getByRole('button', { name: 'Speichern' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Schließen', exact: true }).click()
+  await page.getByRole('button', { name: 'Eintragen in Einlass', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Austragen aus Einlass', exact: true })).toBeVisible()
+  await expect(page.locator(`[data-duty-id="${duty.id}"]`)).toContainText('Ada Helferin')
+  expect((await (await request.get(`/api/duties/${duty.id}`)).json()).user_ids).toEqual([account.id])
+  if (process.env.HELPER_ACCESS_SCREENSHOT) await page.screenshot({ path: process.env.HELPER_ACCESS_SCREENSHOT, fullPage: true })
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Austragen aus Einlass', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Austragen aus Einlass', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Eintragen in Einlass', exact: true })).toBeVisible()
+  expect((await (await request.get(`/api/duties/${duty.id}`)).json()).user_ids).toEqual([])
+  await context.close()
 })

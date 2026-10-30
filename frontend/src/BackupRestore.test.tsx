@@ -30,7 +30,7 @@ it('previews replacement and requires confirmation before restore', async () => 
   expect(fetchMock).toHaveBeenCalledTimes(1)
   confirm.mockReturnValue(true)
   fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen' }))
-  await waitFor(() => expect(onComplete).toHaveBeenCalledWith(7))
+  await waitFor(() => expect(onComplete).toHaveBeenCalledWith(7, []))
   expect(fetchMock).toHaveBeenCalledTimes(2)
   const body = (fetchMock.mock.calls[1] as unknown as [unknown, RequestInit])[1].body as FormData
   expect(body.get('target_event_id')).toBe('7')
@@ -55,7 +55,7 @@ it('creates an event without existing target and shows preview errors', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau prüfen' }))
   await screen.findByText('Backup: Gesichert')
   fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen' }))
-  await waitFor(() => expect(onComplete).toHaveBeenCalledWith(9))
+  await waitFor(() => expect(onComplete).toHaveBeenCalledWith(9, []))
   const body = fetchMock.mock.calls[2][1].body as FormData
   expect(body.get('target_event_id')).toBeNull()
 })

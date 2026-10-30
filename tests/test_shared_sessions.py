@@ -4,6 +4,7 @@ from io import BytesIO, StringIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from conftest import legacy_archive, make_account
 from pypdf import PdfReader
 from sqlalchemy import create_engine, text
 from sqlalchemy import event as sqlalchemy_event
@@ -138,12 +139,12 @@ def test_rooms_dynamic_and_delete_day_preserves_scope(client, program):
     assert client.delete(f"/api/events/{event}").status_code == 204
 
 
-def test_shared_session_duties_follow_times_and_keep_conflicts(client, program):
+def test_shared_session_duties_follow_times_and_keep_conflicts(client, program, db):
     event, day, _ = program
     slot = shared(client, event, day)
-    helper = client.post(f"/api/events/{event}/helpers", json={"name": "Bo"}).json()["id"]
-    duty = client.post(f"/api/events/{event}/duties", json={"kind": "session", "slot_id": slot["id"], "helper_ids": [helper]}).json()
-    general = client.post(f"/api/events/{event}/duties", json={"kind": "general", "title": "Buffet", "day_id": day, "start_time": "12:00", "end_time": "14:00", "helper_ids": [helper]}).json()
+    helper = make_account(db, event, "Bo")["id"]
+    duty = client.post(f"/api/events/{event}/duties", json={"kind": "session", "slot_id": slot["id"], "user_ids": [helper]}).json()
+    general = client.post(f"/api/events/{event}/duties", json={"kind": "general", "title": "Buffet", "day_id": day, "start_time": "12:00", "end_time": "14:00", "user_ids": [helper]}).json()
     plan = client.get(f"/api/events/{event}/helper-plan").json()
     assert len(plan["conflicts"]) == 1
     assert duty["room_id"] is None and duty["status"] == "active"
@@ -186,21 +187,7 @@ def test_backup_versions_restore_scope_and_content(client, program, version):
     event, day, rooms = program
     slot = shared(client, event, day, **({"scope": "room", "room_id": rooms[0]} if version != "4" else {}))
     archive = client.get(f"/api/backups/events/{event}").content
-    output = BytesIO()
-    with ZipFile(BytesIO(archive)) as source, ZipFile(output, "w", ZIP_DEFLATED) as target:
-        for filename in source.namelist():
-            if version in {"1", "2"} and filename in {"categories.csv", "slot_categories.csv"}:
-                continue
-            content = source.read(filename)
-            if filename == "manifest.csv":
-                content = content.replace(b"4,", version.encode() + b",", 1)
-            if (filename == "slots.csv" and version != "4") or (filename == "duties.csv" and version == "1"):
-                rows = list(csv.reader(StringIO(content.decode())))
-                index = rows[0].index("scope" if filename == "slots.csv" else "sort_order")
-                csv_output = StringIO(newline="")
-                csv.writer(csv_output).writerows([cell for i, cell in enumerate(row) if i != index] for row in rows)
-                content = csv_output.getvalue().encode()
-            target.writestr(filename, content)
+    output = BytesIO(legacy_archive(archive, version))
     restored = client.post("/api/backups/restore", data={"target_event_id": str(event)}, files={"backup": ("backup.zip", output.getvalue(), "application/zip")})
     assert restored.status_code == 200, restored.text
     restored_slot = client.get(f"/api/events/{event}/sessions/{slot['id']}").json()

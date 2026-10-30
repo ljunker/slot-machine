@@ -34,6 +34,29 @@ function LoginForm({ onLogin }: { onLogin: (user: CurrentUser) => void }) {
   </form>
 }
 
+export function NameForm({ onSave, onLogout }: { onSave: (user: CurrentUser) => void; onLogout: () => void }) {
+  const [name, setName] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function submit(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try { onSave(await write<CurrentUser>('PATCH', '/auth/me', { name })) }
+    catch (cause) { setError((cause as Error).message) }
+    finally { setBusy(false) }
+  }
+  return <main className="auth-page"><section className="auth-card">
+    <h1>Namen festlegen</h1><p>Dein Name erscheint im Helferplan und gilt für alle Veranstaltungen.</p>
+    <form onSubmit={event => void submit(event)}>
+      <label>Name<input required maxLength={255} autoComplete="name" value={name} onChange={event => setName(event.target.value)} /></label>
+      <button className="primary" type="submit" disabled={busy || !name.trim()}>Speichern</button>
+      {error && <p role="alert">{error}</p>}
+    </form>
+    <button type="button" className="text-button" onClick={onLogout}>Abmelden</button>
+  </section></main>
+}
+
 export function AuthGate() {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loading, setLoading] = useState(true)
@@ -55,6 +78,7 @@ export function AuthGate() {
   }
 
   if (loading) return <main className="auth-page"><p role="status">Prüfe Anmeldung …</p></main>
+  if (user && !user.name) return <NameForm onSave={setUser} onLogout={() => void logout()} />
   if (user) return <App currentUser={user} onLogout={() => void logout()} />
   return <main className="auth-page"><section className="auth-card">
     <h1>Programmplanung</h1><p>Für die Planung anmelden.</p>
@@ -93,7 +117,7 @@ export function InvitationPage({ token }: { token: string }) {
 
   return <main className="auth-page"><section className="auth-card">
     <h1>Einladung annehmen</h1>
-    {invitation && <p>{invitation.email} · {invitation.event_name ?? 'Superadmin'} · {invitation.role}</p>}
+    {invitation && <p>{invitation.email} · {invitation.event_name ?? 'Superadmin'} · {{ admin: 'Veranstaltungsadmin', editor: 'Bearbeiter', helper: 'Helfer', superadmin: 'Superadmin' }[invitation.role] ?? invitation.role}</p>}
     {invitation?.existing_account && user?.email !== invitation.email && <><p>Mit dem eingeladenen Konto anmelden.</p><LoginForm onLogin={setUser} /></>}
     {invitation && (!invitation.existing_account || user?.email === invitation.email) && <form onSubmit={event => void accept(event)}>
       {!invitation.existing_account && <label>Passwort festlegen<input type="password" minLength={12} required autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)} /></label>}

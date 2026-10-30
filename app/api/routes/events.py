@@ -51,7 +51,7 @@ def get_event(event_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{event_id}/unplanned-sessions", response_model=list[SlotResponse])
 def get_unplanned_sessions(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
-    authorize_event(db, user, event_id)
+    authorize_event(db, user, event_id, "helper")
     return SlotService(db).get_unplanned_for_event(event_id)
 
 

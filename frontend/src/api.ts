@@ -23,7 +23,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   return response.json() as Promise<T>
 }
 
-export function write<T>(method: 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
+export function write<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T> {
   return request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })
 }
 

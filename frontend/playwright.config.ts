@@ -2,7 +2,8 @@ import { defineConfig } from '@playwright/test'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
-const database = join(tmpdir(), `slot-machine-e2e-${process.pid}.db`)
+const database = process.env.SLOT_MACHINE_E2E_DATABASE ?? join(tmpdir(), `slot-machine-e2e-${process.pid}.db`)
+process.env.SLOT_MACHINE_E2E_DATABASE = database
 
 export default defineConfig({
   testDir: './e2e',

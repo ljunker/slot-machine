@@ -3,6 +3,7 @@ import type { CSSProperties, PointerEvent } from 'react'
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
+import DutySignup from './DutySignup'
 import CategoryLabels, { CategoryStripe } from './CategoryLabels'
 import { sharedPresentation } from './sharedSessions'
 
@@ -75,7 +76,10 @@ function dutyTitle(duty: Duty): string {
   return duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
 }
 
-export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, hasSharedBacklog = false, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties }: {
+export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, hasSharedBacklog = false, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties, readOnly = false, currentUserId, onSignup }: {
+  readOnly?: boolean
+  currentUserId?: number
+  onSignup?: (duty: Duty, leave: boolean) => Promise<void>
   schedule: DaySchedule
   helperPlan?: HelperPlan
   focus?: 'program' | 'helpers'
@@ -114,12 +118,12 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   for (const pair of dutyConflicts) {
     for (const dutyId of [pair.first_duty_id, pair.second_duty_id]) {
       const helperIds = dutyConflictHelperIds.get(dutyId) ?? new Set<number>()
-      pair.helper_ids.forEach(id => helperIds.add(id))
+      pair.user_ids.forEach(id => helperIds.add(id))
       dutyConflictHelperIds.set(dutyId, helperIds)
     }
   }
   const dutyById = new Map(activeDuties.map(duty => [duty.id, duty]))
-  const helperById = new Map(helperPlan.duties.flatMap(duty => duty.helpers).map(helper => [helper.id, helper.name]))
+  const helperById = new Map(helperPlan.duties.flatMap(duty => duty.users).map(helper => [helper.id, helper.name]))
   const slots = [...schedule.rooms.flatMap(room => room.slots), ...shared]
   const now = useNoticeNow(slots)
   const slotById = new Map(slots.map(slot => [slot.id, slot]))
@@ -130,7 +134,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   for (let minute = Math.ceil(start / 60) * 60; minute <= end; minute += 60) hours.push(minute)
 
   function begin(event: PointerEvent, slot: Slot, mode: 'move' | 'resize') {
-    if (event.button !== 0) return
+    if (readOnly || event.button !== 0) return
     event.preventDefault()
     const initial: Drag = { slot, mode, originY: event.clientY, delta: 0, roomId: slot.room_id, overProgram: true }
     dragRef.current = initial
@@ -285,7 +289,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       onKeyDown={ghost ? undefined : event => { if (event.key === 'Enter') onEdit(slot) }}
     >
       <CategoryStripe categories={slot.categories} />
-      <div className="slot-grip" onPointerDown={ghost ? undefined : event => begin(event, slot, 'move')} aria-label={`${slot.topic} verschieben`}>
+      <div className="slot-grip" onPointerDown={ghost || readOnly ? undefined : event => begin(event, slot, 'move')} aria-label={readOnly ? undefined : `${slot.topic} verschieben`}>
         <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}{slot.scope === 'all_rooms' ? ' · Alle Räume' : ''}</strong>
         <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
       </div>
@@ -293,8 +297,8 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       <CategoryLabels categories={slot.categories} />
       {!ghost && notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
       {!ghost && speakerConflictIds.has(slot.id) && <span className="slot-conflict-badge">Rednerkonflikt</span>}
-      {!ghost && <button className="slot-edit" type="button" onClick={() => onEdit(slot)} aria-label={`${slot.topic} bearbeiten`}>Bearbeiten</button>}
-      {!ghost && <div className="slot-resize" onPointerDown={event => begin(event, slot, 'resize')} aria-label={`${slot.topic} verlängern oder verkürzen`} />}
+      {!ghost && <button className="slot-edit" type="button" onClick={() => onEdit(slot)} aria-label={`${slot.topic} ${readOnly ? 'ansehen' : 'bearbeiten'}`}>{readOnly ? 'Details' : 'Bearbeiten'}</button>}
+      {!ghost && !readOnly && <div className="slot-resize" onPointerDown={event => begin(event, slot, 'resize')} aria-label={`${slot.topic} verlängern oder verkürzen`} />}
     </article>
   }
 
@@ -317,17 +321,17 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
 
   function dutyCard(duty: ActiveDuty, lane: number, lanes: number, ghost = false) {
     const conflictingHelperIds = ghost ? undefined : dutyConflictHelperIds.get(duty.id)
-    const conflictingHelpers = duty.helpers.filter(helper => conflictingHelperIds?.has(helper.id))
+    const conflictingHelpers = duty.users.filter(helper => conflictingHelperIds?.has(helper.id))
     return <article
       key={duty.id}
       data-duty-id={duty.id}
-      className={`duty-card${duty.helper_ids.length === 0 ? ' duty-open' : ''}${ghost ? ' ghost' : ''}`}
+      className={`duty-card${duty.user_ids.length === 0 ? ' duty-open' : ''}${ghost ? ' ghost' : ''}`}
       style={{ top: (toMinutes(duty.start_time) - start) * PX_PER_MINUTE, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * PX_PER_MINUTE,
         left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
       role={ghost ? undefined : 'button'}
       tabIndex={ghost ? undefined : 0}
       aria-hidden={ghost ? true : undefined}
-      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.helper_ids.length ? duty.helpers.map(helper => helper.name).join(', ') : 'Offen'}${conflictingHelpers.length ? `, Helferkonflikt: ${conflictingHelpers.map(helper => helper.name).join(', ')}` : ''}`}
+      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.user_ids.length ? duty.users.map(helper => helper.name).join(', ') : 'Offen'}${conflictingHelpers.length ? `, Helferkonflikt: ${conflictingHelpers.map(helper => helper.name).join(', ')}` : ''}`}
       onClick={ghost ? undefined : () => {
         if (suppressDutyClick.current === duty.id) return
         onEditDuty?.(duty)
@@ -336,15 +340,16 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onEditDuty?.(duty) }
       }}
     >
-      <div className="duty-grip" onPointerDown={ghost ? undefined : event => beginDuty(event, duty, 'move')}>
+      <div className="duty-grip" onPointerDown={ghost || readOnly ? undefined : event => beginDuty(event, duty, 'move')}>
         <strong>{dutyTitle(duty)}</strong><span>{duty.start_time.slice(0, 5)}–{duty.end_time.slice(0, 5)}</span>
-        <small>{duty.helpers.length ? duty.helpers.map((helper, index) => <Fragment key={helper.id}>
+        <small>{duty.users.length ? duty.users.map((helper, index) => <Fragment key={helper.id}>
           {index > 0 && ', '}
           <span className={conflictingHelperIds?.has(helper.id) ? 'helper-conflict-name' : undefined}
             title={conflictingHelperIds?.has(helper.id) ? 'Helferkonflikt' : undefined}>{helper.name}</span>
         </Fragment>) : 'Offen'}</small>
       </div>
-      {!ghost && <div className="duty-resize" onPointerDown={event => beginDuty(event, duty, 'resize')}
+      {!ghost && currentUserId !== undefined && onSignup && <DutySignup duty={duty} currentUserId={currentUserId} onSignup={onSignup} />}
+      {!ghost && !readOnly && <div className="duty-resize" onPointerDown={event => beginDuty(event, duty, 'resize')}
         onClick={event => event.stopPropagation()} aria-label={`${dutyTitle(duty)} verlängern oder verkürzen`} />}
     </article>
   }
@@ -362,7 +367,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     </div>
   }
 
-  return <div className="schedule-scroll" aria-label={focus === 'helpers' ? 'Helferplan' : 'Tagesplan'}>
+  return <div className={`schedule-scroll${readOnly ? ' schedule-readonly' : ''}`} aria-label={focus === 'helpers' ? 'Helferplan' : 'Tagesplan'}>
     {schedule.speaker_conflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Rednerkonflikte">
       <h3>Rednerkonflikte</h3>
       <ul>{schedule.speaker_conflicts.map(conflict => {
@@ -373,7 +378,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       })}</ul>
     </section>}
     {dutyConflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Helferkonflikte">
-      <h3>Helferkonflikte</h3><ul>{dutyConflicts.flatMap(pair => pair.helper_ids.map(id => <li key={`${pair.first_duty_id}-${pair.second_duty_id}-${id}`}>
+      <h3>Helferkonflikte</h3><ul>{dutyConflicts.flatMap(pair => pair.user_ids.map(id => <li key={`${pair.first_duty_id}-${pair.second_duty_id}-${id}`}>
         {helperById.get(id) ?? `Helfer ${id}`}: {dutyTitle(dutyById.get(pair.first_duty_id)!)} und {dutyTitle(dutyById.get(pair.second_duty_id)!)}
       </li>))}</ul>
     </section>}

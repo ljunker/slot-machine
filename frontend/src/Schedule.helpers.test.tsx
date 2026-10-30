@@ -12,10 +12,10 @@ const schedule: DaySchedule = {
   ],
 }
 
-const ada = { id: 1, event_id: 1, name: 'Ada' }
-const ben = { id: 2, event_id: 1, name: 'Ben' }
+const ada = { id: 1, is_active: true, email: 'person@example.invalid', name: 'Ada' }
+const ben = { id: 2, is_active: true, email: 'person@example.invalid', name: 'Ben' }
 const base: Duty = {
-  id: 1, event_id: 1, kind: 'general', title: 'Aufbau', helper_ids: [], helpers: [],
+  id: 1, event_id: 1, kind: 'general', title: 'Aufbau', capacity: 1, user_ids: [], users: [],
   day_id: 1, date: '2026-10-01', room_id: null, slot_id: null, session_topic: null,
   start_time: '09:00:00', end_time: '12:00:00', sort_order: 1, status: 'active',
 }
@@ -24,12 +24,12 @@ afterEach(cleanup)
 
 it.each(['program', 'helpers'] as const)('shows duty columns, open duties, lanes and conflicts in %s view', focus => {
   const roomDuty: Duty = { ...base, id: 2, kind: 'room', title: 'Einlass', room_id: 1,
-    start_time: '10:00:00', end_time: '11:00:00', helper_ids: [1, 2], helpers: [ada, ben] }
-  const other: Duty = { ...roomDuty, id: 3, title: 'Technik', helper_ids: [1], helpers: [ada],
+    start_time: '10:00:00', end_time: '11:00:00', user_ids: [1, 2], users: [ada, ben] }
+  const other: Duty = { ...roomDuty, id: 3, title: 'Technik', user_ids: [1], users: [ada],
     start_time: '10:30:00', end_time: '11:30:00' }
   const plan: HelperPlan = {
     duties: [base, roomDuty, other],
-    conflicts: [{ first_duty_id: 2, second_duty_id: 3, helper_ids: [1] }],
+    conflicts: [{ first_duty_id: 2, second_duty_id: 3, user_ids: [1] }],
   }
   const onEditDuty = vi.fn()
   const { container } = render(<Schedule schedule={schedule} helperPlan={plan} focus={focus} onEdit={() => {}} onEditDuty={onEditDuty} onChange={async () => {}} />)
@@ -50,17 +50,17 @@ it.each(['program', 'helpers'] as const)('shows duty columns, open duties, lanes
 })
 
 it('marks Helfer 2 and Helfer 4 separately when a general duty overlaps room duties', () => {
-  const helper2 = { id: 2, event_id: 1, name: 'Helfer 2' }
-  const helper4 = { id: 4, event_id: 1, name: 'Helfer 4' }
-  const helper5 = { id: 5, event_id: 1, name: 'Helfer 5' }
+  const helper2 = { id: 2, is_active: true, email: 'person@example.invalid', name: 'Helfer 2' }
+  const helper4 = { id: 4, is_active: true, email: 'person@example.invalid', name: 'Helfer 4' }
+  const helper5 = { id: 5, is_active: true, email: 'person@example.invalid', name: 'Helfer 5' }
   const general: Duty = { ...base, title: 'Getränke', start_time: '15:00:00', end_time: '17:00:00',
-    helper_ids: [2, 4, 5], helpers: [helper2, helper4, helper5] }
+    user_ids: [2, 4, 5], users: [helper2, helper4, helper5] }
   const room1: Duty = { ...base, id: 2, kind: 'room', title: 'Caller-Betreuung', room_id: 1,
-    start_time: '16:00:00', end_time: '17:00:00', helper_ids: [2], helpers: [helper2] }
-  const room2: Duty = { ...room1, id: 3, room_id: 2, helper_ids: [4], helpers: [helper4] }
+    start_time: '16:00:00', end_time: '17:00:00', user_ids: [2], users: [helper2] }
+  const room2: Duty = { ...room1, id: 3, room_id: 2, user_ids: [4], users: [helper4] }
   const plan: HelperPlan = { duties: [general, room1, room2], conflicts: [
-    { first_duty_id: 1, second_duty_id: 2, helper_ids: [2] },
-    { first_duty_id: 1, second_duty_id: 3, helper_ids: [4] },
+    { first_duty_id: 1, second_duty_id: 2, user_ids: [2] },
+    { first_duty_id: 1, second_duty_id: 3, user_ids: [4] },
   ] }
 
   const { container } = render(<Schedule schedule={schedule} helperPlan={plan} focus="helpers" onEdit={() => {}} onChange={async () => {}} />)

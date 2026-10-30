@@ -2,7 +2,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.duty import Duty
-from app.models.helper import duty_helpers
+from app.models.helper import duty_users
 from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.slot_repository import SlotRepository
@@ -78,7 +78,7 @@ class EventDayService:
     def delete(self, day_id: int) -> None:
         day = self.get(day_id)
         duty_ids = select(Duty.id).where(Duty.day_id == day_id)
-        self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
+        self.db.execute(delete(duty_users).where(duty_users.c.duty_id.in_(duty_ids)))
         self.db.execute(delete(Duty).where(Duty.day_id == day_id))
         for slot in self.slots.get_for_day(day_id):
             slot.day_id = None

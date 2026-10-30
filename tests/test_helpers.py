@@ -18,19 +18,19 @@ def setup_event(client, name="Test"):
     return event, day, room
 
 
-def helper(client, event_id, name):
-    response = client.post(f"/api/events/{event_id}/helpers", json={"name": name})
-    assert response.status_code == 201
-    return response.json()
+def helper(db, event_id, name):
+    from conftest import make_account
+    return make_account(db, event_id, name)
 
 
 def duty(client, event_id, **data):
+    data.setdefault("capacity", max(1, len(data.get("user_ids", []))))
     response = client.post(f"/api/events/{event_id}/duties", json=data)
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def test_reorder_duties_within_one_column(client):
+def test_reorder_duties_within_one_column(client, db):
     event, day, room_a = setup_event(client)
     room_b = client.post(
         "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
@@ -120,18 +120,15 @@ def test_reorder_duties_within_one_column(client):
     assert client.get(f"/api/duties/{other_room['id']}").json()["sort_order"] == other_room["sort_order"]
 
 
-def test_open_and_multiple_helpers_and_validation(client):
+def test_open_and_multiple_helpers_and_validation(client, db):
     event, day, room = setup_event(client)
-    ada = helper(client, event["id"], "Ada")
-    ben = helper(client, event["id"], "Ben")
-    assert (
-        client.post(
-            f"/api/events/{event['id']}/helpers", json={"name": " ada "}
-        ).status_code
-        == 409
-    )
+    ada = helper(db, event["id"], "Ada")
+    ben = helper(db, event["id"], "Ben")
+    # Freie Profile existieren nicht mehr; Konten dürfen denselben Namen haben.
+    assert client.post(f"/api/events/{event['id']}/helpers", json={"name": " ada "}).status_code == 404
+    assert helper(db, event["id"], "Ada")["id"] != ada["id"]
     other, _, _ = setup_event(client, "Andere Veranstaltung")
-    stranger = helper(client, other["id"], "Chris")
+    stranger = helper(db, other["id"], "Chris")
     common = {
         "kind": "room",
         "day_id": day["id"],
@@ -140,26 +137,26 @@ def test_open_and_multiple_helpers_and_validation(client):
         "end_time": "12:00",
         "title": "Einlass",
     }
-    open_duty = duty(client, event["id"], **common, helper_ids=[])
-    assert open_duty["helper_ids"] == []
+    open_duty = duty(client, event["id"], **common, user_ids=[])
+    assert open_duty["user_ids"] == []
     assert open_duty["status"] == "active"
     assert client.get(f"/api/duties/{open_duty['id']}").json()["id"] == open_duty["id"]
     response = client.patch(
-        f"/api/duties/{open_duty['id']}", json={"helper_ids": [ada["id"], ben["id"]]}
+        f"/api/duties/{open_duty['id']}", json={"capacity": 2, "user_ids": [ada["id"], ben["id"]]}
     )
     assert response.status_code == 200
-    assert response.json()["helper_ids"] == [ada["id"], ben["id"]]
+    assert response.json()["user_ids"] == [ada["id"], ben["id"]]
     assert (
         client.post(
             f"/api/events/{event['id']}/duties",
-            json={**common, "helper_ids": [ada["id"], ada["id"]]},
+            json={**common, "user_ids": [ada["id"], ada["id"]]},
         ).status_code
         == 400
     )
     assert (
         client.post(
             f"/api/events/{event['id']}/duties",
-            json={**common, "helper_ids": [stranger["id"]]},
+            json={**common, "user_ids": [stranger["id"]]},
         ).status_code
         == 400
     )
@@ -171,21 +168,21 @@ def test_open_and_multiple_helpers_and_validation(client):
     )
     assert (
         client.get(f"/api/events/{event['id']}/helper-plan").json()["duties"][0][
-            "helpers"
+            "users"
         ][0]["name"]
         == "Ada"
     )
     assert client.get(f"/api/schedule/days/{day['id']}").json().get("duties") is None
 
 
-def test_general_duties_conflict_but_room_duties_cover_sessions(client):
+def test_general_duties_conflict_but_room_duties_cover_sessions(client, db):
     event, day, room_a = setup_event(client)
     room_b = client.post(
         "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
     ).json()
-    ada = helper(client, event["id"], "Ada")
-    ben = helper(client, event["id"], "Ben")
-    common = {"day_id": day["id"], "helper_ids": [ada["id"]]}
+    ada = helper(db, event["id"], "Ada")
+    ben = helper(db, event["id"], "Ben")
+    common = {"day_id": day["id"], "user_ids": [ada["id"]]}
     general = duty(
         client,
         event["id"],
@@ -219,7 +216,7 @@ def test_general_duties_conflict_but_room_duties_cover_sessions(client):
         event["id"],
         kind="session",
         slot_id=slot["id"],
-        helper_ids=[ada["id"], ben["id"]],
+        user_ids=[ada["id"], ben["id"]],
     )
     conflicts = client.get(f"/api/events/{event['id']}/helper-plan").json()["conflicts"]
     assert {(pair["first_duty_id"], pair["second_duty_id"]) for pair in conflicts} == {
@@ -243,16 +240,16 @@ def test_general_duties_conflict_but_room_duties_cover_sessions(client):
         (room["id"], other["id"]),
         (session["id"], other["id"]),
     }
-    assert all(pair["helper_ids"] == [ada["id"]] for pair in conflicts)
+    assert all(pair["user_ids"] == [ada["id"]] for pair in conflicts)
 
 
-def test_two_helpers_have_separate_conflicts_with_general_duty(client):
+def test_two_helpers_have_separate_conflicts_with_general_duty(client, db):
     event, day, room_a = setup_event(client)
     room_b = client.post(
         "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
     ).json()
-    helper_2 = helper(client, event["id"], "Helfer 2")
-    helper_4 = helper(client, event["id"], "Helfer 4")
+    helper_2 = helper(db, event["id"], "Helfer 2")
+    helper_4 = helper(db, event["id"], "Helfer 4")
     general = duty(
         client,
         event["id"],
@@ -261,7 +258,7 @@ def test_two_helpers_have_separate_conflicts_with_general_duty(client):
         day_id=day["id"],
         start_time="15:00",
         end_time="17:00",
-        helper_ids=[helper_2["id"], helper_4["id"]],
+        user_ids=[helper_2["id"], helper_4["id"]],
     )
     room_duties = [
         duty(
@@ -273,7 +270,7 @@ def test_two_helpers_have_separate_conflicts_with_general_duty(client):
             room_id=room["id"],
             start_time="16:00",
             end_time="17:00",
-            helper_ids=[person["id"]],
+            user_ids=[person["id"]],
         )
         for room, person in ((room_a, helper_2), (room_b, helper_4))
     ]
@@ -285,7 +282,7 @@ def test_two_helpers_have_separate_conflicts_with_general_duty(client):
         room_id=room_a["id"],
         start_time="17:00",
         end_time="18:00",
-        helper_ids=[helper_2["id"]],
+        user_ids=[helper_2["id"]],
     )
 
     conflicts = client.get(f"/api/events/{event['id']}/helper-plan").json()["conflicts"]
@@ -293,22 +290,22 @@ def test_two_helpers_have_separate_conflicts_with_general_duty(client):
         {
             "first_duty_id": general["id"],
             "second_duty_id": room_duties[0]["id"],
-            "helper_ids": [helper_2["id"]],
+            "user_ids": [helper_2["id"]],
         },
         {
             "first_duty_id": general["id"],
             "second_duty_id": room_duties[1]["id"],
-            "helper_ids": [helper_4["id"]],
+            "user_ids": [helper_4["id"]],
         },
     ]
 
 
-def test_session_duty_follows_slot_and_survives_inactive_states(client):
+def test_session_duty_follows_slot_and_survives_inactive_states(client, db):
     event, day, room_a = setup_event(client)
     room_b = client.post(
         "/api/rooms", json={"event_id": event["id"], "name": "Saal B"}
     ).json()
-    ada = helper(client, event["id"], "Ada")
+    ada = helper(db, event["id"], "Ada")
     slot = client.post(
         "/api/slots",
         json={
@@ -321,7 +318,7 @@ def test_session_duty_follows_slot_and_survives_inactive_states(client):
         },
     ).json()
     session = duty(
-        client, event["id"], kind="session", slot_id=slot["id"], helper_ids=[ada["id"]]
+        client, event["id"], kind="session", slot_id=slot["id"], user_ids=[ada["id"]]
     )
     client.patch(
         f"/api/slots/{slot['id']}",
@@ -351,9 +348,9 @@ def test_session_duty_follows_slot_and_survives_inactive_states(client):
     assert session["id"] is not None
 
 
-def test_room_and_helper_deletion_preserve_open_duty(client):
+def test_room_and_helper_deletion_preserve_open_duty(client, db):
     event, day, room = setup_event(client)
-    ada = helper(client, event["id"], "Ada")
+    ada = helper(db, event["id"], "Ada")
     entry = duty(
         client,
         event["id"],
@@ -362,16 +359,16 @@ def test_room_and_helper_deletion_preserve_open_duty(client):
         day_id=day["id"],
         start_time="10:00",
         end_time="11:00",
-        helper_ids=[ada["id"]],
+        user_ids=[ada["id"]],
     )
     client.delete(f"/api/rooms/{room['id']}")
     updated = client.get(f"/api/events/{event['id']}/helper-plan").json()["duties"][0]
     assert updated["id"] == entry["id"]
     assert updated["kind"] == "general" and updated["room_id"] is None
-    client.delete(f"/api/helpers/{ada['id']}")
+    client.delete(f"/api/events/{event['id']}/members/{ada['id']}")
     assert (
         client.get(f"/api/events/{event['id']}/helper-plan").json()["duties"][0][
-            "helper_ids"
+            "user_ids"
         ]
         == []
     )
@@ -383,7 +380,7 @@ def test_room_and_helper_deletion_preserve_open_duty(client):
     assert client.get(f"/api/events/{event['id']}/helper-plan").status_code == 404
 
 
-def test_day_deletion_removes_timed_duties_but_keeps_session_duty(client):
+def test_day_deletion_removes_timed_duties_but_keeps_session_duty(client, db):
     event, day, room = setup_event(client)
     timed = duty(
         client,
@@ -413,13 +410,13 @@ def test_day_deletion_removes_timed_duties_but_keeps_session_duty(client):
     assert remaining[0]["id"] != timed["id"]
 
 
-def test_helpers_are_absent_from_program_pdf(client):
+def test_helpers_are_absent_from_program_pdf(client, db):
     from io import BytesIO
 
     from pypdf import PdfReader
 
     event, day, room = setup_event(client)
-    person = helper(client, event["id"], "Geheime Helferin")
+    person = helper(db, event["id"], "Geheime Helferin")
     duty(
         client,
         event["id"],
@@ -428,7 +425,7 @@ def test_helpers_are_absent_from_program_pdf(client):
         room_id=room["id"],
         start_time="10:00",
         end_time="11:00",
-        helper_ids=[person["id"]],
+        user_ids=[person["id"]],
         title="Einlass",
     )
     client.post(

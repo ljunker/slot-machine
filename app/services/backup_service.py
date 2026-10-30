@@ -15,23 +15,28 @@ from PIL import Image, UnidentifiedImageError
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Column,
     Date,
     Integer,
+    MetaData,
     String,
+    Table,
     Text,
     Time,
     delete,
     func,
+    or_,
     select,
     text,
 )
 from sqlalchemy.orm import Session
 
+from app.models.auth import EventMembership, User
 from app.models.category import Category, slot_categories
 from app.models.duty import Duty
 from app.models.event import Event
 from app.models.event_day import EventDay
-from app.models.helper import Helper, duty_helpers
+from app.models.helper import duty_users
 from app.models.room import Room
 from app.models.slot import Slot
 from app.models.speaker import Speaker, slot_speakers
@@ -50,7 +55,7 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "4"
+FORMAT_VERSION = "5"
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
@@ -65,16 +70,25 @@ TABLES = {
     "categories": Category,
     "slots": Slot,
     "speakers": Speaker,
-    "helpers": Helper,
     "duties": Duty,
     "slot_speakers": slot_speakers,
     "slot_categories": slot_categories,
-    "duty_helpers": duty_helpers,
+    "duty_assignments": Table("duty_assignments", MetaData(),
+        Column("duty_id", Integer, nullable=False), Column("email", String(320), nullable=False)),
 }
 ORDER = tuple(TABLES)
+LEGACY_COLUMNS = {
+    "helpers": [Column("id", Integer, nullable=False), Column("event_id", Integer, nullable=False),
+                Column("name", String(255), nullable=False), Column("normalized_name", Text, nullable=False)],
+    "duty_helpers": [Column("duty_id", Integer, nullable=False), Column("helper_id", Integer, nullable=False)],
+}
+LEGACY_ORDER = ("events", "event_days", "rooms", "categories", "slots", "speakers", "helpers",
+                "duties", "slot_speakers", "slot_categories", "duty_helpers")
 
 
 def _columns(table_name: str):
+    if table_name in LEGACY_COLUMNS:
+        return LEGACY_COLUMNS[table_name]
     model = TABLES[table_name]
     return model.columns if hasattr(model, "columns") else model.__table__.columns
 
@@ -200,7 +214,7 @@ def build_backup(db: Session, event_id: int) -> bytes:
             }
         ]
     }
-    for name in ("event_days", "rooms", "categories", "slots", "speakers", "helpers", "duties"):
+    for name in ("event_days", "rooms", "categories", "slots", "speakers", "duties"):
         rows[name] = _model_rows(db, TABLES[name], event_id)
     rows["slot_speakers"] = _link_rows(
         db, slot_speakers, "slot_id", [r["id"] for r in rows["slots"]]
@@ -208,9 +222,11 @@ def build_backup(db: Session, event_id: int) -> bytes:
     rows["slot_categories"] = _link_rows(
         db, slot_categories, "slot_id", [r["id"] for r in rows["slots"]]
     )
-    rows["duty_helpers"] = _link_rows(
-        db, duty_helpers, "duty_id", [r["id"] for r in rows["duties"]]
-    )
+    rows["duty_assignments"] = [dict(row._mapping) for row in db.execute(
+        select(duty_users.c.duty_id, User.email).join(User, User.id == duty_users.c.user_id)
+        .join(Duty, Duty.id == duty_users.c.duty_id).where(Duty.event_id == event_id)
+        .order_by(duty_users.c.duty_id, User.email)
+    )]
 
     media: dict[str, bytes] = {}
     logo = rows["events"][0]["logo_filename"]
@@ -318,11 +334,12 @@ def _parse_archive(
                 ["format_version", "source_event_id", "exported_at"],
                 "manifest.csv",
             )
-            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", "3", FORMAT_VERSION}:
+            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", "3", "4", FORMAT_VERSION}:
                 raise DomainError("Nicht unterstützte Backup-Version")
             version = manifest[0]["format_version"]
             archive_order = tuple(
-                name for name in ORDER if version in {"3", "4"} or name not in {"categories", "slot_categories"}
+                name for name in (ORDER if version == FORMAT_VERSION else LEGACY_ORDER)
+                if version not in {"1", "2"} or name not in {"categories", "slot_categories"}
             )
             required = {"manifest.csv", *(f"{name}.csv" for name in archive_order)}
             if not required.issubset(names):
@@ -336,8 +353,10 @@ def _parse_archive(
             rows: dict[str, list[dict]] = {}
             for name in archive_order:
                 columns = list(_columns(name))
-                if version != "4" and name == "slots":
+                if version in {"1", "2", "3"} and name == "slots":
                     columns = [column for column in columns if column.name != "scope"]
+                if version != FORMAT_VERSION and name == "duties":
+                    columns = [column for column in columns if column.name != "capacity"]
                 if version == "1" and name == "duties":
                     columns = [column for column in columns if column.name != "sort_order"]
                 raw = _read_csv(
@@ -352,7 +371,7 @@ def _parse_archive(
                     }
                     for row in raw
                 ]
-                if version != "4" and name == "slots":
+                if version in {"1", "2", "3"} and name == "slots":
                     for row in rows[name]:
                         row["scope"] = "room"
                 if version == "1" and name == "duties":
@@ -371,6 +390,12 @@ def _parse_archive(
             if version in {"1", "2"}:
                 rows["categories"] = []
                 rows["slot_categories"] = []
+            rows.setdefault("helpers", [])
+            rows.setdefault("duty_helpers", [])
+            rows.setdefault("duty_assignments", [])
+            if version != FORMAT_VERSION:
+                for duty in rows["duties"]:
+                    duty["capacity"] = 1
             media = {
                 name: archive.read(name) for name in names if name.startswith("media/")
             }
@@ -462,6 +487,8 @@ def _validate(
                 raise DomainError("Session liegt außerhalb der Planung")
     for duty in rows["duties"]:
         kind = duty["kind"]
+        if not 1 <= duty["capacity"] <= MAX_ID:
+            raise DomainError("Ungültige Dienstkapazität im Backup")
         if duty["sort_order"] < 0:
             raise DomainError("Ungültige Dienstreihenfolge im Backup")
         if kind == "session":
@@ -503,6 +530,19 @@ def _validate(
             a not in by_id[left_table] or b not in by_id[right_table] for a, b in pairs
         ):
             raise DomainError(f"Ungültige Zuordnung in {name}.csv")
+    assignment_pairs = set()
+    assignment_counts = {}
+    for assignment in rows["duty_assignments"]:
+        duty_id, email = assignment["duty_id"], assignment["email"]
+        pair = (duty_id, email)
+        if (duty_id not in by_id["duties"] or email != email.strip().casefold()
+            or email.count("@") != 1 or not all(email.split("@"))
+            or any(char.isspace() for char in email) or pair in assignment_pairs):
+            raise DomainError("Ungültige Dienstbelegung im Backup")
+        assignment_pairs.add(pair)
+        assignment_counts[duty_id] = assignment_counts.get(duty_id, 0) + 1
+        if assignment_counts[duty_id] > by_id["duties"][duty_id]["capacity"]:
+            raise DomainError("Dienstbelegung überschreitet Höchstzahl im Backup")
     expected = set()
     logo = event["logo_filename"]
     if logo is not None:
@@ -521,6 +561,17 @@ def _validate(
         raise DomainError("Bilder im Backup fehlen oder sind nicht referenziert")
     for name, data in media.items():
         _image(data, name.rsplit(".", 1)[1], name.startswith("media/logo."))
+
+
+def _resolve_assignments(db: Session, rows: dict, target_id: int | None) -> list[dict]:
+    member = select(EventMembership.id).where(
+        EventMembership.event_id == target_id, EventMembership.user_id == User.id
+    ).exists()
+    accounts = {user.email: user.id for user in db.scalars(select(User).where(
+        User.is_active, User.name.is_not(None), or_(User.is_superadmin, member)
+    ))}
+    return [{"duty_id": row["duty_id"], "user_id": accounts[row["email"]]}
+            for row in rows["duty_assignments"] if row["email"] in accounts]
 
 
 def _preview(
@@ -555,7 +606,17 @@ def _preview(
     restored_public_ids = {
         row["id"] for row in rows["slots"] if row["day_id"] is not None
     } & preserved
+    restored = _resolve_assignments(db, rows, target_id)
+    warnings = []
+    if rows["helpers"] or rows["duty_helpers"]:
+        warnings.append(f"Alte Helferprofile ({len(rows['helpers'])}) und Belegungen ({len(rows['duty_helpers'])}) werden verworfen.")
+    skipped = len(rows["duty_assignments"]) - len(restored)
+    if skipped:
+        warnings.append(f"{skipped} Dienstbelegungen ohne passendes aktives, benanntes Konto mit Veranstaltungszugriff werden ausgelassen.")
     return {
+        "warnings": warnings,
+        "restored_assignments": len(restored),
+        "skipped_assignments": skipped,
         "name": rows["events"][0]["name"],
         "source_event_id": source_id,
         "target_event_id": target_id,
@@ -580,10 +641,10 @@ def _delete_event_contents(db: Session, event_id: int) -> tuple[str | None, list
     )
     slot_ids = select(Slot.id).where(Slot.event_id == event_id)
     duty_ids = select(Duty.id).where(Duty.event_id == event_id)
-    db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
+    db.execute(delete(duty_users).where(duty_users.c.duty_id.in_(duty_ids)))
     db.execute(delete(slot_speakers).where(slot_speakers.c.slot_id.in_(slot_ids)))
     db.execute(delete(slot_categories).where(slot_categories.c.slot_id.in_(slot_ids)))
-    for model in (Duty, Helper, Slot, Speaker, Category, EventDay, Room):
+    for model in (Duty, Slot, Speaker, Category, EventDay, Room):
         db.execute(delete(model).where(model.event_id == event_id))
     db.expire_all()
     return old_logo, [name for name in photos if name]
@@ -658,7 +719,7 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
         event.logo_filename = names.get(event_data["logo_filename"])
         db.flush()
         maps: dict[str, dict[int, int]] = {}
-        for name in ("event_days", "rooms", "categories", "speakers", "helpers", "slots", "duties"):
+        for name in ("event_days", "rooms", "categories", "speakers", "slots", "duties"):
             model = TABLES[name]
             maps[name] = {}
             records = rows[name]
@@ -733,17 +794,12 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
                     for row in rows["slot_categories"]
                 ],
             )
-        if rows["duty_helpers"]:
-            db.execute(
-                duty_helpers.insert(),
-                [
-                    {
-                        "duty_id": maps["duties"][row["duty_id"]],
-                        "helper_id": maps["helpers"][row["helper_id"]],
-                    }
-                    for row in rows["duty_helpers"]
-                ],
-            )
+        assignments = _resolve_assignments(db, rows, event.id)
+        if assignments:
+            db.execute(duty_users.insert(), [
+                {"duty_id": maps["duties"][row["duty_id"]], "user_id": row["user_id"]}
+                for row in assignments
+            ])
         if target_id is None:
             _sync_postgres_sequence(db, "events")
         _sync_postgres_sequence(db, "slots")

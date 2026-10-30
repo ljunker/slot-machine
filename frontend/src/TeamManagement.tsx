@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { request, write } from './api'
 
-type Member = { user_id: number; email: string; role: 'admin' | 'editor'; is_active: boolean }
+type Member = { user_id: number; email: string; name: string | null; role: 'admin' | 'editor' | 'helper'; is_active: boolean }
 type User = { id: number; email: string; is_active: boolean; is_superadmin: boolean }
 
 export function TeamManagement({ eventId, currentUserId, onClose }: { eventId: number; currentUserId: number; onClose: () => void }) {
   const [members, setMembers] = useState<Member[]>([])
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState<'admin' | 'editor'>('editor')
+  const [role, setRole] = useState<'admin' | 'editor' | 'helper'>('editor')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -25,7 +25,7 @@ export function TeamManagement({ eventId, currentUserId, onClose }: { eventId: n
     } catch (cause) { setError((cause as Error).message) }
   }
 
-  async function changeRole(member: Member, nextRole: 'admin' | 'editor') {
+  async function changeRole(member: Member, nextRole: 'admin' | 'editor' | 'helper') {
     setError('')
     try {
       await write<Member>('PATCH', `/events/${eventId}/members/${member.user_id}`, { role: nextRole })
@@ -48,13 +48,13 @@ export function TeamManagement({ eventId, currentUserId, onClose }: { eventId: n
     <div className="editor-heading"><h2>Team verwalten</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
     <form onSubmit={event => void invite(event)} className="management-form">
       <label>E-Mail<input type="email" required value={email} onChange={event => setEmail(event.target.value)} /></label>
-      <label>Rolle<select value={role} onChange={event => setRole(event.target.value as 'admin' | 'editor')}><option value="editor">Bearbeiter</option><option value="admin">Veranstaltungsadmin</option></select></label>
+      <label>Rolle<select value={role} onChange={event => setRole(event.target.value as 'admin' | 'editor' | 'helper')}><option value="helper">Helfer</option><option value="editor">Bearbeiter</option><option value="admin">Veranstaltungsadmin</option></select></label>
       <button type="submit" className="primary">Einladen</button>
     </form>
     <ul className="management-list">{members.map(member => <li key={member.user_id}>
-      <span>{member.email}{!member.is_active && ' · gesperrt'}</span>
-      <select aria-label={`Rolle von ${member.email}`} value={member.role} onChange={event => void changeRole(member, event.target.value as 'admin' | 'editor')}>
-        <option value="editor">Bearbeiter</option><option value="admin">Veranstaltungsadmin</option>
+      <span>{member.name ? `${member.name} · ` : ''}{member.email}{!member.is_active && ' · gesperrt'}</span>
+      <select aria-label={`Rolle von ${member.email}`} value={member.role} onChange={event => void changeRole(member, event.target.value as 'admin' | 'editor' | 'helper')}>
+        <option value="helper">Helfer</option><option value="editor">Bearbeiter</option><option value="admin">Veranstaltungsadmin</option>
       </select>
       <button type="button" className="text-button" onClick={() => void remove(member)}>Entfernen</button>
     </li>)}</ul>

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.category import Category, slot_categories
 from app.models.duty import Duty
-from app.models.helper import duty_helpers
+from app.models.helper import duty_users
 from app.models.slot import Slot
 from app.models.speaker import Speaker
 from app.repositories.event_day_repository import EventDayRepository
@@ -214,7 +214,7 @@ class SlotService:
     def delete(self, slot_id: int) -> None:
         slot = self.get(slot_id)
         duty_ids = select(Duty.id).where(Duty.slot_id == slot_id)
-        self.db.execute(delete(duty_helpers).where(duty_helpers.c.duty_id.in_(duty_ids)))
+        self.db.execute(delete(duty_users).where(duty_users.c.duty_id.in_(duty_ids)))
         self.db.execute(delete(Duty).where(Duty.slot_id == slot_id))
         self.db.execute(delete(slot_categories).where(slot_categories.c.slot_id == slot_id))
         self.repository.delete(slot)
