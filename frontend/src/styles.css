@@ -368,3 +368,31 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .dashboard-list small { color: var(--subtext); font-size: 12px; }
 .dashboard-list span { color: var(--warning-text); font-size: 12px; font-weight: 700; }
 .dashboard-panel .conflict-overview { margin-top: 16px; }
+
+/* Gestaltung des Besucherprogramms (Farben aus programDesign() in branding.ts) */
+.public-page { background: var(--page-bg); color: var(--text); }
+.public-page.design-active { --page-bg: var(--design-light-page-bg); --surface: var(--design-light-surface); --surface-soft: var(--design-light-surface-soft); --header-bg: var(--design-light-header-bg); --header-text: var(--design-light-header-text); --header-muted: var(--design-light-header-muted); --header-eyebrow: var(--design-light-header-eyebrow); --text: var(--design-light-text); --text-strong: var(--design-light-text-strong); --input-text: var(--design-light-input-text); --subtext: var(--design-light-subtext); --muted: var(--design-light-muted); --eyebrow: var(--design-light-eyebrow); --border: var(--design-light-border); --border-soft: var(--design-light-border-soft); --card: var(--design-light-card); --card-hover: var(--design-light-card-hover); --card-border: var(--design-light-card-border); --selected: var(--card); }
+:root[data-theme="dark"] .public-page.design-active { --page-bg: var(--design-dark-page-bg); --surface: var(--design-dark-surface); --surface-soft: var(--design-dark-surface-soft); --header-bg: var(--design-dark-header-bg); --header-text: var(--design-dark-header-text); --header-muted: var(--design-dark-header-muted); --header-eyebrow: var(--design-dark-header-eyebrow); --text: var(--design-dark-text); --text-strong: var(--design-dark-text-strong); --input-text: var(--design-dark-input-text); --subtext: var(--design-dark-subtext); --muted: var(--design-dark-muted); --eyebrow: var(--design-dark-eyebrow); --border: var(--design-dark-border); --border-soft: var(--design-dark-border-soft); --card: var(--design-dark-card); --card-hover: var(--design-dark-card-hover); --card-border: var(--design-dark-card-border); --selected: var(--card); }
+.public-header .eyebrow { display: inline-block; padding-bottom: 4px; border-bottom: 2px solid var(--header-eyebrow); }
+.public-header-content { align-items: center; }
+.public-header-side { display: flex; align-items: center; gap: 20px; flex: 0 0 auto; }
+.public-header-graphic { display: block; max-width: min(260px, 30vw); max-height: 110px; object-fit: contain; }
+.public-website { color: var(--header-muted); font-weight: 700; text-decoration: none; }
+.public-website:hover { text-decoration: underline; }
+.public-footer { border-top: 1px solid var(--border); margin-top: 24px; padding: 28px 0 36px; }
+.public-footer-content { display: grid; gap: 28px; }
+.public-info-blocks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.public-info-block { padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.public-info-block h3 { margin: 0 0 8px; color: var(--text-strong); font-size: 15px; }
+.public-info-block p { margin: 0; color: var(--subtext); font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.public-footer-graphic { display: block; width: 100%; max-width: 760px; max-height: 170px; margin: 0 auto; object-fit: contain; }
+.public-partners { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; list-style: none; margin: 0; padding: 0; }
+.public-partner { display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text-strong); text-decoration: none; }
+a.public-partner:hover { border-color: var(--primary); }
+.public-partner img { flex: 0 0 auto; width: 64px; height: 48px; object-fit: contain; }
+.public-partner span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.public-partner strong { font-size: 14px; }
+.public-partner small { color: var(--subtext); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.public-footer-url { margin: 0; text-align: center; color: var(--subtext); font-size: 14px; }
+.public-footer-url a { color: var(--link); font-weight: 700; }
+@media (max-width: 760px) { .public-header-side { width: 100%; justify-content: space-between; } .public-header-graphic { max-width: 45vw; max-height: 80px; } }

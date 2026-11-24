@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { request } from './api'
-import { brandingStyle } from './branding'
+import { programDesign } from './branding'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
 import { formatDate } from './date'
-import ThemeControl from './ThemeControl'
+import { PublicFooter, PublicHeader } from './PublicChrome'
 import CategoryLabels from './CategoryLabels'
 import type { Event, PublicSession } from './types'
 
@@ -35,16 +35,10 @@ export default function PublicSessionPage({ eventId, sessionId }: { eventId: num
     return () => { active = false }
   }, [eventId, sessionId, retry])
 
-  return <div className={`public-page${event?.accent_color ? ' branding-active' : ''}`} style={brandingStyle(event?.accent_color)}>
-    <header className="public-header">
-      <div className="public-container public-header-content">
-        <div className="public-title">
-          {event?.logo_url && <span className="public-logo"><img src={event.logo_url} alt={`Logo von ${event.name}`} /></span>}
-          <div><span className="eyebrow">VERANSTALTUNGSPROGRAMM</span><h1>{event?.name ?? 'Programm'}</h1></div>
-        </div>
-        <ThemeControl />
-      </div>
-    </header>
+  const design = programDesign(event)
+
+  return <div className={`public-page${design.className}`} style={design.style}>
+    <PublicHeader event={event} showSubtitle={false} />
     <main className="public-container public-main">
       <a className="program-link" href={`/programm/${eventId}`}>Zum Veranstaltungsprogramm</a>
       {loading && <p className="state-message" role="status">Lade Session …</p>}
@@ -62,5 +56,6 @@ export default function PublicSessionPage({ eventId, sessionId }: { eventId: num
         {session.description && <p className="public-description">{session.description}</p>}
       </article>}
     </main>
+    <PublicFooter event={event} showInfo={false} />
   </div>
 }
