@@ -247,13 +247,13 @@ def test_pdf_uses_design_and_adds_info_page(client, monkeypatch, tmp_path):
     reader = PdfReader(BytesIO(client.get(f"/api/events/{event_id}/program.pdf").content))
     assert len(reader.pages) == 3
     day = reader.pages[0].extract_text()
-    for text in ("PROGRAMM", "Round Dance Festival", "21.–23.05.2027 · HAMBURG · Programm - 21.05.2027",
+    for expected in ("PROGRAMM", "Round Dance Festival", "21.–23.05.2027 · HAMBURG · Programm - 21.05.2027",
                  "Welcome Dance", "rdf2027.ecta.de", "Butterflies", "ECTA", "Seite 1/3"):
-        assert text in day, text
+        assert expected in day, expected
     assert len(reader.pages[0].images) == 2  # Kopfgrafik und Partnerlogo
     info = reader.pages[2].extract_text()
-    for text in ("Sprache", "Cues auf Englisch", "Tanzfläche", "Parkett <bitte> & saubere Schuhe", "Seite 3/3"):
-        assert text in info, text
+    for expected in ("Sprache", "Cues auf Englisch", "Tanzfläche", "Parkett <bitte> & saubere Schuhe", "Seite 3/3"):
+        assert expected in info, expected
     assert len(reader.pages[2].images) == 3  # Kopfgrafik, Fußgrafik, Partnerlogo
 
 
