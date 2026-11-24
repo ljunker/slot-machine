@@ -32,21 +32,15 @@ describe('event branding', () => {
     }
   })
 
-  it('edits color and logo in the event editor', async () => {
+  it('points from the event editor to the program design editor', async () => {
     const onSave = vi.fn(async () => true)
-    const onDeleteLogo = vi.fn(async () => {})
     const onClose = vi.fn()
-    render(<Editor kind="event" event={event} days={[]} rooms={[]} speakers={[]} onSave={onSave} onDelete={null} onDeleteLogo={onDeleteLogo} onClose={onClose} />)
-    expect(screen.getByRole('img', { name: 'Logo von Konferenz' }).getAttribute('src')).toBe(event.logo_url)
-    fireEvent.change(screen.getByLabelText('Akzentfarbe'), { target: { value: '#123456' } })
-    const logo = new File(['image'], 'logo.png', { type: 'image/png' })
-    fireEvent.change(screen.getByLabelText(/Logo \(JPEG/), { target: { files: [logo] } })
-    await waitFor(() => expect(screen.getByRole('img', { name: 'Logo von Konferenz' }).getAttribute('src')).toMatch(/^data:image\/png;base64,/))
+    render(<Editor kind="event" event={event} days={[]} rooms={[]} speakers={[]} onSave={onSave} onDelete={null} onClose={onClose} />)
+    expect(screen.queryByLabelText('Akzentfarbe')).toBeNull()
+    expect(screen.getByText(/Besucherprogramm gestalten/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ accent_color: '#123456' }), logo))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-01' }))
     expect(onClose).toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Logo entfernen' }))
-    expect(onDeleteLogo).toHaveBeenCalled()
   })
 
   it('shows branding only for selected public event and keeps both themes readable', async () => {

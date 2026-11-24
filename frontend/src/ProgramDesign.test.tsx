@@ -1,6 +1,7 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { contrastRatio, programDesign } from './branding'
+import ProgramDesignEditor from './ProgramDesignEditor'
 import PublicProgram from './PublicProgram'
 import PublicSessionPage from './PublicSessionPage'
 import type { Event } from './types'
@@ -99,5 +100,68 @@ describe('program design', () => {
     await screen.findByText('Welcome Dance')
     expect(screen.getByRole('list', { name: 'Partner' })).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Sprache' })).toBeNull()
+  })
+})
+
+describe('program design editor', () => {
+  function stubApi() {
+    const calls: { method: string; path: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      const body = init?.body instanceof FormData ? init.body.get('image') ?? init.body.get('logo') : init?.body ? JSON.parse(String(init.body)) : undefined
+      calls.push({ method: init?.method ?? 'GET', path, body })
+      return init?.method === 'PUT' || init?.method === 'DELETE' ? new Response(null, { status: 204 }) : new Response(JSON.stringify(flyer), { status: 200 })
+    }))
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    return calls
+  }
+
+  it('saves colours and texts and applies the flyer palette', async () => {
+    const calls = stubApi()
+    const onChanged = vi.fn(async () => {})
+    const plain: Event = { ...flyer, background_color: null, text_color: null, accent_color: null, header_background_color: null, card_color: null, program_eyebrow: null, program_subtitle: null, website_url: null }
+    render(<ProgramDesignEditor event={plain} onChanged={onChanged} onClose={() => {}} />)
+    expect(screen.queryByLabelText('Farbe Hintergrund')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Flyer-Farben übernehmen/ }))
+    expect((screen.getByLabelText('Farbe Hintergrund') as HTMLInputElement).value).toBe('#faf7f0')
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Session-Karten' }))
+    fireEvent.change(screen.getByLabelText('Überschrift'), { target: { value: 'PROGRAMM' } })
+    fireEvent.change(screen.getByLabelText('Webadresse'), { target: { value: 'https://rdf.example.org' } })
+    const preview = screen.getByLabelText('Vorschau des Besucherprogramms')
+    expect(preview.textContent).toContain('PROGRAMM')
+    fireEvent.click(screen.getByRole('button', { name: 'Farben und Texte speichern' }))
+    await screen.findByText('Gestaltung gespeichert.')
+    const patch = calls.find(call => call.method === 'PATCH')
+    expect(patch?.path).toBe('/api/events/3')
+    expect(patch?.body).toEqual({
+      background_color: '#FAF7F0', text_color: '#1D488B', accent_color: '#167B7B', header_background_color: '#FAF7F0', card_color: null,
+      program_eyebrow: 'PROGRAMM', program_subtitle: null, website_url: 'https://rdf.example.org',
+    })
+    expect(onChanged).toHaveBeenCalled()
+  })
+
+  it('manages partners, info blocks and graphics', async () => {
+    const calls = stubApi()
+    const onChanged = vi.fn(async () => {})
+    render(<ProgramDesignEditor event={flyer} onChanged={onChanged} onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Neuer Partner'), { target: { value: 'Neuer Club' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Partner hinzufügen' }))
+    await waitFor(() => expect(calls.some(call => call.method === 'POST' && call.path === '/api/events/3/partner-logos')).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'ECTA nach unten' }))
+    await waitFor(() => expect(calls.find(call => call.method === 'PUT')?.body).toEqual({ ids: [2, 1] }))
+    expect((screen.getByRole('button', { name: 'ECTA nach oben' }) as HTMLButtonElement).disabled).toBe(true)
+
+    const info = screen.getByRole('form', { name: 'Infoblock Sprache' })
+    fireEvent.change(info.querySelector('textarea')!, { target: { value: 'Cues auf Englisch und Deutsch' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Infoblock speichern' }))
+    await waitFor(() => expect(calls.find(call => call.method === 'PATCH' && call.path === '/api/events/3/info-blocks/5')?.body)
+      .toEqual({ title: 'Sprache', body: 'Cues auf Englisch und Deutsch' }))
+
+    const file = new File(['png'], 'skyline.png', { type: 'image/png' })
+    fireEvent.change(screen.getByLabelText('Fußgrafik'), { target: { files: [file] } })
+    await waitFor(() => expect(calls.some(call => call.method === 'POST' && call.path === '/api/events/3/graphics/footer')).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Kopfgrafik entfernen' }))
+    await waitFor(() => expect(calls.some(call => call.method === 'DELETE' && call.path === '/api/events/3/graphics/header')).toBe(true))
+    expect(onChanged.mock.calls.length).toBeGreaterThanOrEqual(5)
   })
 })

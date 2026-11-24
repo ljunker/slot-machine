@@ -129,10 +129,10 @@ export type ProgramDesign = { className: string; style: CSSProperties | undefine
  * Besucherprogramm ab. Text und Akzent werden bei Bedarf aufgehellt oder abgedunkelt,
  * damit sie auf Hintergrund und Karten mindestens 4,5:1 Kontrast haben.
  */
-export function programDesign(design: EventDesign | null | undefined): ProgramDesign {
+export function programDesign(design: EventDesign | null | undefined, options: { force?: boolean } = {}): ProgramDesign {
   if (!design) return { className: '', style: undefined }
   const colors = [design.background_color, design.text_color, design.header_background_color, design.card_color]
-  if (!colors.some(Boolean)) {
+  if (!options.force && !colors.some(Boolean)) {
     return { className: design.accent_color ? ' branding-active' : '', style: brandingStyle(design.accent_color) }
   }
   const accent = design.accent_color ? parse(design.accent_color) : null
