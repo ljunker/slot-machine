@@ -7,7 +7,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from app.models.slot import Slot
-from app.services.backup_service import restore_backup
+from app.services.backup_service import FORMAT_VERSION, restore_backup
 from app.services.event_branding import logo_directory
 
 
@@ -269,7 +269,7 @@ def test_invalid_archives_do_not_change_data(client, monkeypatch, tmp_path):
     )
     backup = client.get(f"/api/backups/events/{event_id}").content
     with ZipFile(BytesIO(backup)) as archive:
-        manifest = archive.read("manifest.csv").replace(b"6,", b"99,", 1)
+        manifest = archive.read("manifest.csv").replace(FORMAT_VERSION.encode() + b",", b"99,", 1)
     invalid = [
         b"not a zip",
             alter_archive(backup, remove="manifest.csv"),

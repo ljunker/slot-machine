@@ -277,3 +277,66 @@ def test_pdf_without_design_keeps_layout(client):
     reader = PdfReader(BytesIO(client.get(f"/api/events/{event['id']}/program.pdf").content))
     assert len(reader.pages) == 1
     assert "Programm - 21.05.2027" in reader.pages[0].extract_text()
+
+
+def test_backup_roundtrip_keeps_design_and_legacy_versions_import(client, monkeypatch, tmp_path):
+    from zipfile import ZipFile
+
+    from tests.conftest import legacy_archive
+
+    event_id = build_flyer_event(client, tmp_path, monkeypatch)
+    original = client.get(f"/api/events/{event_id}").json()
+    backup = client.get(f"/api/backups/events/{event_id}").content
+    with ZipFile(BytesIO(backup)) as archive:
+        names = set(archive.namelist())
+        assert archive.read("manifest.csv").splitlines()[1].startswith(b"7,")
+    assert {"partner_logos.csv", "info_blocks.csv", "media/header.png", "media/footer.png"} <= names
+    assert any(name.startswith("media/partners/") for name in names)
+
+    def restore(content, target=None):
+        data = {} if target is None else {"target_event_id": str(target)}
+        response = client.post("/api/backups/restore", data=data,
+                               files={"backup": ("b.zip", content, "application/zip")})
+        assert response.status_code == 200, response.text
+        return client.get(f"/api/events/{response.json()['event_id']}").json()
+
+    copy = restore(backup)
+    assert copy["id"] != event_id
+    for key in ("background_color", "text_color", "accent_color", "program_eyebrow", "program_subtitle", "website_url"):
+        assert copy[key] == original[key], key
+    assert copy["header_graphic_url"] and copy["footer_graphic_url"]
+    assert [(p["name"], bool(p["image_url"])) for p in copy["partner_logos"]] == [("Butterflies", True), ("ECTA", False)]
+    assert [b["title"] for b in copy["info_blocks"]] == ["Sprache", "Tanzfläche"]
+    assert client.get(copy["footer_graphic_url"]).status_code == 200
+    assert client.get(copy["partner_logos"][0]["image_url"]).status_code == 200
+
+    # Ersetzen mit einem Backup ohne Gestaltung (Format 6) entfernt Gestaltung und Dateien.
+    files_before = len(list(tmp_path.iterdir()))
+    plain = restore(legacy_archive(backup, "6"), copy["id"])
+    assert plain["text_color"] is None and plain["partner_logos"] == [] and plain["info_blocks"] == []
+    assert plain["header_graphic_url"] is None
+    assert len(list(tmp_path.iterdir())) == files_before - 3
+
+
+def test_backup_rejects_invalid_design_rows(client, monkeypatch, tmp_path):
+    from zipfile import ZipFile
+
+    event_id = build_flyer_event(client, tmp_path, monkeypatch)
+    backup = client.get(f"/api/backups/events/{event_id}").content
+
+    def replaced(name, old, new):
+        output = BytesIO()
+        with ZipFile(BytesIO(backup)) as source, ZipFile(output, "w") as target:
+            for item in source.namelist():
+                data = source.read(item)
+                target.writestr(item, data.replace(old, new) if item == name else data)
+        return output.getvalue()
+
+    for content in (
+        replaced("events.csv", b"#1D488B", b"navy"),
+        replaced("events.csv", b"https://rdf2027.ecta.de/", b"javascript:x"),
+        replaced("info_blocks.csv", b"Sprache", b" "),
+        replaced("partner_logos.csv", b"Butterflies", b""),
+    ):
+        response = client.post("/api/backups/preview", files={"backup": ("b.zip", content, "application/zip")})
+        assert response.status_code == 400, response.text
