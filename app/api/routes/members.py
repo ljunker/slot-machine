@@ -108,6 +108,8 @@ def remove_member(event_id: int, user_id: int, db: Session = Depends(get_db), us
     db.execute(delete(duty_users).where(duty_users.c.user_id == user_id, duty_users.c.duty_id.in_(duty_ids)))
     db.delete(membership)
     db.commit()
+    # Die Belegungen wurden per SQL entfernt; geladene Dienste dürfen keine alten Listen behalten.
+    db.expire_all()
     return Response(status_code=204)
 
 
