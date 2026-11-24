@@ -18,6 +18,7 @@ from app.schemas.event import (
     PartnerLogoResponse,
     PartnerLogoUpdate,
 )
+from app.schemas.program_export import ProgramExport
 from app.schemas.slot import PublicSessionResponse, SlotResponse
 from app.services.auth import authorize_event, require_superadmin, require_user
 from app.services.errors import NotFound
@@ -32,6 +33,7 @@ from app.services.event_branding import (
 )
 from app.services.event_service import EventService
 from app.services.program_design_service import ProgramDesignService
+from app.services.program_export import build_program_export
 from app.services.program_pdf import build_program_pdf
 from app.services.slot_service import SlotService
 
@@ -100,6 +102,14 @@ def get_program_pdf(event_id: int, db: Session = Depends(get_db)):
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.get("/{event_id}/program.json", response_model=ProgramExport)
+def get_program_export(event_id: int, response: Response, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "helper")
+    response.headers["Content-Disposition"] = f'attachment; filename="programm-{event_id}.json"'
+    response.headers["Cache-Control"] = "no-store"
+    return build_program_export(db, event_id)
 
 
 @router.post("/{event_id}/logo", response_model=EventResponse)

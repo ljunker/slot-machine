@@ -106,6 +106,15 @@ Geplante Sessions haben eine eigene Seite unter `/programm/<event_id>/sessions/<
 
 Über **PDF-Programm herunterladen** lässt sich das aktuelle Gesamtprogramm aus Planungsansicht und Besucherprogramm laden. Jeder Veranstaltungstag belegt eine A4-Querseite mit Zeit-Raum-Raster. Slot-Karten zeigen auch Rednernamen; bei dichten Plänen werden Texte gekürzt.
 
+Über **Programm als JSON** lädt das Planungsteam (ab Rolle Helfer, mit Konto) das geplante Programm als `programm-<event_id>.json`, zum Beispiel für den Satz eines gedruckten Flyers. Die Datei hat das Format `slot-machine-programm`, Version 1:
+
+- `event`: Name, Zeitraum, Überschrift, Untertitel und Webadresse aus **Besucherprogramm gestalten**
+- `rooms` (nach Reihenfolge), `categories` und `speakers` (nur eingeplante Personen, mit Kurzbiografie und Website)
+- `days`: Datum, deutscher Wochentag, Tageszeiten und `slots` mit Zeiten (`HH:MM`), `scope` (`room` oder `all_rooms` mit `room_id: null`), Thema, Beschreibung, Personen- und Kategorie-IDs sowie `is_cancelled`; sortiert nach Beginn, gemeinsame Sessions zuerst, dann nach Raum
+- `info_blocks` und `partners` in ihrer Reihenfolge
+
+Ungeplante Sessions, Dienste, E-Mail-Adressen und Bilder sind nicht enthalten.
+
 Die Auswahl **Darstellung** bietet System, Hell und Dunkel. Sie gilt für Planungsansicht und Besucherprogramm und wird im Browser gespeichert. Das PDF bleibt hell.
 
 Änderungen an Zeit oder Raum markieren eine Session 24 Stunden als **Verschoben**; die vorherige Planung steht in den Details. Im Session-Editor entfernt **Verschoben entfernen** den Hinweis für eine Session. **Alle Änderungs-Flags entfernen** in der Seitenleiste entfernt **Verschoben** und **Geändert** für alle Tage der gewählten Veranstaltung. Absagen bleiben bestehen. Änderungen an Thema, Beschreibung oder Rednern erscheinen 24 Stunden als **Geändert**. Über **Session abgesagt** bleibt eine Session dauerhaft als **Abgesagt** im Programm, zählt aber nicht zu Konflikten. Nach Aufheben der Absage erscheint sie 24 Stunden als geändert. Im PDF stehen frühere Angaben nur, wenn die Karte genug Platz bietet. Offene Seiten laden neue Änderungen weiterhin erst nach Neuladen.

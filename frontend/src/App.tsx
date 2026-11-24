@@ -454,6 +454,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
+            {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.json`} download>Programm als JSON</a>}
             {selectedEvent && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
             {selectedDay && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
