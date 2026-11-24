@@ -217,3 +217,63 @@ def test_program_design_migration_preserves_legacy_events():
         row = connection.execute(text("SELECT name, text_color, program_eyebrow FROM events WHERE id = 1")).one()
         assert row == ("Alt", None, None)
     engine.dispose()
+
+
+def build_flyer_event(client, tmp_path, monkeypatch, info_body="Cues auf Englisch"):
+    monkeypatch.setenv("EVENT_LOGO_DIR", str(tmp_path))
+    event = create_event(client, **FLYER)
+    event_id = event["id"]
+    for day in ("2027-05-21", "2027-05-22"):
+        client.post(f"/api/events/{event_id}/days",
+                    json={"event_id": event_id, "date": day, "start_time": "09:00", "end_time": "18:00"})
+    room = client.post("/api/rooms", json={"event_id": event_id, "name": "Saal A"}).json()
+    day_id = client.get(f"/api/events/{event_id}/days").json()[0]["id"]
+    client.post("/api/slots", json={"event_id": event_id, "day_id": day_id, "room_id": room["id"],
+                                    "topic": "Welcome Dance", "start_time": "10:00", "end_time": "11:00"})
+    for slot, size in (("header", (300, 80)), ("footer", (600, 90))):
+        client.post(f"/api/events/{event_id}/graphics/{slot}", files={"image": ("g.png", image_bytes(size=size), "image/png")})
+    partner = client.post(f"/api/events/{event_id}/partner-logos", json={"name": "Butterflies"}).json()
+    client.post(f"/api/events/{event_id}/partner-logos/{partner['id']}/image", files={"image": ("p.png", image_bytes(), "image/png")})
+    client.post(f"/api/events/{event_id}/partner-logos", json={"name": "ECTA"})
+    client.post(f"/api/events/{event_id}/info-blocks", json={"title": "Sprache", "body": info_body})
+    client.post(f"/api/events/{event_id}/info-blocks", json={"title": "Tanzfläche", "body": "Parkett <bitte> & saubere Schuhe"})
+    return event_id
+
+
+def test_pdf_uses_design_and_adds_info_page(client, monkeypatch, tmp_path):
+    from pypdf import PdfReader
+
+    event_id = build_flyer_event(client, tmp_path, monkeypatch)
+    reader = PdfReader(BytesIO(client.get(f"/api/events/{event_id}/program.pdf").content))
+    assert len(reader.pages) == 3
+    day = reader.pages[0].extract_text()
+    for text in ("PROGRAMM", "Round Dance Festival", "21.–23.05.2027 · HAMBURG · Programm - 21.05.2027",
+                 "Welcome Dance", "rdf2027.ecta.de", "Butterflies", "ECTA", "Seite 1/3"):
+        assert text in day, text
+    assert len(reader.pages[0].images) == 2  # Kopfgrafik und Partnerlogo
+    info = reader.pages[2].extract_text()
+    for text in ("Sprache", "Cues auf Englisch", "Tanzfläche", "Parkett <bitte> & saubere Schuhe", "Seite 3/3"):
+        assert text in info, text
+    assert len(reader.pages[2].images) == 3  # Kopfgrafik, Fußgrafik, Partnerlogo
+
+
+def test_pdf_info_blocks_continue_on_further_pages(client, monkeypatch, tmp_path):
+    from pypdf import PdfReader
+
+    event_id = build_flyer_event(client, tmp_path, monkeypatch, info_body="\n".join(["Lange Zeile mit Hinweisen"] * 120))
+    reader = PdfReader(BytesIO(client.get(f"/api/events/{event_id}/program.pdf").content))
+    assert len(reader.pages) >= 4
+    last = len(reader.pages)
+    assert f"Seite {last}/{last}" in reader.pages[-1].extract_text()
+    assert "Tanzfläche" in "".join(page.extract_text() for page in reader.pages[2:])
+
+
+def test_pdf_without_design_keeps_layout(client):
+    from pypdf import PdfReader
+
+    event = create_event(client)
+    client.post(f"/api/events/{event['id']}/days",
+                json={"event_id": event["id"], "date": "2027-05-21", "start_time": "09:00", "end_time": "18:00"})
+    reader = PdfReader(BytesIO(client.get(f"/api/events/{event['id']}/program.pdf").content))
+    assert len(reader.pages) == 1
+    assert "Programm - 21.05.2027" in reader.pages[0].extract_text()
