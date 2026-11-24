@@ -6,7 +6,18 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.auth import EventMembership, User
 from app.models.event import Event
-from app.schemas.event import EventCreate, EventResponse, EventUpdate
+from app.schemas.event import (
+    EventCreate,
+    EventResponse,
+    EventUpdate,
+    InfoBlockCreate,
+    InfoBlockResponse,
+    InfoBlockUpdate,
+    OrderUpdate,
+    PartnerLogoCreate,
+    PartnerLogoResponse,
+    PartnerLogoUpdate,
+)
 from app.schemas.slot import PublicSessionResponse, SlotResponse
 from app.services.auth import authorize_event, require_superadmin, require_user
 from app.services.errors import NotFound
@@ -14,9 +25,13 @@ from app.services.event_branding import (
     LOGO_MIME,
     MAX_LOGO_BYTES,
     EventBrandingService,
+    GraphicSlot,
+    graphic_path,
+    image_file,
     logo_path,
 )
 from app.services.event_service import EventService
+from app.services.program_design_service import ProgramDesignService
 from app.services.program_pdf import build_program_pdf
 from app.services.slot_service import SlotService
 
@@ -98,20 +113,131 @@ async def upload_logo(
 
 @public_router.get("/{event_id}/logo")
 def get_logo(event_id: int, db: Session = Depends(get_db)):
-    event = EventService(db).get(event_id)
-    path = logo_path(event)
-    if path is None or not path.is_file():
-        raise NotFound("Logo nicht gefunden")
-    return FileResponse(
-        path, media_type=LOGO_MIME[path.suffix.lstrip(".")],
-        headers={"Cache-Control": "no-store"},
-    )
+    return _image_response(logo_path(EventService(db).get(event_id)), "Logo nicht gefunden")
 
 
 @router.delete("/{event_id}/logo", response_model=EventResponse)
 def delete_logo(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
     authorize_event(db, user, event_id, "admin")
     return EventBrandingService(db).delete_logo(event_id)
+
+
+def _image_response(path, missing: str) -> FileResponse:
+    if path is None or not path.is_file():
+        raise NotFound(missing)
+    return FileResponse(
+        path, media_type=LOGO_MIME[path.suffix.lstrip(".")],
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/{event_id}/graphics/{slot}", response_model=EventResponse)
+async def upload_graphic(
+    event_id: int, slot: GraphicSlot, image: UploadFile = File(...),
+    db: Session = Depends(get_db), user: User = Depends(require_user),
+):
+    authorize_event(db, user, event_id, "admin")
+    content = await image.read(MAX_LOGO_BYTES + 1)
+    return EventBrandingService(db).upload_graphic(event_id, slot, content)
+
+
+@public_router.get("/{event_id}/graphics/{slot}")
+def get_graphic(event_id: int, slot: GraphicSlot, db: Session = Depends(get_db)):
+    return _image_response(graphic_path(EventService(db).get(event_id), slot), "Grafik nicht gefunden")
+
+
+@router.delete("/{event_id}/graphics/{slot}", response_model=EventResponse)
+def delete_graphic(event_id: int, slot: GraphicSlot, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "admin")
+    return EventBrandingService(db).delete_graphic(event_id, slot)
+
+
+@router.post("/{event_id}/partner-logos", response_model=PartnerLogoResponse, status_code=status.HTTP_201_CREATED)
+def create_partner_logo(
+    event_id: int, data: PartnerLogoCreate, db: Session = Depends(get_db), user: User = Depends(require_user)
+):
+    authorize_event(db, user, event_id, "admin")
+    return ProgramDesignService(db).create_partner(event_id, data)
+
+
+@router.put("/{event_id}/partner-logos/order", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_partner_logos(
+    event_id: int, data: OrderUpdate, db: Session = Depends(get_db), user: User = Depends(require_user)
+):
+    authorize_event(db, user, event_id, "admin")
+    ProgramDesignService(db).reorder_partners(event_id, data.ids)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{event_id}/partner-logos/{partner_id}", response_model=PartnerLogoResponse)
+def update_partner_logo(
+    event_id: int, partner_id: int, data: PartnerLogoUpdate,
+    db: Session = Depends(get_db), user: User = Depends(require_user),
+):
+    authorize_event(db, user, event_id, "admin")
+    return ProgramDesignService(db).update_partner(event_id, partner_id, data)
+
+
+@router.delete("/{event_id}/partner-logos/{partner_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_partner_logo(event_id: int, partner_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "admin")
+    ProgramDesignService(db).delete_partner(event_id, partner_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{event_id}/partner-logos/{partner_id}/image", response_model=PartnerLogoResponse)
+async def upload_partner_image(
+    event_id: int, partner_id: int, image: UploadFile = File(...),
+    db: Session = Depends(get_db), user: User = Depends(require_user),
+):
+    authorize_event(db, user, event_id, "admin")
+    content = await image.read(MAX_LOGO_BYTES + 1)
+    return ProgramDesignService(db).upload_partner_image(event_id, partner_id, content)
+
+
+@public_router.get("/{event_id}/partner-logos/{partner_id}/image")
+def get_partner_image(event_id: int, partner_id: int, db: Session = Depends(get_db)):
+    partner = ProgramDesignService(db).partner(event_id, partner_id)
+    return _image_response(image_file(partner.image_filename), "Partnerlogo nicht gefunden")
+
+
+@router.delete("/{event_id}/partner-logos/{partner_id}/image", response_model=PartnerLogoResponse)
+def delete_partner_image(event_id: int, partner_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "admin")
+    return ProgramDesignService(db).delete_partner_image(event_id, partner_id)
+
+
+@router.post("/{event_id}/info-blocks", response_model=InfoBlockResponse, status_code=status.HTTP_201_CREATED)
+def create_info_block(
+    event_id: int, data: InfoBlockCreate, db: Session = Depends(get_db), user: User = Depends(require_user)
+):
+    authorize_event(db, user, event_id, "admin")
+    return ProgramDesignService(db).create_info_block(event_id, data)
+
+
+@router.put("/{event_id}/info-blocks/order", status_code=status.HTTP_204_NO_CONTENT)
+def reorder_info_blocks(
+    event_id: int, data: OrderUpdate, db: Session = Depends(get_db), user: User = Depends(require_user)
+):
+    authorize_event(db, user, event_id, "admin")
+    ProgramDesignService(db).reorder_info_blocks(event_id, data.ids)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch("/{event_id}/info-blocks/{block_id}", response_model=InfoBlockResponse)
+def update_info_block(
+    event_id: int, block_id: int, data: InfoBlockUpdate,
+    db: Session = Depends(get_db), user: User = Depends(require_user),
+):
+    authorize_event(db, user, event_id, "admin")
+    return ProgramDesignService(db).update_info_block(event_id, block_id, data)
+
+
+@router.delete("/{event_id}/info-blocks/{block_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_info_block(event_id: int, block_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "admin")
+    ProgramDesignService(db).delete_info_block(event_id, block_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/{event_id}", response_model=EventResponse)

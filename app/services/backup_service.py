@@ -31,23 +31,28 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
+from app.db.migrate_program_design import PROGRAM_DESIGN_COLUMNS
 from app.models.auth import EventMembership, User
 from app.models.category import Category, slot_categories
 from app.models.duty import Duty
 from app.models.event import Event
 from app.models.event_day import EventDay
 from app.models.helper import duty_users
+from app.models.program_design import InfoBlock, PartnerLogo
 from app.models.room import Room
 from app.models.slot import Slot
 from app.models.speaker import Speaker, slot_speakers
 from app.services.category_service import category_color
 from app.services.errors import DomainError, NotFound
 from app.services.event_branding import (
+    COLOR_FIELDS,
     LOGO_EXTENSIONS,
     MAX_LOGO_BYTES,
     MAX_LOGO_PIXELS,
     accent_color,
+    clean_design,
     logo_directory,
+    web_url,
 )
 from app.services.speaker_service import (
     MAX_PHOTO_BYTES,
@@ -55,7 +60,9 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "6"
+FORMAT_VERSION = "7"
+SUPPORTED_VERSIONS = {"1", "2", "3", "4", "5", "6", FORMAT_VERSION}
+MAX_INFO_BODY = 4000
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_UNPACKED_BYTES = 256 * 1024 * 1024
@@ -75,7 +82,10 @@ TABLES = {
     "slot_categories": slot_categories,
     "duty_assignments": Table("duty_assignments", MetaData(),
         Column("duty_id", Integer, nullable=False), Column("email", String(320), nullable=False)),
+    "partner_logos": PartnerLogo,
+    "info_blocks": InfoBlock,
 }
+DESIGN_TABLES = ("partner_logos", "info_blocks")
 ORDER = tuple(TABLES)
 LEGACY_COLUMNS = {
     "helpers": [Column("id", Integer, nullable=False), Column("event_id", Integer, nullable=False),
@@ -216,6 +226,8 @@ def build_backup(db: Session, event_id: int) -> bytes:
     }
     for name in ("event_days", "rooms", "categories", "slots", "speakers", "duties"):
         rows[name] = _model_rows(db, TABLES[name], event_id)
+    for name in DESIGN_TABLES:
+        rows[name] = _model_rows(db, TABLES[name], event_id)
     rows["slot_speakers"] = _link_rows(
         db, slot_speakers, "slot_id", [r["id"] for r in rows["slots"]]
     )
@@ -238,6 +250,23 @@ def build_backup(db: Session, event_id: int) -> bytes:
         media[archive_name] = _media_bytes(logo_directory() / logo, "Logo")
         _image(media[archive_name], extension, True)
         rows["events"][0]["logo_filename"] = archive_name
+    images = [
+        (rows["events"][0], f"{slot}_graphic_filename", f"media/{slot}", "Grafik")
+        for slot in ("header", "footer")
+    ] + [
+        (partner, "image_filename", f"media/partners/{partner['id']}", "Partnerlogo")
+        for partner in rows["partner_logos"]
+    ]
+    for row, field, stem, label in images:
+        filename = row[field]
+        if filename:
+            extension = Path(filename).suffix.lower().lstrip(".")
+            if extension not in LOGO_EXTENSIONS.values():
+                raise DomainError(f"Ungültige Datei: {label}")
+            archive_name = f"{stem}.{extension}"
+            media[archive_name] = _media_bytes(logo_directory() / filename, label)
+            _image(media[archive_name], extension, True)
+            row[field] = archive_name
     for speaker in rows["speakers"]:
         filename = speaker["photo_filename"]
         if filename:
@@ -334,12 +363,13 @@ def _parse_archive(
                 ["format_version", "source_event_id", "exported_at"],
                 "manifest.csv",
             )
-            if len(manifest) != 1 or manifest[0]["format_version"] not in {"1", "2", "3", "4", "5", FORMAT_VERSION}:
+            if len(manifest) != 1 or manifest[0]["format_version"] not in SUPPORTED_VERSIONS:
                 raise DomainError("Nicht unterstützte Backup-Version")
             version = manifest[0]["format_version"]
             archive_order = tuple(
                 name for name in (LEGACY_ORDER if version in {"1", "2", "3", "4"} else ORDER)
-                if version not in {"1", "2"} or name not in {"categories", "slot_categories"}
+                if (version not in {"1", "2"} or name not in {"categories", "slot_categories"})
+                and (version == FORMAT_VERSION or name not in DESIGN_TABLES)
             )
             required = {"manifest.csv", *(f"{name}.csv" for name in archive_order)}
             if not required.issubset(names):
@@ -353,7 +383,9 @@ def _parse_archive(
             rows: dict[str, list[dict]] = {}
             for name in archive_order:
                 columns = list(_columns(name))
-                if version != FORMAT_VERSION and name == "slots":
+                if version != FORMAT_VERSION and name == "events":
+                    columns = [column for column in columns if column.name not in PROGRAM_DESIGN_COLUMNS]
+                if version not in {"6", FORMAT_VERSION} and name == "slots":
                     columns = [column for column in columns if column.name != "speaker_required"]
                 if version in {"1", "2", "3"} and name == "slots":
                     columns = [column for column in columns if column.name != "scope"]
@@ -373,7 +405,10 @@ def _parse_archive(
                     }
                     for row in raw
                 ]
-                if version != FORMAT_VERSION and name == "slots":
+                if version != FORMAT_VERSION and name == "events":
+                    for row in rows[name]:
+                        row.update(dict.fromkeys(PROGRAM_DESIGN_COLUMNS))
+                if version not in {"6", FORMAT_VERSION} and name == "slots":
                     for row in rows[name]:
                         row["speaker_required"] = True
                 if version in {"1", "2", "3"} and name == "slots":
@@ -398,6 +433,8 @@ def _parse_archive(
             rows.setdefault("helpers", [])
             rows.setdefault("duty_helpers", [])
             rows.setdefault("duty_assignments", [])
+            for name in DESIGN_TABLES:
+                rows.setdefault(name, [])
             if version in {"1", "2", "3", "4"}:
                 for duty in rows["duties"]:
                     duty["capacity"] = 1
@@ -432,8 +469,11 @@ def _validate(
     if not event["name"].strip() or event["start_date"] > event["end_date"]:
         raise DomainError("Ungültige Veranstaltung im Backup")
     accent_color(event["accent_color"])
+    event.update(clean_design({
+        key: event[key] for key in (*COLOR_FIELDS, "program_eyebrow", "program_subtitle", "website_url")
+    }))
     by_id = {}
-    for name in ("event_days", "rooms", "categories", "slots", "speakers", "helpers", "duties"):
+    for name in ("event_days", "rooms", "categories", "slots", "speakers", "helpers", "duties", *DESIGN_TABLES):
         identifiers = [row["id"] for row in rows[name]]
         if any(identifier <= 0 for identifier in identifiers) or len(
             identifiers
@@ -548,7 +588,27 @@ def _validate(
         assignment_counts[duty_id] = assignment_counts.get(duty_id, 0) + 1
         if assignment_counts[duty_id] > by_id["duties"][duty_id]["capacity"]:
             raise DomainError("Dienstbelegung überschreitet Höchstzahl im Backup")
+    for partner in rows["partner_logos"]:
+        if not partner["name"].strip() or partner["sort_order"] < 0:
+            raise DomainError("Ungültiges Partnerlogo im Backup")
+        if partner["url"] is not None:
+            web_url(partner["url"], "Link")
+    for block in rows["info_blocks"]:
+        if not block["title"].strip() or len(block["body"]) > MAX_INFO_BODY or block["sort_order"] < 0:
+            raise DomainError("Ungültiger Infoblock im Backup")
     expected = set()
+    for slot in ("header", "footer"):
+        graphic = event[f"{slot}_graphic_filename"]
+        if graphic is not None:
+            if not re.fullmatch(rf"media/{slot}\.(jpg|png|webp)", graphic):
+                raise DomainError("Ungültige Grafik-Referenz")
+            expected.add(graphic)
+    for partner in rows["partner_logos"]:
+        image = partner["image_filename"]
+        if image is not None:
+            if not re.fullmatch(rf"media/partners/{partner['id']}\.(jpg|png|webp)", image):
+                raise DomainError("Ungültige Partnerlogo-Referenz")
+            expected.add(image)
     logo = event["logo_filename"]
     if logo is not None:
         if not re.fullmatch(r"media/logo\.(jpg|png|webp)", logo):
@@ -565,7 +625,7 @@ def _validate(
     if expected != set(media):
         raise DomainError("Bilder im Backup fehlen oder sind nicht referenziert")
     for name, data in media.items():
-        _image(data, name.rsplit(".", 1)[1], name.startswith("media/logo."))
+        _image(data, name.rsplit(".", 1)[1], not name.startswith("media/speakers/"))
 
 
 def _resolve_assignments(db: Session, rows: dict, target_id: int | None) -> list[dict]:
@@ -637,8 +697,12 @@ def preview_backup(db: Session, content: bytes, target_id: int | None) -> dict:
     return _preview(db, rows, source_id, target_id)
 
 
-def _delete_event_contents(db: Session, event_id: int) -> tuple[str | None, list[str]]:
-    old_logo = db.get(Event, event_id).logo_filename
+def _delete_event_contents(db: Session, event_id: int) -> tuple[list[str], list[str]]:
+    event = db.get(Event, event_id)
+    old_images = [event.logo_filename, event.header_graphic_filename, event.footer_graphic_filename]
+    old_images += list(db.scalars(
+        select(PartnerLogo.image_filename).where(PartnerLogo.event_id == event_id)
+    ).all())
     photos = list(
         db.scalars(
             select(Speaker.photo_filename).where(Speaker.event_id == event_id)
@@ -649,10 +713,10 @@ def _delete_event_contents(db: Session, event_id: int) -> tuple[str | None, list
     db.execute(delete(duty_users).where(duty_users.c.duty_id.in_(duty_ids)))
     db.execute(delete(slot_speakers).where(slot_speakers.c.slot_id.in_(slot_ids)))
     db.execute(delete(slot_categories).where(slot_categories.c.slot_id.in_(slot_ids)))
-    for model in (Duty, Slot, Speaker, Category, EventDay, Room):
+    for model in (Duty, Slot, Speaker, Category, EventDay, Room, PartnerLogo, InfoBlock):
         db.execute(delete(model).where(model.event_id == event_id))
     db.expire_all()
-    return old_logo, [name for name in photos if name]
+    return [name for name in old_images if name], [name for name in photos if name]
 
 
 def _install_media(media: dict[str, bytes]) -> tuple[dict[str, str], list[Path]]:
@@ -661,9 +725,9 @@ def _install_media(media: dict[str, bytes]) -> tuple[dict[str, str], list[Path]]
     try:
         for archive_name, data in media.items():
             directory = (
-                logo_directory()
-                if archive_name.startswith("media/logo.")
-                else photo_directory()
+                photo_directory()
+                if archive_name.startswith("media/speakers/")
+                else logo_directory()
             )
             directory.mkdir(parents=True, exist_ok=True)
             final_name = f"{uuid4().hex}.{archive_name.rsplit('.', 1)[1]}"
@@ -698,8 +762,8 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
     rows, media, source_id = _parse_archive(content)
     summary = _preview(db, rows, source_id, target_id)
     names, installed = _install_media(media)
-    old_logo = None
-    old_photos = []
+    old_images: list[str] = []
+    old_photos: list[str] = []
     try:
         event_data = rows["events"][0]
         if target_id is None:
@@ -711,20 +775,19 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
                 name=event_data["name"],
                 start_date=event_data["start_date"],
                 end_date=event_data["end_date"],
-                accent_color=event_data["accent_color"],
-                logo_filename=names.get(event_data["logo_filename"]),
             )
             db.add(event)
             db.flush()
         else:
             event = db.get(Event, target_id)
-            old_logo, old_photos = _delete_event_contents(db, target_id)
-        for key in ("name", "start_date", "end_date", "accent_color"):
+            old_images, old_photos = _delete_event_contents(db, target_id)
+        for key in ("name", "start_date", "end_date", "accent_color", *PROGRAM_DESIGN_COLUMNS):
             setattr(event, key, event_data[key])
-        event.logo_filename = names.get(event_data["logo_filename"])
+        for key in ("logo_filename", "header_graphic_filename", "footer_graphic_filename"):
+            setattr(event, key, names.get(event_data[key]))
         db.flush()
         maps: dict[str, dict[int, int]] = {}
-        for name in ("event_days", "rooms", "categories", "speakers", "slots", "duties"):
+        for name in ("event_days", "rooms", "categories", "speakers", "slots", "duties", *DESIGN_TABLES):
             model = TABLES[name]
             maps[name] = {}
             records = rows[name]
@@ -764,6 +827,8 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
                     values["slot_id"] = maps["slots"].get(values["slot_id"])
                 if name == "speakers":
                     values["photo_filename"] = names.get(values["photo_filename"])
+                if name == "partner_logos":
+                    values["image_filename"] = names.get(values["image_filename"])
                 obj = model(event_id=event.id, **values)
                 if (
                     name == "slots"
@@ -809,12 +874,13 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
             _sync_postgres_sequence(db, "events")
         _sync_postgres_sequence(db, "slots")
         db.commit()
+        db.expire(event)
     except Exception:
         db.rollback()
         for path in installed:
             path.unlink(missing_ok=True)
         raise
-    for path in ([logo_directory() / old_logo] if old_logo else []) + [
+    for path in [logo_directory() / filename for filename in old_images] + [
         photo_directory() / filename for filename in old_photos
     ]:
         try:

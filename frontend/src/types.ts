@@ -1,4 +1,22 @@
-export type Event = { id: number; name: string; start_date: string; end_date: string; accent_color: string | null; logo_url: string | null }
+export type PartnerLogo = { id: number; name: string; subtitle: string | null; url: string | null; image_url: string | null; sort_order: number }
+export type InfoBlock = { id: number; title: string; body: string; sort_order: number }
+/** Gestaltung des Besucherprogramms; null bedeutet Standarddesign. */
+export type EventDesign = {
+  accent_color: string | null
+  background_color?: string | null
+  text_color?: string | null
+  header_background_color?: string | null
+  card_color?: string | null
+  program_eyebrow?: string | null
+  program_subtitle?: string | null
+  website_url?: string | null
+  logo_url: string | null
+  header_graphic_url?: string | null
+  footer_graphic_url?: string | null
+  partner_logos?: PartnerLogo[]
+  info_blocks?: InfoBlock[]
+}
+export type Event = EventDesign & { id: number; name: string; start_date: string; end_date: string }
 export type CurrentUser = { id: number; name: string | null; email: string; is_superadmin: boolean; event_roles: Record<string, 'admin' | 'editor' | 'helper'>; csrf_token: string }
 export type EventDay = { id: number; event_id: number; date: string; start_time: string; end_time: string }
 export type Room = { id: number; event_id: number; name: string; sort_order: number }

@@ -58,11 +58,14 @@ def legacy_archive(content, version):
     from io import BytesIO, StringIO
     from zipfile import ZipFile
 
+    from app.db.migrate_program_design import PROGRAM_DESIGN_COLUMNS
     from app.services.backup_service import FORMAT_VERSION
     old_helpers = version in {"1", "2", "3", "4"}
     output = BytesIO()
     with ZipFile(BytesIO(content)) as source, ZipFile(output, "w") as target:
         for filename in source.namelist():
+            if filename in {"partner_logos.csv", "info_blocks.csv"} or filename.startswith(("media/header.", "media/footer.", "media/partners/")):
+                continue
             if (old_helpers and filename == "duty_assignments.csv") or (version in {"1", "2"} and filename in {"categories.csv", "slot_categories.csv"}):
                 continue
             data = source.read(filename)
@@ -73,7 +76,9 @@ def legacy_archive(content, version):
                 omit.add("capacity")
                 if version == "1":
                     omit.add("sort_order")
-            if filename == "slots.csv":
+            if filename == "events.csv":
+                omit.update(PROGRAM_DESIGN_COLUMNS)
+            if filename == "slots.csv" and version != "6":
                 omit.add("speaker_required")
                 if version in {"1", "2", "3"}:
                     omit.add("scope")

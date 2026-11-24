@@ -163,9 +163,9 @@ def test_shared_pdf_spans_and_falls_back_without_hiding_sessions(client, program
     shared(client, event, day)
     calls = []
     original = program_pdf._draw_slot
-    def record(pdf, slot, x, y, width, height):
+    def record(pdf, slot, x, y, width, height, *rest):
         calls.append((slot.topic, width))
-        original(pdf, slot, x, y, width, height)
+        original(pdf, slot, x, y, width, height, *rest)
     monkeypatch.setattr(program_pdf, "_draw_slot", record)
     response = client.get(f"/api/events/{event}/program.pdf")
     content = PdfReader(BytesIO(response.content)).pages[0].extract_text()

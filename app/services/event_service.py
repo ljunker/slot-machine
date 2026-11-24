@@ -6,6 +6,7 @@ from app.models.category import Category, slot_categories
 from app.models.duty import Duty
 from app.models.event_day import EventDay
 from app.models.helper import duty_users
+from app.models.program_design import InfoBlock, PartnerLogo
 from app.models.room import Room
 from app.models.slot import Slot
 from app.models.speaker import Speaker, slot_speakers
@@ -13,7 +14,7 @@ from app.repositories.event_day_repository import EventDayRepository
 from app.repositories.event_repository import EventRepository
 from app.schemas.event import EventCreate, EventUpdate
 from app.services.errors import Conflict, NotFound
-from app.services.event_branding import accent_color, remove_logo_file
+from app.services.event_branding import clean_design, remove_logo_file
 from app.services.speaker_service import SpeakerService
 from app.services.validation import date_range, name, required_patch
 
@@ -36,7 +37,7 @@ class EventService:
     def create(self, data: EventCreate):
         date_range(data.start_date, data.end_date)
         event = self.repository.create(
-            data.model_copy(update={"name": name(data.name), "accent_color": accent_color(data.accent_color)})
+            EventCreate(**clean_design({**data.model_dump(), "name": name(data.name)}))
         )
         self.db.commit()
         return event
@@ -57,15 +58,17 @@ class EventService:
             )
         if "name" in changes:
             changes["name"] = name(changes["name"])
-        if "accent_color" in changes:
-            changes["accent_color"] = accent_color(changes["accent_color"])
+        clean_design(changes)
         event = self.repository.update(event, EventUpdate(**changes))
         self.db.commit()
         return event
 
     def delete(self, event_id: int) -> None:
         event = self.get(event_id)
-        logo_filename = event.logo_filename
+        images = [event.logo_filename, event.header_graphic_filename, event.footer_graphic_filename]
+        images += list(self.db.scalars(
+            select(PartnerLogo.image_filename).where(PartnerLogo.event_id == event_id)
+        ).all())
         slot_ids = select(Slot.id).where(Slot.event_id == event_id)
         photos = list(self.db.scalars(
             select(Speaker.photo_filename).where(Speaker.event_id == event_id)
@@ -80,10 +83,13 @@ class EventService:
         self.db.execute(delete(Category).where(Category.event_id == event_id))
         self.db.execute(delete(EventDay).where(EventDay.event_id == event_id))
         self.db.execute(delete(Room).where(Room.event_id == event_id))
+        self.db.execute(delete(PartnerLogo).where(PartnerLogo.event_id == event_id))
+        self.db.execute(delete(InfoBlock).where(InfoBlock.event_id == event_id))
         self.db.execute(delete(AuthToken).where(AuthToken.event_id == event_id))
         self.db.execute(delete(EventMembership).where(EventMembership.event_id == event_id))
         self.repository.delete(event)
         self.db.commit()
         for photo in photos:
             SpeakerService._remove_file(photo)
-        remove_logo_file(logo_filename)
+        for image in images:
+            remove_logo_file(image)

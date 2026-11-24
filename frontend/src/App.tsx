@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { request, uploadImage, write } from './api'
+import ProgramDesignEditor from './ProgramDesignEditor'
 import Editor from './Editor'
 import type { EditorKind } from './Editor'
 import DutyEditor from './DutyEditor'
@@ -54,6 +55,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [loading, setLoading] = useState(true)
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
+  const [showDesign, setShowDesign] = useState(false)
   const [showUsers, setShowUsers] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [clearingChangeNotices, setClearingChangeNotices] = useState(false)
@@ -153,14 +155,13 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const selectedCategory = panel?.kind === 'category' ? categories.find(item => item.id === panel.id) : undefined
   const selectedDuty = panel?.kind === 'duty' ? helperPlan.duties.find(item => item.id === panel.id) : undefined
 
-  async function save(body: Record<string, unknown>, logo?: File | null): Promise<boolean> {
+  async function save(body: Record<string, unknown>): Promise<boolean> {
     if (!panel) return false
     let savedEvent: Event | null = null
     try {
       if (panel.kind === 'event') {
         const saved = await write<Event>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/events' : `/events/${panel.id}`, body)
         savedEvent = saved
-        if (logo) await uploadImage(`/events/${saved.id}/logo`, 'logo', logo)
         await loadAll(saved.id, dayId)
       } else if (panel.kind === 'day' && eventId !== null) {
         const saved = await write<EventDay>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/days` : `/days/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
@@ -231,14 +232,6 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     try {
       await write<Speaker>('DELETE', `/speakers/${panel.id}/photo`)
       await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
-  }
-
-  async function deleteEventLogo() {
-    if (panel?.kind !== 'event' || panel.id === null) return
-    try {
-      await write<Event>('DELETE', `/events/${panel.id}/logo`)
-      await loadAll(panel.id, dayId)
     } catch (cause) { setError((cause as Error).message) }
   }
 
@@ -391,13 +384,14 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       <nav className="sidebar" aria-label="Planung" inert={loading}>
         <section>
           <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
-          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { setPanel(null); setShowTeam(false); setShowRestore(false); void loadAll(Number(e.target.value), null) }}>
+          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { setPanel(null); setShowTeam(false); setShowDesign(false); setShowRestore(false); void loadAll(Number(e.target.value), null) }}>
             {events.length === 0 && <option value="">Keine Veranstaltung</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
           {selectedEvent && <p className="muted">{formatDate(selectedEvent.start_date)} bis {formatDate(selectedEvent.end_date)}</p>}
           {selectedEvent && isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
           {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowTeam(true)}>Team verwalten</button>}
+          {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowDesign(true)}>Besucherprogramm gestalten</button>}
           {selectedEvent && canPlan && <button type="button" className="text-button clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
         </section>
         {selectedEvent && <section>
@@ -525,7 +519,6 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         categories={categories}
         createUnplanned={panel.createUnplanned}
         onSave={save}
-        onDeleteLogo={panel.kind === 'event' && panel.id !== null ? deleteEventLogo : null}
         onClearRescheduledNotice={panel.kind === 'slot' && panel.id !== null ? clearSlotRescheduledNotice : null}
         onDelete={panel.id === null || panel.kind === 'event' && !isSuperadmin ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
@@ -536,6 +529,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
       {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
+      {showDesign && isAdmin && selectedEvent && <ProgramDesignEditor event={selectedEvent} onChanged={() => loadAll(eventId, dayId)} onClose={() => setShowDesign(false)} />}
       {showUsers && isSuperadmin && <UserManagement currentUserId={currentUser.id} onClose={() => setShowUsers(false)} />}
       {showAccount && <AccountDialog currentUser={currentUser} onProfileSaved={async updated => {
         onProfileChange?.(updated)

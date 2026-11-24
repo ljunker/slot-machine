@@ -27,7 +27,7 @@ export function write<T>(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: stri
   return request<T>(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })
 }
 
-export async function uploadImage(path: string, field: 'photo' | 'logo', file: File): Promise<void> {
+export async function uploadImage(path: string, field: 'photo' | 'logo' | 'image', file: File): Promise<void> {
   const body = new FormData()
   body.append(field, file)
   const response = await fetch(`/api${path}`, { method: 'POST', headers: csrfHeaders(), body })

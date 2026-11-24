@@ -74,11 +74,10 @@ def test_backup_requirement_and_legacy_assignments(client, db, program, version)
     }).json()
     backup = client.get(f'/api/backups/events/{event}').content
     with ZipFile(BytesIO(backup)) as archive:
-        assert archive.read('manifest.csv').splitlines()[1].startswith(b'6,')
+        assert archive.read('manifest.csv').splitlines()[1].startswith(b'7,')
         rows = list(csv.DictReader(StringIO(archive.read('slots.csv').decode())))
         assert rows[0]['speaker_required'] == 'false'
-    if version != '6':
-        backup = legacy_archive(backup, version)
+    backup = legacy_archive(backup, version)
     restored = client.post('/api/backups/restore', data={'target_event_id': str(event)},
                            files={'backup': ('backup.zip', backup, 'application/zip')})
     assert restored.status_code == 200, restored.text
