@@ -407,8 +407,8 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           {rooms.length === 0 && <p className="muted">Noch keine Räume</p>}
           <div className="room-list">{rooms.map((room, index) => <div className="room-row" key={room.id}>
             {isAdmin ? <button type="button" className="room-name" onClick={() => setPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>}
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} title={index === 0 ? 'Steht bereits ganz oben' : 'Nach oben verschieben'} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} title={index === rooms.length - 1 ? 'Steht bereits ganz unten' : 'Nach unten verschieben'} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>

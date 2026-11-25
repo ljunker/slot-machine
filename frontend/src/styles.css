@@ -4,11 +4,11 @@
   --page-bg: #f5f7fb; --surface: #fff; --surface-soft: #fbfcfe; --header-bg: #15213c;
   --header-text: #fff; --header-muted: #b9c6df; --header-eyebrow: #92b7ff;
   --text: #172039; --text-strong: #293958; --input-text: #1b2943; --subtext: #596783;
-  --muted: #8792a7; --eyebrow: #7285ab; --border: #dce2ed; --border-soft: #edf0f5;
+  --muted: #5d687e; --eyebrow: #536690; --border: #dce2ed; --border-soft: #edf0f5;
   --primary: #4569dd; --primary-hover: #3156cf; --on-accent: #fff; --link: #365cc4; --link-hover: #274fc0; --icon: #5570a7;
   --selected: #eaf0ff; --drop: #f8faff; --card: #e7efff; --card-hover: #dbe8ff;
   --card-border: #b9cdfb; --card-accent: #5c7fe2; --handle: #7993bd;
-  --danger-bg: #fff0ed; --danger-border: #ffc3bb; --danger-accent: #df5b4b; --danger-text: #9e3327;
+  --danger-bg: #fff0ed; --danger-border: #ffc3bb; --danger-accent: #b83627; --danger-text: #9e3327;
   --warning-bg: #fff7df; --warning-border: #e8a527; --warning-text: #765000;
   --cancel-bg: #f0f1f4; --cancel-border: #737e92; --change-bg: #f8ecff; --change-border: #9862bf;
   --shadow: #17203916;
@@ -31,7 +31,8 @@
 body { margin: 0; min-width: 320px; }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
-button:disabled { cursor: default; opacity: .35; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+.icon-button:disabled { color: var(--muted); }
 .app-shell { min-height: 100vh; }
 .app-header { background: var(--header-bg); color: var(--header-text); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; padding: 26px 34px; }
 .app-header > div:first-child { flex: 1 1 220px; min-width: 0; }
