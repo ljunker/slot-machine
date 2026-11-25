@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, String
+from sqlalchemy import Boolean, Date, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -24,6 +24,11 @@ class Event(Base):
     end_date: Mapped[date] = mapped_column(
         Date,
         nullable=False,
+    )
+
+    # Erst nach der Veröffentlichung markiert das Besucherprogramm Verschiebungen und Änderungen.
+    program_published: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
 
     accent_color: Mapped[str | None] = mapped_column(String(7), nullable=True)

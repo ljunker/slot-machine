@@ -14,6 +14,7 @@ def event(client):
             "name": "Bühnen-Tag",
             "start_date": "2026-10-01",
             "end_date": "2026-10-02",
+            "program_published": True,
         },
     )
     assert response.status_code == 201

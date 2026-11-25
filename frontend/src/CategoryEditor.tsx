@@ -1,19 +1,36 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from './types'
+import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
 
-export default function CategoryEditor({ category, onSave, onDelete, onClose }: {
+const DEFAULT_COLOR = '#4569DD'
+
+export default function CategoryEditor({ category, onSave, onDelete, onClose, onRequestClose = onClose }: {
   category?: Category
   onSave: (body: { name: string; color: string }) => Promise<boolean>
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
+  onRequestClose?: () => void
 }) {
   const [name, setName] = useState(category?.name ?? '')
-  const [color, setColor] = useState(category?.color ?? '#4569DD')
+  const [color, setColor] = useState(category?.color ?? DEFAULT_COLOR)
+  const form = useRef<HTMLFormElement>(null)
+  const { dirty, save } = useUnsavedChanges(
+    { name, color: color.toLowerCase() },
+    { name: category?.name ?? '', color: (category?.color ?? DEFAULT_COLOR).toLowerCase() },
+    persist,
+  )
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault()
-    if (await onSave({ name, color })) onClose()
+    void save()
+  }
+
+  async function persist(): Promise<boolean> {
+    if (form.current && !form.current.reportValidity()) return false
+    if (!await onSave({ name, color })) return false
+    onClose()
+    return true
   }
 
   async function remove() {
@@ -22,8 +39,8 @@ export default function CategoryEditor({ category, onSave, onDelete, onClose }: 
   }
 
   return <aside className="editor" aria-label={`Kategorie ${category ? 'bearbeiten' : 'anlegen'}`}>
-    <div className="editor-heading"><h2>Kategorie {category ? 'bearbeiten' : 'anlegen'}</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
-    <form onSubmit={submit}>
+    <div className="editor-heading"><h2>Kategorie {category ? 'bearbeiten' : 'anlegen'}<UnsavedBadge dirty={dirty} /></h2><button type="button" className="text-button" onClick={onRequestClose}>Schließen</button></div>
+    <form ref={form} onSubmit={submit}>
       <label>Name<input required maxLength={255} value={name} onChange={event => setName(event.target.value)} /></label>
       <label>Farbe<input required type="color" value={color} onChange={event => setColor(event.target.value)} /></label>
       <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={() => void remove()}>Löschen</button>}</div>

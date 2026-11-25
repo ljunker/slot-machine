@@ -25,6 +25,7 @@ from app.db.migrate_duty_order import migrate_duty_order
 from app.db.migrate_event_branding import migrate_event_branding
 from app.db.migrate_helper_accounts import migrate_helper_accounts
 from app.db.migrate_program_design import migrate_program_design
+from app.db.migrate_program_published import migrate_program_published
 from app.db.migrate_shared_sessions import migrate_shared_sessions
 from app.db.migrate_slot_changes import migrate_slot_changes
 from app.db.migrate_speaker_requirement import migrate_speaker_requirement
@@ -45,6 +46,7 @@ async def lifespan(application: FastAPI):
     migrate_shared_sessions(engine)
     migrate_duty_order(engine)
     migrate_helper_accounts(engine)
+    migrate_program_published(engine)
     yield
 
 

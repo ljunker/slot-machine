@@ -413,3 +413,24 @@ def test_invalid_relationship_is_rejected(client):
     )
     assert upload(client, invalid, event_id, "restore").status_code == 400
     assert client.get(f"/api/events/{event_id}/days").json()[0]["id"] == day
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_program_published_roundtrip(client, published):
+    event_id = create_event(client)
+    client.patch(f"/api/events/{event_id}", json={"program_published": published})
+    backup = client.get(f"/api/backups/events/{event_id}").content
+    restored = upload(client, backup, endpoint="restore")
+    assert restored.status_code == 200, restored.text
+    event = client.get(f"/api/events/{restored.json()['event_id']}").json()
+    assert event["program_published"] is published
+
+
+def test_backups_before_version_8_restore_as_published(client):
+    event_id = create_event(client)
+    backup = client.get(f"/api/backups/events/{event_id}").content
+    for version in ("7", "6", "1"):
+        restored = upload(client, legacy_archive(backup, version), endpoint="restore")
+        assert restored.status_code == 200, restored.text
+        event = client.get(f"/api/events/{restored.json()['event_id']}").json()
+        assert event["program_published"] is True

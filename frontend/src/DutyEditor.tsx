@@ -1,10 +1,35 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import DutySignup from './DutySignup'
 import { formatDate } from './date'
 import type { Duty, DutyKind, EventDay, DutyParticipant, Room, Slot, UnplannedSession } from './types'
+import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
 
-export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, helpers, onSave, onDelete, onClose, currentUserId, onSignup }: {
+/** Form values of the saved duty; also the reference for detecting unsaved input. */
+function initialValues(duty: Duty | undefined, days: EventDay[], selectedDay: EventDay | undefined, rooms: Room[], sessions: (Slot | UnplannedSession)[]) {
+  const dayId = duty?.day_id ?? selectedDay?.id ?? days[0]?.id ?? 0
+  const day = days.find(item => item.id === dayId)
+  return {
+    kind: duty?.kind ?? 'general' as DutyKind,
+    capacity: duty?.capacity ?? 1,
+    title: duty?.title ?? '',
+    helperIds: duty?.user_ids ?? [],
+    dayId,
+    roomId: duty?.room_id ?? rooms[0]?.id ?? 0,
+    slotId: duty?.slot_id ?? sessions[0]?.id ?? 0,
+    start: duty?.start_time?.slice(0, 5) ?? day?.start_time.slice(0, 5) ?? '09:00',
+    end: duty?.end_time?.slice(0, 5) ?? day?.end_time.slice(0, 5) ?? '18:00',
+  }
+}
+
+/** Only the fields a duty of this kind saves; hidden fields must not count as unsaved input. */
+function savedFields({ kind, capacity, title, helperIds, dayId, roomId, slotId, start, end }: ReturnType<typeof initialValues>) {
+  const base = { kind, capacity, title: title.trim(), helperIds: [...helperIds].sort((a, b) => a - b) }
+  if (kind === 'session') return { ...base, slotId }
+  return { ...base, dayId, start, end, ...(kind === 'room' ? { roomId } : {}) }
+}
+
+export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, helpers, onSave, onDelete, onClose, onRequestClose = onClose, currentUserId, onSignup }: {
   currentUserId: number
   onSignup: (duty: Duty, leave: boolean) => Promise<void>
   duty?: Duty
@@ -16,25 +41,37 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
   onSave: (body: Record<string, unknown>) => Promise<boolean>
   onDelete: (() => Promise<boolean>) | null
   onClose: () => void
+  onRequestClose?: () => void
 }) {
-  const [kind, setKind] = useState<DutyKind>(duty?.kind ?? 'general')
-  const [capacity, setCapacity] = useState(duty?.capacity ?? 1)
-  const [title, setTitle] = useState(duty?.title ?? '')
-  const [helperIds, setHelperIds] = useState<number[]>(duty?.user_ids ?? [])
+  const initial = initialValues(duty, days, selectedDay, rooms, sessions)
+  const [kind, setKind] = useState<DutyKind>(initial.kind)
+  const [capacity, setCapacity] = useState(initial.capacity)
+  const [title, setTitle] = useState(initial.title)
+  const [helperIds, setHelperIds] = useState<number[]>(initial.helperIds)
   useEffect(() => { setHelperIds(duty?.user_ids ?? []) }, [duty])
   const availableHelpers = [...helpers, ...(duty?.users ?? []).filter(user => !helpers.some(person => person.id === user.id)).map(user => ({ ...user, email: user.is_active ? '' : 'gesperrt' }))]
-  const [dayId, setDayId] = useState(duty?.day_id ?? selectedDay?.id ?? days[0]?.id ?? 0)
-  const [roomId, setRoomId] = useState(duty?.room_id ?? rooms[0]?.id ?? 0)
-  const [slotId, setSlotId] = useState(duty?.slot_id ?? sessions[0]?.id ?? 0)
-  const initialDay = days.find(day => day.id === dayId)
-  const [start, setStart] = useState(duty?.start_time?.slice(0, 5) ?? initialDay?.start_time.slice(0, 5) ?? '09:00')
-  const [end, setEnd] = useState(duty?.end_time?.slice(0, 5) ?? initialDay?.end_time.slice(0, 5) ?? '18:00')
+  const [dayId, setDayId] = useState(initial.dayId)
+  const [roomId, setRoomId] = useState(initial.roomId)
+  const [slotId, setSlotId] = useState(initial.slotId)
+  const [start, setStart] = useState(initial.start)
+  const [end, setEnd] = useState(initial.end)
+  const form = useRef<HTMLFormElement>(null)
+  const { dirty, save } = useUnsavedChanges(
+    savedFields({ kind, capacity, title, helperIds, dayId, roomId, slotId, start, end }),
+    savedFields(initial),
+    persist,
+  )
   const availableSessions = duty?.slot_id && !sessions.some(session => session.id === duty.slot_id)
     ? [{ id: duty.slot_id, topic: duty.session_topic ?? 'Session' }, ...sessions]
     : sessions
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault()
+    void save()
+  }
+
+  async function persist(): Promise<boolean> {
+    if (form.current && !form.current.reportValidity()) return false
     const body = {
       kind, capacity, title: title.trim() || null, user_ids: helperIds,
       day_id: kind === 'session' ? null : dayId,
@@ -43,7 +80,9 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
       start_time: kind === 'session' ? null : start,
       end_time: kind === 'session' ? null : end,
     }
-    if (await onSave(body)) onClose()
+    if (!await onSave(body)) return false
+    onClose()
+    return true
   }
 
   async function remove() {
@@ -53,9 +92,9 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
   }
 
   return <aside className="editor" aria-label={`Dienst ${duty ? 'bearbeiten' : 'anlegen'}`}>
-    <div className="editor-heading"><h2>Dienst {duty ? 'bearbeiten' : 'anlegen'}</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
+    <div className="editor-heading"><h2>Dienst {duty ? 'bearbeiten' : 'anlegen'}<UnsavedBadge dirty={dirty} /></h2><button type="button" className="text-button" onClick={onRequestClose}>Schließen</button></div>
     {duty && <DutySignup duty={duty} currentUserId={currentUserId} onSignup={onSignup} />}
-    <form onSubmit={submit}>
+    <form ref={form} onSubmit={submit}>
       <label>Höchstzahl Helfer<input type="number" required min={1} max={2147483647} step={1} value={capacity} onChange={event => setCapacity(Number(event.target.value))} /></label>
       <label>Dienstart<select aria-label="Dienstart" value={kind} onChange={event => setKind(event.target.value as DutyKind)}>
         <option value="general">Allgemeiner Dienst</option><option value="room">Raumdienst</option><option value="session">Session-Dienst</option>

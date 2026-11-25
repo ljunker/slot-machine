@@ -87,9 +87,9 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   hasSharedBacklog?: boolean
   onEdit: (slot: Slot) => void
   onEditDuty?: (duty: Duty) => void
-  onChange: (slotId: number, patch: SlotPatch) => Promise<void>
-  onChangeDuty?: (duty: Duty, patch: DutyPatch) => Promise<void>
-  onReorderDuties?: (dayId: number, roomId: number | null, dutyIds: number[]) => Promise<void>
+  onChange: (slotId: number, patch: SlotPatch) => Promise<unknown>
+  onChangeDuty?: (duty: Duty, patch: DutyPatch) => Promise<unknown>
+  onReorderDuties?: (dayId: number, roomId: number | null, dutyIds: number[]) => Promise<unknown>
 }) {
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)

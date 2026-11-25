@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { request, uploadImage, write } from './api'
 import ProgramDesignEditor from './ProgramDesignEditor'
@@ -22,6 +22,13 @@ import { TeamManagement, UserManagement } from './TeamManagement'
 import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
+import UndoToast from './UndoToast'
+import UnsavedChangesDialog from './UnsavedChangesDialog'
+import { UnsavedChangesProvider } from './unsavedChanges'
+import type { UnsavedEditor } from './unsavedChanges'
+import type { UndoEntry } from './UndoToast'
+import { applyDutyOrder, applyDutyPatch, applySlotPatch } from './optimistic'
+import type { SlotPositionPatch } from './optimistic'
 
 type Panel = { kind: EditorKind | 'speaker' | 'category' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number | null; start: number; topic: string }
@@ -53,6 +60,16 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
+  const undoNumber = useRef(0)
+  const unsavedEditor = useRef<UnsavedEditor | null>(null)
+  const [panelDirty, setPanelDirty] = useState(false)
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null)
+  const registerEditor = useCallback((editor: UnsavedEditor | null) => {
+    unsavedEditor.current = editor
+    setPanelDirty(editor?.dirty ?? false)
+  }, [])
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [showDesign, setShowDesign] = useState(false)
@@ -67,12 +84,19 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const isDashboard = view === 'dashboard' && isAdmin
   const isOverview = view === 'conflicts' || isDashboard
 
-  async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
+  /**
+   * Loads the event's planning data. A quiet load keeps the current plan on screen
+   * (and with it the scroll position) and only marks it as refreshing.
+   */
+  async function loadAll(preferredEvent: number | null, preferredDay: number | null, { quiet = false } = {}): Promise<boolean> {
     const number = ++loadNumber.current
     ++overviewLoadNumber.current
-    setLoading(true)
+    if (quiet) setRefreshing(true)
+    else {
+      setLoading(true)
+      setOverviewSchedules(null)
+    }
     setLoadError('')
-    setOverviewSchedules(null)
     setOverviewError('')
     try {
       const eventList = await request<Event[]>('/events')
@@ -112,9 +136,50 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       }
       return false
     } finally {
-      if (number === loadNumber.current) setLoading(false)
+      if (number === loadNumber.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }
+
+  function refresh(): Promise<boolean> {
+    return loadAll(eventId, dayId, { quiet: true })
+  }
+
+  /** Runs an action that replaces or closes the editor, asking first if it holds unsaved input. */
+  function guard(action: () => void) {
+    if (unsavedEditor.current?.dirty) setPendingAction(() => action)
+    else action()
+  }
+
+  function openPanel(next: Panel | null) {
+    if (next && panel && next.kind === panel.kind && next.id === panel.id && !!next.createUnplanned === !!panel.createUnplanned) return
+    guard(() => setPanel(next))
+  }
+
+  async function saveBeforeLeaving() {
+    const action = pendingAction
+    if (!action || !await unsavedEditor.current?.save()) return
+    setPendingAction(null)
+    action()
+  }
+
+  function discardAndLeave() {
+    const action = pendingAction
+    setPendingAction(null)
+    unsavedEditor.current = null
+    setPanelDirty(false)
+    setPanel(null)
+    action?.()
+  }
+
+  useEffect(() => {
+    if (!panelDirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [panelDirty])
 
   useEffect(() => { void loadAll(null, null) }, [])
 
@@ -122,7 +187,6 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (!isOverview || eventId === null || loading || loadError) return
     let active = true
     const number = ++overviewLoadNumber.current
-    setOverviewSchedules(null)
     setOverviewError('')
     Promise.all(days.map(day => request<DaySchedule>(`/schedule/days/${day.id}`)))
       .then(loaded => { if (active && number === overviewLoadNumber.current) setOverviewSchedules(loaded) })
@@ -130,7 +194,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     return () => { active = false }
   }, [isOverview, eventId, days, loading, loadError])
 
-  useEffect(() => { setDashboardDayId(null) }, [eventId])
+  useEffect(() => {
+    setDashboardDayId(null)
+    setUndoEntry(null)
+  }, [eventId])
 
   useEffect(() => {
     if (view === 'dashboard' && !isAdmin) {
@@ -139,8 +206,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     }
   }, [view, isAdmin])
 
-  async function openOverviewEntry(targetDayId: number | null, kind: 'slot' | 'duty', id: number) {
-    if (targetDayId !== null && !await loadAll(eventId, targetDayId)) return
+  function openOverviewEntry(targetDayId: number | null, kind: 'slot' | 'duty', id: number) {
+    guard(() => void showOverviewEntry(targetDayId, kind, id))
+  }
+
+  async function showOverviewEntry(targetDayId: number | null, kind: 'slot' | 'duty', id: number) {
+    if (targetDayId !== null && !await loadAll(eventId, targetDayId, { quiet: true })) return
     if (!isDashboard) setView('schedule')
     setPanel({ kind, id })
   }
@@ -162,16 +233,16 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       if (panel.kind === 'event') {
         const saved = await write<Event>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/events' : `/events/${panel.id}`, body)
         savedEvent = saved
-        await loadAll(saved.id, dayId)
+        await loadAll(saved.id, dayId, { quiet: saved.id === eventId })
       } else if (panel.kind === 'day' && eventId !== null) {
         const saved = await write<EventDay>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/days` : `/days/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
-        await loadAll(eventId, saved.id)
+        await loadAll(eventId, saved.id, { quiet: true })
       } else if (panel.kind === 'room' && eventId !== null) {
         await write<Room>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/rooms' : `/rooms/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
-        await loadAll(eventId, dayId)
+        await refresh()
       } else if (panel.kind === 'slot' && eventId !== null) {
         await write<Slot>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/slots' : `/slots/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
-        await loadAll(eventId, dayId)
+        await refresh()
       }
       return true
     } catch (cause) {
@@ -189,7 +260,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, category: `/categories/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
     try {
       await write<void>('DELETE', path)
-      await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
+      await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId, { quiet: panel.kind !== 'event' })
       if (panel.kind === 'event') setView('schedule')
       return true
     } catch (cause) {
@@ -204,10 +275,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     try {
       saved = await write<Speaker>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/speakers` : `/speakers/${panel.id}`, body)
       if (photo) await uploadImage(`/speakers/${saved.id}/photo`, 'photo', photo)
-      await loadAll(eventId, dayId)
+      await refresh()
       return true
     } catch (cause) {
-      if (saved) await loadAll(eventId, dayId)
+      if (saved) await refresh()
       if (saved && panel.id === null) setPanel({ kind: 'speaker', id: saved.id })
       setError((cause as Error).message)
       return false
@@ -219,7 +290,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     try {
       await write<Category>(panel.id === null ? 'POST' : 'PATCH',
         panel.id === null ? `/events/${eventId}/categories` : `/categories/${panel.id}`, body)
-      await loadAll(eventId, dayId)
+      await refresh()
       return true
     } catch (cause) {
       setError((cause as Error).message)
@@ -231,7 +302,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (panel?.kind !== 'speaker' || panel.id === null) return
     try {
       await write<Speaker>('DELETE', `/speakers/${panel.id}/photo`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
   }
 
@@ -239,7 +310,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (panel?.kind !== 'slot' || panel.id === null) return
     try {
       await write<void>('DELETE', `/slots/${panel.id}/rescheduled-notice`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
   }
 
@@ -248,7 +319,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     setClearingChangeNotices(true)
     try {
       await write<void>('DELETE', `/events/${eventId}/change-notices`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
     finally { setClearingChangeNotices(false) }
   }
@@ -256,9 +327,9 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   async function signup(duty: Duty, leave: boolean) {
     try {
       await write<Duty>(leave ? 'DELETE' : 'PUT', `/duties/${duty.id}/signup`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) {
-      await loadAll(eventId, dayId)
+      await refresh()
       setError((cause as Error).message)
     }
   }
@@ -267,7 +338,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (panel?.kind !== 'duty' || eventId === null) return false
     try {
       await write<Duty>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/duties` : `/duties/${panel.id}`, body)
-      await loadAll(eventId, dayId)
+      await refresh()
       return true
     } catch (cause) { setError((cause as Error).message); return false }
   }
@@ -281,39 +352,81 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     ;[ids[index], ids[other]] = [ids[other], ids[index]]
     try {
       await write<Room[]>('PATCH', `/events/${eventId}/rooms/order`, { room_ids: ids })
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
   }
 
-  async function changeSlot(slotId: number, patch: Record<string, unknown>) {
+  /** Sends a change, shows it right away and reloads quietly; on failure the server state returns. */
+  async function applyChange(send: () => Promise<unknown>, preview?: () => void): Promise<boolean> {
+    preview?.()
     try {
-      await write<Slot>('PATCH', `/slots/${slotId}`, patch)
-      await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
+      await send()
+      await refresh()
+      return true
+    } catch (cause) {
+      await refresh()
+      setError((cause as Error).message)
+      return false
+    }
   }
 
-  async function changeDuty(duty: Duty, patch: DutyPatch) {
-    try {
-      if (duty.kind === 'session') {
-        if (duty.slot_id === null) return
-        await write<Slot>('PATCH', `/slots/${duty.slot_id}`, {
-          room_id: patch.room_id, start_time: patch.start_time, end_time: patch.end_time,
-        })
-      } else {
-        await write<Duty>('PATCH', `/duties/${duty.id}`, patch)
-      }
-      await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
+  function changeSlot(slotId: number, patch: Record<string, unknown>): Promise<boolean> {
+    return applyChange(
+      () => write<Slot>('PATCH', `/slots/${slotId}`, patch),
+      'day_id' in patch ? undefined : () => setSchedule(current => current && applySlotPatch(current, slotId, patch as SlotPositionPatch)),
+    )
   }
 
-  async function reorderDuties(selectedDayId: number, roomId: number | null, dutyIds: number[]) {
-    if (eventId === null) return
-    try {
-      await write<Duty[]>('PATCH', `/events/${eventId}/duties/order`, {
-        day_id: selectedDayId, room_id: roomId, duty_ids: dutyIds,
-      })
-      await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
+  function changeDuty(duty: Duty, patch: DutyPatch): Promise<boolean> {
+    const slotId = duty.slot_id
+    if (duty.kind === 'session' && slotId === null) return Promise.resolve(false)
+    return applyChange(
+      () => duty.kind === 'session'
+        ? write<Slot>('PATCH', `/slots/${slotId}`, { room_id: patch.room_id, start_time: patch.start_time, end_time: patch.end_time })
+        : write<Duty>('PATCH', `/duties/${duty.id}`, patch),
+      () => {
+        setHelperPlan(current => applyDutyPatch(current, duty.id, patch))
+        if (duty.kind === 'session' && slotId !== null) setSchedule(current => current && applySlotPatch(current, slotId, patch))
+      },
+    )
+  }
+
+  function reorderDuties(selectedDayId: number, roomId: number | null, dutyIds: number[]): Promise<boolean> {
+    if (eventId === null) return Promise.resolve(false)
+    return applyChange(
+      () => write<Duty[]>('PATCH', `/events/${eventId}/duties/order`, { day_id: selectedDayId, room_id: roomId, duty_ids: dutyIds }),
+      () => setHelperPlan(current => applyDutyOrder(current, dutyIds)),
+    )
+  }
+
+  function offerUndo(message: string, undo: () => Promise<unknown>) {
+    setUndoEntry({ id: ++undoNumber.current, message, undo })
+  }
+
+  /** Drag & drop in the plan: save at once, but offer to take the change back. */
+  async function dragSlot(slotId: number, patch: SlotPositionPatch) {
+    const slot = [...(schedule?.rooms.flatMap(room => room.slots) ?? []), ...(schedule?.shared_slots ?? [])].find(item => item.id === slotId)
+    if (!slot || !await changeSlot(slotId, patch)) return
+    const previous: SlotPositionPatch = { room_id: slot.room_id, start_time: slot.start_time.slice(0, 5), end_time: slot.end_time.slice(0, 5) }
+    const resized = patch.start_time === undefined && patch.room_id === undefined
+    offerUndo(`„${slot.topic}“ ${resized ? 'in der Dauer geändert' : 'verschoben'}.`, () => changeSlot(slotId, previous))
+  }
+
+  async function dragDuty(duty: Duty, patch: DutyPatch) {
+    if (!await changeDuty(duty, patch)) return
+    const previous: DutyPatch = { start_time: duty.start_time?.slice(0, 5), end_time: duty.end_time?.slice(0, 5) }
+    if (patch.room_id !== undefined) previous.room_id = duty.room_id
+    if (patch.kind !== undefined && duty.kind !== 'session') previous.kind = duty.kind
+    const title = duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
+    offerUndo(`Dienst „${title}“ ${patch.start_time === undefined ? 'in der Dauer geändert' : 'verschoben'}.`,
+      () => changeDuty({ ...duty, ...patch, start_time: patch.start_time ?? duty.start_time, end_time: patch.end_time ?? duty.end_time } as Duty, previous))
+  }
+
+  async function dragDutyOrder(selectedDayId: number, roomId: number | null, dutyIds: number[]) {
+    const previous = helperPlan.duties.filter(duty => dutyIds.includes(duty.id))
+      .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id).map(duty => duty.id)
+    if (!await reorderDuties(selectedDayId, roomId, dutyIds)) return
+    offerUndo('Dienste neu angeordnet.', () => reorderDuties(selectedDayId, roomId, previous))
   }
 
   function beginBacklogDrag(event: PointerEvent, session: UnplannedSession) {
@@ -350,6 +463,8 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       if (target) void changeSlot(session.id, {
         day_id: dayId, room_id: target.roomId,
         start_time: toTime(target.start), end_time: toTime(target.start + 60),
+      }).then(saved => {
+        if (saved) offerUndo(`„${session.topic}“ eingeplant.`, () => changeSlot(session.id, { day_id: null, room_id: null, start_time: null, end_time: null }))
       })
     }
     function cancel() { cleanup() }
@@ -363,10 +478,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   ]
   if (isSuperadmin) headerActions.push({ label: 'Benutzer', onClick: () => setShowUsers(true) })
   if (isSuperadmin || selectedEvent && isAdmin) headerActions.push({ label: 'Restore', onClick: () => setShowRestore(true) })
-  if (isSuperadmin) headerActions.push({ label: '+ Veranstaltung', disabled: loading, onClick: () => setPanel({ kind: 'event', id: null }) })
+  if (isSuperadmin) headerActions.push({ label: '+ Veranstaltung', disabled: loading, onClick: () => openPanel({ kind: 'event', id: null }) })
   if (onLogout) headerActions.push({ label: 'Abmelden', separatorBefore: true, onClick: onLogout })
 
-  return <div className="app-shell">
+  return <UnsavedChangesProvider value={registerEditor}><div className="app-shell">
     <header className="app-header">
       <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
       <div className="header-actions">
@@ -383,8 +498,8 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     <div className="workspace">
       <nav className="sidebar" aria-label="Planung" inert={loading}>
         <section>
-          <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
-          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { setPanel(null); setShowTeam(false); setShowDesign(false); setShowRestore(false); void loadAll(Number(e.target.value), null) }}>
+          <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
+          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { const next = Number(e.target.value); guard(() => { setPanel(null); setShowTeam(false); setShowDesign(false); setShowRestore(false); void loadAll(next, null) }) }}>
             {events.length === 0 && <option value="">Keine Veranstaltung</option>}
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
@@ -395,72 +510,73 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           {selectedEvent && canPlan && <button type="button" className="text-button clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
         </section>
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
+          <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" onClick={() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id) }}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>}
+            <button type="button" onClick={() => guard(() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) })}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} onClick={() => openPanel({ kind: 'day', id: day.id })}>✎</button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Räume</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'room', id: null })}>+ Raum</button>}</div>
+          <div className="section-heading"><h2>Räume</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'room', id: null })}>+ Raum</button>}</div>
           {rooms.length === 0 && <p className="muted">Noch keine Räume</p>}
           <div className="room-list">{rooms.map((room, index) => <div className="room-row" key={room.id}>
-            {isAdmin ? <button type="button" className="room-name" onClick={() => setPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>}
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>}
+            {isAdmin ? <button type="button" className="room-name" onClick={() => openPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} title={index === 0 ? 'Steht bereits ganz oben' : 'Nach oben verschieben'} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} title={index === rooms.length - 1 ? 'Steht bereits ganz unten' : 'Nach unten verschieben'} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Kategorien</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'category', id: null })}>+ Kategorie</button>}</div>
+          <div className="section-heading"><h2>Kategorien</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'category', id: null })}>+ Kategorie</button>}</div>
           {categories.length === 0 && <p className="muted">Noch keine Kategorien</p>}
           <div className="room-list">{categories.map(category => <div className="room-row" key={category.id}>
-            {isAdmin ? <button type="button" className="room-name category-name" onClick={() => setPanel({ kind: 'category', id: category.id })}><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</button> : <span className="room-name category-name"><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</span>}
+            {isAdmin ? <button type="button" className="room-name category-name" onClick={() => openPanel({ kind: 'category', id: category.id })}><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</button> : <span className="room-name category-name"><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</span>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2>{canPlan && <button className="text-button" onClick={() => setPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button>}</div>
+          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2>{canPlan && <button className="text-button" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button>}</div>
           {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
           <div className="unplanned-list">{unplanned.map(session => <div className="unplanned-row" key={session.id}>
             {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} onPointerDown={event => beginBacklogDrag(event, session)}>⠿</button>}
-            <button type="button" className="unplanned-name" onClick={() => setPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
+            <button type="button" className="unplanned-name" onClick={() => openPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
           </div>)}</div>
           {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
         </section>}
         {selectedEvent && canPlan && <section>
-          <div className="section-heading"><h2>Redner</h2><button className="text-button" onClick={() => setPanel({ kind: 'speaker', id: null })}>+ Redner</button></div>
+          <div className="section-heading"><h2>Redner</h2><button className="text-button" onClick={() => openPanel({ kind: 'speaker', id: null })}>+ Redner</button></div>
           {speakers.length === 0 && <p className="muted">Noch keine Redner</p>}
           <div className="room-list">{speakers.map(person => <div className="room-row" key={person.id}>
-            <button type="button" className="room-name" onClick={() => setPanel({ kind: 'speaker', id: person.id })}>{person.name}</button>
+            <button type="button" className="room-name" onClick={() => openPanel({ kind: 'speaker', id: person.id })}>{person.name}</button>
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
           <div className="section-heading"><h2>Dienste ({helperPlan.duties.length})</h2></div>
           {helperPlan.duties.length === 0 && <p className="muted">Noch keine Dienste</p>}
-          <div className="duty-list">{helperPlan.duties.map(duty => <button type="button" key={duty.id} onClick={() => setPanel({ kind: 'duty', id: duty.id })}>
+          <div className="duty-list">{helperPlan.duties.map(duty => <button type="button" key={duty.id} onClick={() => openPanel({ kind: 'duty', id: duty.id })}>
             <strong>{duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}</strong>
             <small>{duty.date ? formatDate(duty.date) : 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.users.length ? duty.users.map(helper => helper.name).join(', ') : 'Offen'} · {duty.user_ids.length}/{duty.capacity} Plätze</small>
           </button>)}</div>
         </section>}
       </nav>
-      <main className="main-area">
+      <main className="main-area" aria-busy={refreshing || undefined}>
+        {refreshing && !loading && <div className="refresh-indicator" aria-hidden="true" />}
         {selectedEvent && <div className="planning-views" role="group" aria-label="Planungsansicht">
-          {isAdmin && <button type="button" aria-pressed={isDashboard} onClick={() => { setPanel(null); setView('dashboard') }}>Dashboard</button>}
+          {isAdmin && <button type="button" aria-pressed={isDashboard} onClick={() => guard(() => { setPanel(null); setView('dashboard') })}>Dashboard</button>}
           <button type="button" aria-pressed={view === 'schedule'} onClick={() => setView('schedule')}>Tagesplan</button>
           <button type="button" aria-pressed={view === 'helpers'} onClick={() => setView('helpers')}>Helferplan</button>
-          <button type="button" aria-pressed={view === 'conflicts'} onClick={() => { setPanel(null); setView('conflicts') }}>Konflikte</button>
+          <button type="button" aria-pressed={view === 'conflicts'} onClick={() => guard(() => { setPanel(null); setView('conflicts') })}>Konflikte</button>
         </div>}
         <div className="plan-heading"><div><span className="eyebrow">{isDashboard ? 'PLANUNGSSTAND' : view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatDate(selectedDay.date) : 'Programm'}</h2><p>{isOverview ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
             {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.json`} download>Programm als JSON</a>}
-            {selectedEvent && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
-            {selectedDay && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => setPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+            {selectedEvent && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
+            {selectedDay && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
         {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
-        {!isOverview && !loading && schedule && <Schedule readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
+        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
         {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
         {canPlan && !isOverview && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {isDashboard && selectedEvent && <Dashboard
@@ -469,12 +585,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           dayId={days.some(day => day.id === dashboardDayId) ? dashboardDayId : null}
           onDayChange={setDashboardDayId}
           loading={loading || (!overviewSchedules && !overviewError && !loadError)}
-          error={overviewError || loadError} onRefresh={() => void loadAll(eventId, dayId)}
+          error={overviewError || loadError} onRefresh={() => void refresh()}
           onOpenSlot={(day, slot) => void openOverviewEntry(day, 'slot', slot)}
           onOpenDuty={(day, duty) => void openOverviewEntry(day, 'duty', duty)}
         />}
         {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError && !loadError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
-        {view === 'conflicts' && !loading && (overviewError || loadError) && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError || loadError}<br /><button className="text-button" type="button" onClick={() => void loadAll(eventId, dayId)}>Erneut versuchen</button></div>}
+        {view === 'conflicts' && !loading && (overviewError || loadError) && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError || loadError}<br /><button className="text-button" type="button" onClick={() => void refresh()}>Erneut versuchen</button></div>}
         {view === 'conflicts' && !loading && overviewSchedules && !overviewError && !loadError && <ConflictOverview readOnly={!canPlan} schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openOverviewEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openOverviewEntry(day, 'duty', duty)} />}
       </main>
       {canPlan && panel?.kind === 'speaker' && <SpeakerEditor
@@ -484,6 +600,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         onDelete={panel.id === null ? null : remove}
         onDeletePhoto={panel.id === null ? null : deleteSpeakerPhoto}
         onClose={() => setPanel(current => current === panel ? null : current)}
+        onRequestClose={() => openPanel(null)}
       />}
       {panel?.kind === 'category' && isAdmin && <CategoryEditor
         key={`category-${panel.id ?? 'new'}`}
@@ -491,6 +608,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         onSave={saveCategory}
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
+        onRequestClose={() => openPanel(null)}
       />}
       {canPlan && panel?.kind === 'duty' && <DutyEditor
         currentUserId={currentUser.id} onSignup={signup}
@@ -504,6 +622,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         onSave={saveDuty}
         onDelete={panel.id === null ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
+        onRequestClose={() => openPanel(null)}
       />}
       {!canPlan && selectedDuty && <DutyDetails duty={selectedDuty} rooms={rooms} currentUserId={currentUser.id} onSignup={signup} onClose={() => setPanel(null)} />}
       {!canPlan && selectedSlot && <SlotDetails slot={selectedSlot} onClose={() => setPanel(null)} />}
@@ -523,6 +642,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         onClearRescheduledNotice={panel.kind === 'slot' && panel.id !== null ? clearSlotRescheduledNotice : null}
         onDelete={panel.id === null || panel.kind === 'event' && !isSuperadmin ? null : remove}
         onClose={() => setPanel(current => current === panel ? null : current)}
+        onRequestClose={() => openPanel(null)}
       />}
       {showRestore && isAdmin && <BackupRestore events={events} selectedEventId={eventId} allowCreate={isSuperadmin} onComplete={async (restoredId, warnings = []) => {
         setPanel(null)
@@ -530,12 +650,14 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
       {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
-      {showDesign && isAdmin && selectedEvent && <ProgramDesignEditor event={selectedEvent} onChanged={() => loadAll(eventId, dayId)} onClose={() => setShowDesign(false)} />}
+      {showDesign && isAdmin && selectedEvent && <ProgramDesignEditor event={selectedEvent} onChanged={() => refresh()} onClose={() => setShowDesign(false)} />}
       {showUsers && isSuperadmin && <UserManagement currentUserId={currentUser.id} onClose={() => setShowUsers(false)} />}
       {showAccount && <AccountDialog currentUser={currentUser} onProfileSaved={async updated => {
         onProfileChange?.(updated)
-        return loadAll(eventId, dayId)
+        return refresh()
       }} onPasswordChanged={() => onPasswordChanged?.()} onClose={() => setShowAccount(false)} />}
     </div>
-  </div>
+    {undoEntry && <UndoToast entry={undoEntry} onDismiss={() => setUndoEntry(current => current?.id === undoEntry.id ? null : current)} />}
+    {pendingAction && <UnsavedChangesDialog onSave={saveBeforeLeaving} onDiscard={discardAndLeave} onCancel={() => setPendingAction(null)} />}
+  </div></UnsavedChangesProvider>
 }

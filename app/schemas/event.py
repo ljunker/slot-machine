@@ -18,12 +18,14 @@ class EventCreate(EventDesignFields):
     name: str
     start_date: date
     end_date: date
+    program_published: bool = False
 
 
 class EventUpdate(EventDesignFields):
     name: str | None = None
     start_date: date | None = None
     end_date: date | None = None
+    program_published: bool | None = None
 
 
 class PartnerLogoResponse(BaseModel):
@@ -53,6 +55,7 @@ class EventResponse(BaseModel):
     name: str
     start_date: date
     end_date: date
+    program_published: bool
     accent_color: str | None
     logo_url: str | None
     background_color: str | None

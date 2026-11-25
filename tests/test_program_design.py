@@ -289,7 +289,7 @@ def test_backup_roundtrip_keeps_design_and_legacy_versions_import(client, monkey
     backup = client.get(f"/api/backups/events/{event_id}").content
     with ZipFile(BytesIO(backup)) as archive:
         names = set(archive.namelist())
-        assert archive.read("manifest.csv").splitlines()[1].startswith(b"7,")
+        assert archive.read("manifest.csv").splitlines()[1].startswith(b"8,")
     assert {"partner_logos.csv", "info_blocks.csv", "media/header.png", "media/footer.png"} <= names
     assert any(name.startswith("media/partners/") for name in names)
 
