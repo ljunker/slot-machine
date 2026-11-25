@@ -22,6 +22,8 @@ import { TeamManagement, UserManagement } from './TeamManagement'
 import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
+import { applyDutyOrder, applyDutyPatch, applySlotPatch } from './optimistic'
+import type { SlotPositionPatch } from './optimistic'
 
 type Panel = { kind: EditorKind | 'speaker' | 'category' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number | null; start: number; topic: string }
@@ -53,6 +55,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [showDesign, setShowDesign] = useState(false)
@@ -67,12 +70,19 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const isDashboard = view === 'dashboard' && isAdmin
   const isOverview = view === 'conflicts' || isDashboard
 
-  async function loadAll(preferredEvent: number | null, preferredDay: number | null): Promise<boolean> {
+  /**
+   * Loads the event's planning data. A quiet load keeps the current plan on screen
+   * (and with it the scroll position) and only marks it as refreshing.
+   */
+  async function loadAll(preferredEvent: number | null, preferredDay: number | null, { quiet = false } = {}): Promise<boolean> {
     const number = ++loadNumber.current
     ++overviewLoadNumber.current
-    setLoading(true)
+    if (quiet) setRefreshing(true)
+    else {
+      setLoading(true)
+      setOverviewSchedules(null)
+    }
     setLoadError('')
-    setOverviewSchedules(null)
     setOverviewError('')
     try {
       const eventList = await request<Event[]>('/events')
@@ -112,8 +122,15 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       }
       return false
     } finally {
-      if (number === loadNumber.current) setLoading(false)
+      if (number === loadNumber.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
+  }
+
+  function refresh(): Promise<boolean> {
+    return loadAll(eventId, dayId, { quiet: true })
   }
 
   useEffect(() => { void loadAll(null, null) }, [])
@@ -122,7 +139,6 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (!isOverview || eventId === null || loading || loadError) return
     let active = true
     const number = ++overviewLoadNumber.current
-    setOverviewSchedules(null)
     setOverviewError('')
     Promise.all(days.map(day => request<DaySchedule>(`/schedule/days/${day.id}`)))
       .then(loaded => { if (active && number === overviewLoadNumber.current) setOverviewSchedules(loaded) })
@@ -140,7 +156,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   }, [view, isAdmin])
 
   async function openOverviewEntry(targetDayId: number | null, kind: 'slot' | 'duty', id: number) {
-    if (targetDayId !== null && !await loadAll(eventId, targetDayId)) return
+    if (targetDayId !== null && !await loadAll(eventId, targetDayId, { quiet: true })) return
     if (!isDashboard) setView('schedule')
     setPanel({ kind, id })
   }
@@ -162,16 +178,16 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       if (panel.kind === 'event') {
         const saved = await write<Event>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/events' : `/events/${panel.id}`, body)
         savedEvent = saved
-        await loadAll(saved.id, dayId)
+        await loadAll(saved.id, dayId, { quiet: saved.id === eventId })
       } else if (panel.kind === 'day' && eventId !== null) {
         const saved = await write<EventDay>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/days` : `/days/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
-        await loadAll(eventId, saved.id)
+        await loadAll(eventId, saved.id, { quiet: true })
       } else if (panel.kind === 'room' && eventId !== null) {
         await write<Room>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/rooms' : `/rooms/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
-        await loadAll(eventId, dayId)
+        await refresh()
       } else if (panel.kind === 'slot' && eventId !== null) {
         await write<Slot>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/slots' : `/slots/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
-        await loadAll(eventId, dayId)
+        await refresh()
       }
       return true
     } catch (cause) {
@@ -189,7 +205,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     const path = { event: `/events/${panel.id}`, day: `/days/${panel.id}`, room: `/rooms/${panel.id}`, slot: `/slots/${panel.id}`, speaker: `/speakers/${panel.id}`, category: `/categories/${panel.id}`, duty: `/duties/${panel.id}` }[panel.kind]
     try {
       await write<void>('DELETE', path)
-      await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId)
+      await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId, { quiet: panel.kind !== 'event' })
       if (panel.kind === 'event') setView('schedule')
       return true
     } catch (cause) {
@@ -204,10 +220,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     try {
       saved = await write<Speaker>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/speakers` : `/speakers/${panel.id}`, body)
       if (photo) await uploadImage(`/speakers/${saved.id}/photo`, 'photo', photo)
-      await loadAll(eventId, dayId)
+      await refresh()
       return true
     } catch (cause) {
-      if (saved) await loadAll(eventId, dayId)
+      if (saved) await refresh()
       if (saved && panel.id === null) setPanel({ kind: 'speaker', id: saved.id })
       setError((cause as Error).message)
       return false
@@ -219,7 +235,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     try {
       await write<Category>(panel.id === null ? 'POST' : 'PATCH',
         panel.id === null ? `/events/${eventId}/categories` : `/categories/${panel.id}`, body)
-      await loadAll(eventId, dayId)
+      await refresh()
       return true
     } catch (cause) {
       setError((cause as Error).message)
@@ -231,7 +247,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (panel?.kind !== 'speaker' || panel.id === null) return
     try {
       await write<Speaker>('DELETE', `/speakers/${panel.id}/photo`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
   }
 
@@ -239,7 +255,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (panel?.kind !== 'slot' || panel.id === null) return
     try {
       await write<void>('DELETE', `/slots/${panel.id}/rescheduled-notice`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
   }
 
@@ -248,7 +264,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     setClearingChangeNotices(true)
     try {
       await write<void>('DELETE', `/events/${eventId}/change-notices`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
     finally { setClearingChangeNotices(false) }
   }
@@ -256,9 +272,9 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   async function signup(duty: Duty, leave: boolean) {
     try {
       await write<Duty>(leave ? 'DELETE' : 'PUT', `/duties/${duty.id}/signup`)
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) {
-      await loadAll(eventId, dayId)
+      await refresh()
       setError((cause as Error).message)
     }
   }
@@ -267,7 +283,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     if (panel?.kind !== 'duty' || eventId === null) return false
     try {
       await write<Duty>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/duties` : `/duties/${panel.id}`, body)
-      await loadAll(eventId, dayId)
+      await refresh()
       return true
     } catch (cause) { setError((cause as Error).message); return false }
   }
@@ -281,39 +297,51 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     ;[ids[index], ids[other]] = [ids[other], ids[index]]
     try {
       await write<Room[]>('PATCH', `/events/${eventId}/rooms/order`, { room_ids: ids })
-      await loadAll(eventId, dayId)
+      await refresh()
     } catch (cause) { setError((cause as Error).message) }
   }
 
-  async function changeSlot(slotId: number, patch: Record<string, unknown>) {
+  /** Sends a change, shows it right away and reloads quietly; on failure the server state returns. */
+  async function applyChange(send: () => Promise<unknown>, preview?: () => void): Promise<boolean> {
+    preview?.()
     try {
-      await write<Slot>('PATCH', `/slots/${slotId}`, patch)
-      await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
+      await send()
+      await refresh()
+      return true
+    } catch (cause) {
+      await refresh()
+      setError((cause as Error).message)
+      return false
+    }
   }
 
-  async function changeDuty(duty: Duty, patch: DutyPatch) {
-    try {
-      if (duty.kind === 'session') {
-        if (duty.slot_id === null) return
-        await write<Slot>('PATCH', `/slots/${duty.slot_id}`, {
-          room_id: patch.room_id, start_time: patch.start_time, end_time: patch.end_time,
-        })
-      } else {
-        await write<Duty>('PATCH', `/duties/${duty.id}`, patch)
-      }
-      await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
+  function changeSlot(slotId: number, patch: Record<string, unknown>): Promise<boolean> {
+    return applyChange(
+      () => write<Slot>('PATCH', `/slots/${slotId}`, patch),
+      'day_id' in patch ? undefined : () => setSchedule(current => current && applySlotPatch(current, slotId, patch as SlotPositionPatch)),
+    )
   }
 
-  async function reorderDuties(selectedDayId: number, roomId: number | null, dutyIds: number[]) {
-    if (eventId === null) return
-    try {
-      await write<Duty[]>('PATCH', `/events/${eventId}/duties/order`, {
-        day_id: selectedDayId, room_id: roomId, duty_ids: dutyIds,
-      })
-      await loadAll(eventId, dayId)
-    } catch (cause) { setError((cause as Error).message) }
+  function changeDuty(duty: Duty, patch: DutyPatch): Promise<boolean> {
+    const slotId = duty.slot_id
+    if (duty.kind === 'session' && slotId === null) return Promise.resolve(false)
+    return applyChange(
+      () => duty.kind === 'session'
+        ? write<Slot>('PATCH', `/slots/${slotId}`, { room_id: patch.room_id, start_time: patch.start_time, end_time: patch.end_time })
+        : write<Duty>('PATCH', `/duties/${duty.id}`, patch),
+      () => {
+        setHelperPlan(current => applyDutyPatch(current, duty.id, patch))
+        if (duty.kind === 'session' && slotId !== null) setSchedule(current => current && applySlotPatch(current, slotId, patch))
+      },
+    )
+  }
+
+  function reorderDuties(selectedDayId: number, roomId: number | null, dutyIds: number[]): Promise<boolean> {
+    if (eventId === null) return Promise.resolve(false)
+    return applyChange(
+      () => write<Duty[]>('PATCH', `/events/${eventId}/duties/order`, { day_id: selectedDayId, room_id: roomId, duty_ids: dutyIds }),
+      () => setHelperPlan(current => applyDutyOrder(current, dutyIds)),
+    )
   }
 
   function beginBacklogDrag(event: PointerEvent, session: UnplannedSession) {
@@ -398,7 +426,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => setPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" onClick={() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id) }}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            <button type="button" onClick={() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) }}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
             {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} onClick={() => setPanel({ kind: 'day', id: day.id })}>✎</button>}
           </div>)}</div>
         </section>}
@@ -443,7 +471,8 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           </button>)}</div>
         </section>}
       </nav>
-      <main className="main-area">
+      <main className="main-area" aria-busy={refreshing || undefined}>
+        {refreshing && !loading && <div className="refresh-indicator" aria-hidden="true" />}
         {selectedEvent && <div className="planning-views" role="group" aria-label="Planungsansicht">
           {isAdmin && <button type="button" aria-pressed={isDashboard} onClick={() => { setPanel(null); setView('dashboard') }}>Dashboard</button>}
           <button type="button" aria-pressed={view === 'schedule'} onClick={() => setView('schedule')}>Tagesplan</button>
@@ -460,7 +489,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           </div>
         </div>
         {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
-        {!isOverview && !loading && schedule && <Schedule readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
+        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
         {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
         {canPlan && !isOverview && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {isDashboard && selectedEvent && <Dashboard
@@ -469,12 +498,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           dayId={days.some(day => day.id === dashboardDayId) ? dashboardDayId : null}
           onDayChange={setDashboardDayId}
           loading={loading || (!overviewSchedules && !overviewError && !loadError)}
-          error={overviewError || loadError} onRefresh={() => void loadAll(eventId, dayId)}
+          error={overviewError || loadError} onRefresh={() => void refresh()}
           onOpenSlot={(day, slot) => void openOverviewEntry(day, 'slot', slot)}
           onOpenDuty={(day, duty) => void openOverviewEntry(day, 'duty', duty)}
         />}
         {view === 'conflicts' && (loading || (!overviewSchedules && !overviewError && !loadError)) && <p className="state-message" role="status">Lade Konflikte …</p>}
-        {view === 'conflicts' && !loading && (overviewError || loadError) && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError || loadError}<br /><button className="text-button" type="button" onClick={() => void loadAll(eventId, dayId)}>Erneut versuchen</button></div>}
+        {view === 'conflicts' && !loading && (overviewError || loadError) && <div className="empty-state" role="alert">Konflikte konnten nicht geladen werden: {overviewError || loadError}<br /><button className="text-button" type="button" onClick={() => void refresh()}>Erneut versuchen</button></div>}
         {view === 'conflicts' && !loading && overviewSchedules && !overviewError && !loadError && <ConflictOverview readOnly={!canPlan} schedules={overviewSchedules} helperPlan={helperPlan} onOpenSlot={(day, slot) => void openOverviewEntry(day, 'slot', slot)} onOpenDuty={(day, duty) => void openOverviewEntry(day, 'duty', duty)} />}
       </main>
       {canPlan && panel?.kind === 'speaker' && <SpeakerEditor
@@ -530,11 +559,11 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
       {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
-      {showDesign && isAdmin && selectedEvent && <ProgramDesignEditor event={selectedEvent} onChanged={() => loadAll(eventId, dayId)} onClose={() => setShowDesign(false)} />}
+      {showDesign && isAdmin && selectedEvent && <ProgramDesignEditor event={selectedEvent} onChanged={() => refresh()} onClose={() => setShowDesign(false)} />}
       {showUsers && isSuperadmin && <UserManagement currentUserId={currentUser.id} onClose={() => setShowUsers(false)} />}
       {showAccount && <AccountDialog currentUser={currentUser} onProfileSaved={async updated => {
         onProfileChange?.(updated)
-        return loadAll(eventId, dayId)
+        return refresh()
       }} onPasswordChanged={() => onPasswordChanged?.()} onClose={() => setShowAccount(false)} />}
     </div>
   </div>
