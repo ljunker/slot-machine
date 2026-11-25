@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { request } from './api'
 import { formatDate } from './date'
 import type { Speaker, SpeakerDetail } from './types'
+import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
 
-export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto, onClose }: {
+export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto, onClose, onRequestClose = onClose }: {
   speaker?: Speaker
   onSave: (body: { name: string; bio: string | null; website: string | null }, photo: File | null) => Promise<boolean>
   onDelete: (() => Promise<boolean>) | null
   onDeletePhoto: (() => Promise<void>) | null
   onClose: () => void
+  onRequestClose?: () => void
 }) {
   const [name, setName] = useState(speaker?.name ?? '')
   const [bio, setBio] = useState(speaker?.bio ?? '')
@@ -34,9 +36,23 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
     return () => { active = false }
   }, [speaker])
 
-  async function submit(event: FormEvent) {
+  const form = useRef<HTMLFormElement>(null)
+  const { dirty, save } = useUnsavedChanges(
+    { name, bio, website, photo: photo?.name ?? null },
+    { name: speaker?.name ?? '', bio: speaker?.bio ?? '', website: speaker?.website ?? '', photo: null },
+    persist,
+  )
+
+  function submit(event: FormEvent) {
     event.preventDefault()
-    if (await onSave({ name, bio: bio || null, website: website || null }, photo)) onClose()
+    void save()
+  }
+
+  async function persist(): Promise<boolean> {
+    if (form.current && !form.current.reportValidity()) return false
+    if (!await onSave({ name, bio: bio || null, website: website || null }, photo)) return false
+    onClose()
+    return true
   }
 
   async function remove() {
@@ -46,8 +62,8 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
   }
 
   return <aside className="editor" aria-label={`Redner ${speaker ? 'bearbeiten' : 'anlegen'}`}>
-    <div className="editor-heading"><h2>Redner {speaker ? 'bearbeiten' : 'anlegen'}</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
-    <form onSubmit={submit}>
+    <div className="editor-heading"><h2>Redner {speaker ? 'bearbeiten' : 'anlegen'}<UnsavedBadge dirty={dirty} /></h2><button type="button" className="text-button" onClick={onRequestClose}>Schließen</button></div>
+    <form ref={form} onSubmit={submit}>
       <label>Name<input required maxLength={255} value={name} onChange={event => setName(event.target.value)} /></label>
       <label>Kurzbeschreibung<textarea value={bio} onChange={event => setBio(event.target.value)} /></label>
       <label>Website<input type="url" value={website} onChange={event => setWebsite(event.target.value)} /></label>

@@ -435,3 +435,6 @@ a.public-partner:hover { border-color: var(--primary); }
 .undo-toast .undo-action { border: 0; background: transparent; color: var(--header-eyebrow); font-weight: 800; padding: 6px 8px; border-radius: 6px; }
 .undo-toast .undo-action:hover:not(:disabled), .undo-toast .undo-action:focus-visible { background: #ffffff1f; }
 .undo-toast .icon-button { color: var(--header-muted); }
+.unsaved-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text); font-size: 11px; font-weight: 700; letter-spacing: .02em; vertical-align: middle; }
+.unsaved-dialog { width: min(420px, calc(100vw - 32px)); }
+.dialog-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
