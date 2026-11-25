@@ -4,6 +4,7 @@ import { request } from './api'
 import { formatDate } from './date'
 import type { Speaker, SpeakerDetail } from './types'
 import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
+import { useConfirm } from './Dialog'
 
 export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto, onClose, onRequestClose = onClose }: {
   speaker?: Speaker
@@ -13,6 +14,7 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
   onClose: () => void
   onRequestClose?: () => void
 }) {
+  const [confirm, confirmDialog] = useConfirm()
   const [name, setName] = useState(speaker?.name ?? '')
   const [bio, setBio] = useState(speaker?.bio ?? '')
   const [website, setWebsite] = useState(speaker?.website ?? '')
@@ -56,7 +58,7 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
   }
 
   async function remove() {
-    if (onDelete && window.confirm('Rednerprofil löschen? Zugeordnete Slots verlieren diesen Redner.')) {
+    if (onDelete && await confirm({ title: 'Rednerprofil löschen?', message: 'Zugeordnete Slots verlieren diesen Redner.', confirmLabel: 'Rednerprofil löschen' })) {
       if (await onDelete()) onClose()
     }
   }
@@ -69,11 +71,12 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
       <label>Website<input type="url" value={website} onChange={event => setWebsite(event.target.value)} /></label>
       <label>Foto (JPEG, PNG oder WebP; maximal 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setPhoto(event.target.files?.[0] ?? null)} /></label>
       {speaker?.photo_url && <div className="speaker-photo"><img src={speaker.photo_url} alt={`Foto von ${speaker.name}`} /><button type="button" className="text-button" onClick={() => void onDeletePhoto?.()}>Foto entfernen</button></div>}
-      <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={remove}>Löschen</button>}</div>
+      <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={() => void remove()}>Löschen</button>}</div>
     </form>
     {speaker && <section className="speaker-sessions"><h3>Sessions</h3>
       {detailError && <p role="alert">{detailError}</p>}
       {detail && (detail.sessions.length ? <ul>{detail.sessions.map(session => <li key={session.id}>{session.day_id === null || session.date === null ? 'Ungeplant' : `${formatDate(session.date)} · ${session.start_time?.slice(0, 5)}–${session.end_time?.slice(0, 5)} · ${session.room_name}`}: {session.topic}</li>)}</ul> : <p className="muted">Noch keine Sessions</p>)}
     </section>}
+    {confirmDialog}
   </aside>
 }

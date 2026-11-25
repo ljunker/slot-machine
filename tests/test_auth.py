@@ -263,3 +263,49 @@ def test_expired_invitation_is_rejected(client, db, monkeypatch):
     assert guest.post("/api/auth/invitations/accept", json={
         "token": token, "password": "Anotherpassword123!",
     }).status_code == 404
+
+
+def test_pending_invitations_can_be_listed_resent_and_revoked(client, db, monkeypatch):
+    event_id = create_event(client)
+    other_event = create_event(client, "Andere")
+    sent = []
+    monkeypatch.setattr("app.api.routes.auth.send_email", lambda to, subject, body: sent.append(body))
+    for email, role in [("one@example.invalid", "helper"), ("two@example.invalid", "editor")]:
+        assert client.post(f"/api/events/{event_id}/members/invitations", json={"email": email, "role": role}).status_code == 204
+    assert client.post(f"/api/events/{other_event}/members/invitations", json={"email": "x@example.invalid", "role": "helper"}).status_code == 204
+
+    listed = client.get(f"/api/events/{event_id}/members/invitations")
+    assert listed.status_code == 200, listed.text
+    assert sorted((item["email"], item["role"], item["expired"]) for item in listed.json()) == [
+        ("one@example.invalid", "helper", False), ("two@example.invalid", "editor", False),
+    ]
+    assert all(item["expires_at"] > now() for item in listed.json())
+
+    # Erneut senden ersetzt die alte Einladung, statt eine zweite anzulegen.
+    first_token = re.search(r"/einladung/([^\s]+)", sent[0]).group(1)
+    assert client.post(f"/api/events/{event_id}/members/invitations", json={"email": "one@example.invalid", "role": "helper"}).status_code == 204
+    assert len(client.get(f"/api/events/{event_id}/members/invitations").json()) == 2
+    assert TestClient(app).get(f"/api/auth/invitations/{first_token}").status_code == 404
+
+    # Abgelaufene Einladungen bleiben sichtbar und sind markiert.
+    record = db.query(AuthToken).filter_by(email="two@example.invalid", consumed_at=None).one()
+    record.expires_at = now() - 1
+    db.commit()
+    expired = {item["email"]: item for item in client.get(f"/api/events/{event_id}/members/invitations").json()}
+    assert expired["two@example.invalid"]["expired"] is True
+
+    # Zurückziehen macht den Link ungültig; fremde Veranstaltungen sind nicht erreichbar.
+    invitation_id = expired["one@example.invalid"]["id"]
+    assert client.delete(f"/api/events/{other_event}/members/invitations/{invitation_id}").status_code == 404
+    assert client.delete(f"/api/events/{event_id}/members/invitations/{invitation_id}").status_code == 204
+    assert client.delete(f"/api/events/{event_id}/members/invitations/{invitation_id}").status_code == 404
+    latest_token = re.search(r"/einladung/([^\s]+)", sent[-1]).group(1)
+    assert TestClient(app).get(f"/api/auth/invitations/{latest_token}").status_code == 404
+    assert [item["email"] for item in client.get(f"/api/events/{event_id}/members/invitations").json()] == ["two@example.invalid"]
+
+    create_user(db, "helper@example.invalid", event_id, "helper")
+    assert login_as("helper@example.invalid").get(f"/api/events/{event_id}/members/invitations").status_code == 403
+
+
+def test_user_list_includes_names(client):
+    assert client.get("/api/users").json()[0]["name"] == "Testadmin"

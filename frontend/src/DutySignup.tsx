@@ -16,7 +16,7 @@ export default function DutySignup({ duty, currentUserId, onSignup }: {
   }
   return <div className="duty-signup">
     <small>{duty.user_ids.length} / {duty.capacity} Plätze belegt</small>
-    <button type="button" className="text-button" onKeyDown={event => event.stopPropagation()} disabled={busy || !assigned && (full || duty.status !== 'active')}
+    <button type="button" className="secondary small" onKeyDown={event => event.stopPropagation()} disabled={busy || !assigned && (full || duty.status !== 'active')}
       aria-label={`${assigned ? 'Austragen aus' : 'Eintragen in'} ${duty.title || duty.session_topic || 'Dienst'}`}
       onClick={event => { event.stopPropagation(); void toggle() }}>{busy ? 'Speichere …' : assigned ? 'Austragen' : full ? 'Voll' : 'Eintragen'}</button>
   </div>

@@ -23,6 +23,8 @@ import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyPar
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
 import UndoToast from './UndoToast'
+import { ToastRegion, useToasts } from './Toast'
+import { useConfirm } from './Dialog'
 import UnsavedChangesDialog from './UnsavedChangesDialog'
 import { UnsavedChangesProvider } from './unsavedChanges'
 import type { UnsavedEditor } from './unsavedChanges'
@@ -32,6 +34,10 @@ import type { SlotPositionPatch } from './optimistic'
 
 type Panel = { kind: EditorKind | 'speaker' | 'category' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number | null; start: number; topic: string }
+
+const PANEL_NAMES: Record<Panel['kind'], string> = {
+  event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot', speaker: 'Rednerprofil', category: 'Kategorie', duty: 'Dienst',
+}
 
 export default function App({ currentUser, onLogout, onProfileChange, onPasswordChanged }: {
   currentUser: CurrentUser
@@ -57,8 +63,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [unplanned, setUnplanned] = useState<UnplannedSession[]>([])
   const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
   const [panel, setPanel] = useState<Panel | null>(null)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const toast = useToasts()
+  const showToast = toast.show
+  const [confirm, confirmDialog] = useConfirm()
+  /** Errors appear as a toast that stays until it is closed. An empty message changes nothing. */
+  const setError = useCallback((message: string) => showToast('error', message), [showToast])
+  const showSuccess = useCallback((message: string) => showToast('success', message), [showToast])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
@@ -244,6 +254,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         await write<Slot>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? '/slots' : `/slots/${panel.id}`, panel.id === null ? { ...body, event_id: eventId } : body)
         await refresh()
       }
+      showSuccess(`${PANEL_NAMES[panel.kind]} gespeichert.`)
       return true
     } catch (cause) {
       if (savedEvent) {
@@ -262,6 +273,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       await write<void>('DELETE', path)
       await loadAll(panel.kind === 'event' ? null : eventId, panel.kind === 'day' ? null : dayId, { quiet: panel.kind !== 'event' })
       if (panel.kind === 'event') setView('schedule')
+      showSuccess(`${PANEL_NAMES[panel.kind]} gelöscht.`)
       return true
     } catch (cause) {
       setError((cause as Error).message)
@@ -276,6 +288,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       saved = await write<Speaker>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/speakers` : `/speakers/${panel.id}`, body)
       if (photo) await uploadImage(`/speakers/${saved.id}/photo`, 'photo', photo)
       await refresh()
+      showSuccess('Rednerprofil gespeichert.')
       return true
     } catch (cause) {
       if (saved) await refresh()
@@ -291,6 +304,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       await write<Category>(panel.id === null ? 'POST' : 'PATCH',
         panel.id === null ? `/events/${eventId}/categories` : `/categories/${panel.id}`, body)
       await refresh()
+      showSuccess('Kategorie gespeichert.')
       return true
     } catch (cause) {
       setError((cause as Error).message)
@@ -315,11 +329,16 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   }
 
   async function clearEventChangeNotices() {
-    if (eventId === null || !window.confirm('Alle Verschoben- und Geändert-Flags dieser Veranstaltung entfernen? Abgesagte Sessions bleiben abgesagt.')) return
+    if (eventId === null || !await confirm({
+      title: 'Alle Änderungs-Flags entfernen?',
+      message: 'Alle Verschoben- und Geändert-Flags dieser Veranstaltung werden entfernt. Abgesagte Sessions bleiben abgesagt.',
+      confirmLabel: 'Flags entfernen',
+    })) return
     setClearingChangeNotices(true)
     try {
       await write<void>('DELETE', `/events/${eventId}/change-notices`)
       await refresh()
+      showSuccess('Änderungs-Flags entfernt.')
     } catch (cause) { setError((cause as Error).message) }
     finally { setClearingChangeNotices(false) }
   }
@@ -339,6 +358,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     try {
       await write<Duty>(panel.id === null ? 'POST' : 'PATCH', panel.id === null ? `/events/${eventId}/duties` : `/duties/${panel.id}`, body)
       await refresh()
+      showSuccess('Dienst gespeichert.')
       return true
     } catch (cause) { setError((cause as Error).message); return false }
   }
@@ -493,8 +513,6 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         <HeaderMenu actions={headerActions} />
       </div>
     </header>
-    {notice && <div className="state-message" role="status">{notice}<button type="button" onClick={() => setNotice('')}>Schließen</button></div>}
-    {error && <div className="error-banner" role="alert"><span>{error}</span><button onClick={() => setError('')}>Schließen</button></div>}
     <div className="workspace">
       <nav className="sidebar" aria-label="Planung" inert={loading}>
         <section>
@@ -504,10 +522,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
             {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
           </select>
           {selectedEvent && <p className="muted">{formatDate(selectedEvent.start_date)} bis {formatDate(selectedEvent.end_date)}</p>}
-          {selectedEvent && isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
-          {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowTeam(true)}>Team verwalten</button>}
-          {selectedEvent && isAdmin && <button type="button" className="text-button" onClick={() => setShowDesign(true)}>Besucherprogramm gestalten</button>}
-          {selectedEvent && canPlan && <button type="button" className="text-button clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
+          {selectedEvent && (isAdmin || canPlan) && <div className="sidebar-actions">
+            {isAdmin && <button type="button" className="secondary small" onClick={() => setShowTeam(true)}>Team verwalten</button>}
+            {isAdmin && <button type="button" className="secondary small" onClick={() => setShowDesign(true)}>Besucherprogramm gestalten</button>}
+            {isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
+            {canPlan && <button type="button" className="danger small clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
+          </div>}
         </section>
         {selectedEvent && <section>
           <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
@@ -569,9 +589,11 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         <div className="plan-heading"><div><span className="eyebrow">{isDashboard ? 'PLANUNGSSTAND' : view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatDate(selectedDay.date) : 'Programm'}</h2><p>{isOverview ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
-            {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.pdf`} download>PDF-Programm herunterladen</a>}
-            {selectedEvent && days.length > 0 && <a className="program-link" href={`/api/events/${selectedEvent.id}/program.json`} download>Programm als JSON</a>}
-            {selectedEvent && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
+            {selectedEvent && days.length > 0 && <HeaderMenu label="Exportieren" panelLabel="Export" triggerClassName="secondary menu-trigger" actions={[
+              { label: 'PDF-Programm herunterladen', href: `/api/events/${selectedEvent.id}/program.pdf`, download: true },
+              { label: 'Programm als JSON', href: `/api/events/${selectedEvent.id}/program.json`, download: true },
+            ]} />}
+            {selectedEvent && canPlan && !isOverview && <button className="secondary" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
             {selectedDay && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}>+ Slot</button>}
           </div>
         </div>
@@ -646,7 +668,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       />}
       {showRestore && isAdmin && <BackupRestore events={events} selectedEventId={eventId} allowCreate={isSuperadmin} onComplete={async (restoredId, warnings = []) => {
         setPanel(null)
-        if (await loadAll(restoredId, null)) { setShowRestore(false); setNotice(warnings.join(' ')) }
+        if (await loadAll(restoredId, null)) { setShowRestore(false); showSuccess(['Backup wiederhergestellt.', ...warnings].join(' ')) }
         else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
       {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
@@ -657,7 +679,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         return refresh()
       }} onPasswordChanged={() => onPasswordChanged?.()} onClose={() => setShowAccount(false)} />}
     </div>
-    {undoEntry && <UndoToast entry={undoEntry} onDismiss={() => setUndoEntry(current => current?.id === undoEntry.id ? null : current)} />}
+    <ToastRegion toasts={toast.toasts} onDismiss={toast.dismiss}>
+      {undoEntry && <UndoToast entry={undoEntry} onDismiss={() => setUndoEntry(current => current?.id === undoEntry.id ? null : current)} />}
+    </ToastRegion>
+    {confirmDialog}
     {pendingAction && <UnsavedChangesDialog onSave={saveBeforeLeaving} onDiscard={discardAndLeave} onCancel={() => setPendingAction(null)} />}
   </div></UnsavedChangesProvider>
 }

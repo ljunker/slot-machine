@@ -107,7 +107,8 @@ it('disables event creation while loading and enables it afterwards', async () =
 it('offers the program as PDF and JSON to everyone in the planning team', async () => {
   mockApi()
   render(<App currentUser={user('helper')} />)
-  const json = await screen.findByRole('link', { name: 'Programm als JSON' })
+  fireEvent.click(await screen.findByRole('button', { name: 'Exportieren' }))
+  const json = screen.getByRole('link', { name: 'Programm als JSON' })
   expect(json.getAttribute('href')).toBe('/api/events/1/program.json')
   expect(json.hasAttribute('download')).toBe(true)
   expect(screen.getByRole('link', { name: 'PDF-Programm herunterladen' }).getAttribute('href')).toBe('/api/events/1/program.pdf')

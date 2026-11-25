@@ -7,13 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.auth import issue_invitation
 from app.db.database import get_db
-from app.models.auth import AuthSession, EventMembership, User
+from app.models.auth import AuthSession, AuthToken, EventMembership, User
 from app.models.duty import Duty
 from app.models.helper import duty_users
 from app.services.auth import (
     active_superadmin_count,
     authorize_event,
     normalize_email,
+    now,
     require_superadmin,
     require_user,
 )
@@ -84,6 +85,32 @@ def invite_member(event_id: int, data: InvitationInput, db: Session = Depends(ge
     return Response(status_code=204)
 
 
+@router.get("/events/{event_id}/members/invitations")
+def list_invitations(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "admin")
+    current = now()
+    tokens = db.scalars(select(AuthToken).where(
+        AuthToken.kind == "invite",
+        AuthToken.event_id == event_id,
+        AuthToken.consumed_at.is_(None),
+    ).order_by(AuthToken.expires_at.desc(), AuthToken.id.desc())).all()
+    return [
+        {"id": token.id, "email": token.email, "role": token.role, "expires_at": token.expires_at, "expired": token.expires_at <= current}
+        for token in tokens
+    ]
+
+
+@router.delete("/events/{event_id}/members/invitations/{invitation_id}", status_code=204)
+def revoke_invitation(event_id: int, invitation_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    authorize_event(db, user, event_id, "admin")
+    token = db.get(AuthToken, invitation_id)
+    if token is None or token.kind != "invite" or token.event_id != event_id or token.consumed_at is not None:
+        raise HTTPException(status_code=404, detail="Einladung nicht gefunden")
+    token.consumed_at = now()
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.patch("/events/{event_id}/members/{user_id}")
 def update_member(event_id: int, user_id: int, data: RoleInput, db: Session = Depends(get_db), user: User = Depends(require_user)):
     authorize_event(db, user, event_id, "admin")
@@ -116,7 +143,7 @@ def remove_member(event_id: int, user_id: int, db: Session = Depends(get_db), us
 @router.get("/users")
 def list_users(db: Session = Depends(get_db), user: User = Depends(require_superadmin)):
     return [
-        {"id": item.id, "email": item.email, "is_active": item.is_active, "is_superadmin": item.is_superadmin}
+        {"id": item.id, "email": item.email, "name": item.name, "is_active": item.is_active, "is_superadmin": item.is_superadmin}
         for item in db.scalars(select(User).order_by(User.email)).all()
     ]
 
@@ -145,4 +172,4 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db), c
     if not next_active:
         db.execute(delete(AuthSession).where(AuthSession.user_id == user_id))
     db.commit()
-    return {"id": target.id, "email": target.email, "is_active": target.is_active, "is_superadmin": target.is_superadmin}
+    return {"id": target.id, "email": target.email, "name": target.name, "is_active": target.is_active, "is_superadmin": target.is_superadmin}

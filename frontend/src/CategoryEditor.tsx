@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Category } from './types'
 import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
+import { useConfirm } from './Dialog'
 
 const DEFAULT_COLOR = '#4569DD'
 
@@ -12,6 +13,7 @@ export default function CategoryEditor({ category, onSave, onDelete, onClose, on
   onClose: () => void
   onRequestClose?: () => void
 }) {
+  const [confirm, confirmDialog] = useConfirm()
   const [name, setName] = useState(category?.name ?? '')
   const [color, setColor] = useState(category?.color ?? DEFAULT_COLOR)
   const form = useRef<HTMLFormElement>(null)
@@ -34,7 +36,7 @@ export default function CategoryEditor({ category, onSave, onDelete, onClose, on
   }
 
   async function remove() {
-    if (!onDelete || !window.confirm('Kategorie löschen? Alle Zuordnungen zu Sessions werden entfernt.')) return
+    if (!onDelete || !await confirm({ title: 'Kategorie löschen?', message: 'Alle Zuordnungen zu Sessions werden entfernt.', confirmLabel: 'Kategorie löschen' })) return
     if (await onDelete()) onClose()
   }
 
@@ -45,5 +47,6 @@ export default function CategoryEditor({ category, onSave, onDelete, onClose, on
       <label>Farbe<input required type="color" value={color} onChange={event => setColor(event.target.value)} /></label>
       <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={() => void remove()}>Löschen</button>}</div>
     </form>
+    {confirmDialog}
   </aside>
 }

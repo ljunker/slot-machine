@@ -2,12 +2,21 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 export type HeaderMenuAction = {
   label: string
-  onClick: () => void
+  onClick?: () => void
+  /** Renders the entry as a link instead of a button. */
+  href?: string
+  download?: boolean
   disabled?: boolean
   separatorBefore?: boolean
 }
 
-export default function HeaderMenu({ actions }: { actions: HeaderMenuAction[] }) {
+export default function HeaderMenu({ actions, label = 'Menü', panelLabel = 'Header-Aktionen', triggerClassName = 'header-secondary', align = 'right' }: {
+  actions: HeaderMenuAction[]
+  label?: string
+  panelLabel?: string
+  triggerClassName?: string
+  align?: 'left' | 'right'
+}) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -31,15 +40,19 @@ export default function HeaderMenu({ actions }: { actions: HeaderMenuAction[] })
     setOpen(false)
     trigger.current?.focus()
   }}>
-    <button ref={trigger} type="button" className="header-secondary" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
-      Menü <svg className="header-menu-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+    <button ref={trigger} type="button" className={triggerClassName} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
+      {label} <svg className="header-menu-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
     </button>
-    <div id={panelId} className="header-menu-panel" role="group" aria-label="Header-Aktionen" hidden={!open}>
-      {actions.map(action => <button key={action.label} type="button" className={`header-menu-action${action.separatorBefore ? ' header-menu-separated' : ''}`} disabled={action.disabled} onClick={() => {
-        setOpen(false)
-        trigger.current?.focus()
-        action.onClick()
-      }}>{action.label}</button>)}
+    <div id={panelId} className={`header-menu-panel${align === 'left' ? ' header-menu-panel-left' : ''}`} role="group" aria-label={panelLabel} hidden={!open}>
+      {actions.map(action => {
+        const className = `header-menu-action${action.separatorBefore ? ' header-menu-separated' : ''}`
+        if (action.href) return <a key={action.label} className={className} href={action.href} download={action.download || undefined} onClick={() => setOpen(false)}>{action.label}</a>
+        return <button key={action.label} type="button" className={className} disabled={action.disabled} onClick={() => {
+          setOpen(false)
+          trigger.current?.focus()
+          action.onClick?.()
+        }}>{action.label}</button>
+      })}
     </div>
   </div>
 }

@@ -4,6 +4,9 @@ import { uploadImage, write } from './api'
 import { contrastRatio, programDesign } from './branding'
 import { PublicFooter, PublicHeader } from './PublicChrome'
 import type { Event, InfoBlock, PartnerLogo } from './types'
+import Dialog, { useConfirm } from './Dialog'
+import type { ConfirmOptions } from './Dialog'
+import InlineMessage from './InlineMessage'
 
 type ColorField = 'background_color' | 'text_color' | 'accent_color' | 'header_background_color' | 'card_color'
 type TextField = 'program_eyebrow' | 'program_subtitle' | 'website_url'
@@ -81,9 +84,11 @@ function ImageField({ label, url, alt, path, field, onDone, onError }: {
   </div>
 }
 
-function PartnerRow({ eventId, partner, first, last, onChanged, onError, onMove }: {
+type Confirm = (options: ConfirmOptions) => Promise<boolean>
+
+function PartnerRow({ eventId, partner, first, last, onChanged, onError, onMove, confirm }: {
   eventId: number; partner: PartnerLogo; first: boolean; last: boolean
-  onChanged: () => Promise<unknown>; onError: (message: string) => void; onMove: (offset: number) => void
+  onChanged: () => Promise<unknown>; onError: (message: string) => void; onMove: (offset: number) => void; confirm: Confirm
 }) {
   const [name, setName] = useState(partner.name)
   const [subtitle, setSubtitle] = useState(partner.subtitle ?? '')
@@ -99,7 +104,7 @@ function PartnerRow({ eventId, partner, first, last, onChanged, onError, onMove 
   }
 
   async function remove() {
-    if (!window.confirm(`Partner „${partner.name}“ entfernen?`)) return
+    if (!await confirm({ title: 'Partner entfernen?', message: `„${partner.name}“ und sein Logo werden aus dem Besucherprogramm entfernt.`, confirmLabel: 'Partner entfernen' })) return
     try {
       await write('DELETE', base)
       await onChanged()
@@ -113,18 +118,18 @@ function PartnerRow({ eventId, partner, first, last, onChanged, onError, onMove 
       <label>Link<input type="url" maxLength={255} placeholder="https://" value={url} onChange={event => setUrl(event.target.value)} /></label>
       <ImageField label="Partnerlogo" url={partner.image_url} alt={`Logo von ${partner.name}`} path={`${base}/image`} field="image" onDone={onChanged} onError={onError} />
       <div className="design-item-actions">
-        <button type="submit" className="primary">Partner speichern</button>
+        <button type="submit" className="secondary small">Partner speichern</button>
         <button type="button" className="icon-button" aria-label={`${partner.name} nach oben`} disabled={first} onClick={() => onMove(-1)}>↑</button>
         <button type="button" className="icon-button" aria-label={`${partner.name} nach unten`} disabled={last} onClick={() => onMove(1)}>↓</button>
-        <button type="button" className="text-button" onClick={() => void remove()}>Löschen</button>
+        <button type="button" className="danger small" onClick={() => void remove()}>Löschen</button>
       </div>
     </form>
   </li>
 }
 
-function InfoRow({ eventId, block, first, last, onChanged, onError, onMove }: {
+function InfoRow({ eventId, block, first, last, onChanged, onError, onMove, confirm }: {
   eventId: number; block: InfoBlock; first: boolean; last: boolean
-  onChanged: () => Promise<unknown>; onError: (message: string) => void; onMove: (offset: number) => void
+  onChanged: () => Promise<unknown>; onError: (message: string) => void; onMove: (offset: number) => void; confirm: Confirm
 }) {
   const [title, setTitle] = useState(block.title)
   const [body, setBody] = useState(block.body)
@@ -139,7 +144,7 @@ function InfoRow({ eventId, block, first, last, onChanged, onError, onMove }: {
   }
 
   async function remove() {
-    if (!window.confirm(`Infoblock „${block.title}“ löschen?`)) return
+    if (!await confirm({ title: 'Infoblock löschen?', message: `„${block.title}“ wird aus Besucherprogramm und PDF entfernt.`, confirmLabel: 'Infoblock löschen' })) return
     try {
       await write('DELETE', base)
       await onChanged()
@@ -151,10 +156,10 @@ function InfoRow({ eventId, block, first, last, onChanged, onError, onMove }: {
       <label>Titel<input required maxLength={120} value={title} onChange={event => setTitle(event.target.value)} /></label>
       <label>Text<textarea maxLength={4000} rows={3} value={body} onChange={event => setBody(event.target.value)} /></label>
       <div className="design-item-actions">
-        <button type="submit" className="primary">Infoblock speichern</button>
+        <button type="submit" className="secondary small">Infoblock speichern</button>
         <button type="button" className="icon-button" aria-label={`${block.title} nach oben`} disabled={first} onClick={() => onMove(-1)}>↑</button>
         <button type="button" className="icon-button" aria-label={`${block.title} nach unten`} disabled={last} onClick={() => onMove(1)}>↓</button>
-        <button type="button" className="text-button" onClick={() => void remove()}>Löschen</button>
+        <button type="button" className="danger small" onClick={() => void remove()}>Löschen</button>
       </div>
     </form>
   </li>
@@ -173,6 +178,7 @@ export default function ProgramDesignEditor({ event, onChanged, onClose }: {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [confirm, confirmDialog] = useConfirm()
   const partners = event.partner_logos ?? []
   const blocks = event.info_blocks ?? []
   const base = `/events/${event.id}`
@@ -233,10 +239,10 @@ export default function ProgramDesignEditor({ event, onChanged, onClose }: {
     } catch (cause) { report((cause as Error).message) }
   }
 
-  return <div className="backup-backdrop" role="presentation"><section className="backup-dialog design-dialog" role="dialog" aria-modal="true" aria-label="Besucherprogramm gestalten">
+  return <Dialog className="design-dialog" label="Besucherprogramm gestalten" closeOnBackdrop={false} onClose={onClose}>
     <div className="editor-heading"><h2>Besucherprogramm gestalten</h2><button type="button" className="text-button" onClick={onClose}>Schließen</button></div>
-    {error && <p role="alert">{error}</p>}
-    {message && <p role="status">{message}</p>}
+    {error && <InlineMessage tone="error">{error}</InlineMessage>}
+    {message && <InlineMessage tone="success">{message}</InlineMessage>}
     <div className="design-layout">
       <div className="design-settings">
         <form onSubmit={submit => void save(submit)} className="design-form" aria-label="Farben und Texte">
@@ -267,10 +273,10 @@ export default function ProgramDesignEditor({ event, onChanged, onClose }: {
         <fieldset><legend>Partnerlogos</legend>
           <ul className="design-list">{partners.map((partner, index) => <PartnerRow key={partner.id} eventId={event.id} partner={partner}
             first={index === 0} last={index === partners.length - 1} onChanged={changed} onError={report}
-            onMove={offset => void reorder(`${base}/partner-logos/order`, move(partners, partner.id, offset))} />)}</ul>
+            onMove={offset => void reorder(`${base}/partner-logos/order`, move(partners, partner.id, offset))} confirm={confirm} />)}</ul>
           <form className="management-form" onSubmit={submit => { submit.preventDefault(); void create(`${base}/partner-logos`, { name: newPartner }, () => setNewPartner('')) }}>
             <label>Neuer Partner<input required maxLength={120} value={newPartner} onChange={change => setNewPartner(change.target.value)} /></label>
-            <button type="submit" className="primary">Partner hinzufügen</button>
+            <button type="submit" className="secondary">Partner hinzufügen</button>
           </form>
         </fieldset>
 
@@ -278,10 +284,10 @@ export default function ProgramDesignEditor({ event, onChanged, onClose }: {
           <p className="muted">Erscheinen unter dem Programm und als eigene Seite im PDF.</p>
           <ul className="design-list">{blocks.map((block, index) => <InfoRow key={block.id} eventId={event.id} block={block}
             first={index === 0} last={index === blocks.length - 1} onChanged={changed} onError={report}
-            onMove={offset => void reorder(`${base}/info-blocks/order`, move(blocks, block.id, offset))} />)}</ul>
+            onMove={offset => void reorder(`${base}/info-blocks/order`, move(blocks, block.id, offset))} confirm={confirm} />)}</ul>
           <form className="management-form" onSubmit={submit => { submit.preventDefault(); void create(`${base}/info-blocks`, { title: newInfo, body: '' }, () => setNewInfo('')) }}>
             <label>Neuer Infoblock<input required maxLength={120} placeholder="z. B. Gut zu wissen" value={newInfo} onChange={change => setNewInfo(change.target.value)} /></label>
-            <button type="submit" className="primary">Infoblock hinzufügen</button>
+            <button type="submit" className="secondary">Infoblock hinzufügen</button>
           </form>
         </fieldset>
       </div>
@@ -307,5 +313,6 @@ export default function ProgramDesignEditor({ event, onChanged, onClose }: {
         </div>
       </div>
     </div>
-  </section></div>
+    {confirmDialog}
+  </Dialog>
 }
