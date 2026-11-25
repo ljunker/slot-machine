@@ -22,6 +22,8 @@ import { TeamManagement, UserManagement } from './TeamManagement'
 import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
+import UndoToast from './UndoToast'
+import type { UndoEntry } from './UndoToast'
 import { applyDutyOrder, applyDutyPatch, applySlotPatch } from './optimistic'
 import type { SlotPositionPatch } from './optimistic'
 
@@ -56,6 +58,8 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
+  const undoNumber = useRef(0)
   const [showRestore, setShowRestore] = useState(false)
   const [showTeam, setShowTeam] = useState(false)
   const [showDesign, setShowDesign] = useState(false)
@@ -146,7 +150,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     return () => { active = false }
   }, [isOverview, eventId, days, loading, loadError])
 
-  useEffect(() => { setDashboardDayId(null) }, [eventId])
+  useEffect(() => {
+    setDashboardDayId(null)
+    setUndoEntry(null)
+  }, [eventId])
 
   useEffect(() => {
     if (view === 'dashboard' && !isAdmin) {
@@ -344,6 +351,36 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     )
   }
 
+  function offerUndo(message: string, undo: () => Promise<unknown>) {
+    setUndoEntry({ id: ++undoNumber.current, message, undo })
+  }
+
+  /** Drag & drop in the plan: save at once, but offer to take the change back. */
+  async function dragSlot(slotId: number, patch: SlotPositionPatch) {
+    const slot = [...(schedule?.rooms.flatMap(room => room.slots) ?? []), ...(schedule?.shared_slots ?? [])].find(item => item.id === slotId)
+    if (!slot || !await changeSlot(slotId, patch)) return
+    const previous: SlotPositionPatch = { room_id: slot.room_id, start_time: slot.start_time.slice(0, 5), end_time: slot.end_time.slice(0, 5) }
+    const resized = patch.start_time === undefined && patch.room_id === undefined
+    offerUndo(`„${slot.topic}“ ${resized ? 'in der Dauer geändert' : 'verschoben'}.`, () => changeSlot(slotId, previous))
+  }
+
+  async function dragDuty(duty: Duty, patch: DutyPatch) {
+    if (!await changeDuty(duty, patch)) return
+    const previous: DutyPatch = { start_time: duty.start_time?.slice(0, 5), end_time: duty.end_time?.slice(0, 5) }
+    if (patch.room_id !== undefined) previous.room_id = duty.room_id
+    if (patch.kind !== undefined && duty.kind !== 'session') previous.kind = duty.kind
+    const title = duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
+    offerUndo(`Dienst „${title}“ ${patch.start_time === undefined ? 'in der Dauer geändert' : 'verschoben'}.`,
+      () => changeDuty({ ...duty, ...patch, start_time: patch.start_time ?? duty.start_time, end_time: patch.end_time ?? duty.end_time } as Duty, previous))
+  }
+
+  async function dragDutyOrder(selectedDayId: number, roomId: number | null, dutyIds: number[]) {
+    const previous = helperPlan.duties.filter(duty => dutyIds.includes(duty.id))
+      .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id).map(duty => duty.id)
+    if (!await reorderDuties(selectedDayId, roomId, dutyIds)) return
+    offerUndo('Dienste neu angeordnet.', () => reorderDuties(selectedDayId, roomId, previous))
+  }
+
   function beginBacklogDrag(event: PointerEvent, session: UnplannedSession) {
     if (event.button !== 0 || !schedule || dayId === null) return
     event.preventDefault()
@@ -378,6 +415,8 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       if (target) void changeSlot(session.id, {
         day_id: dayId, room_id: target.roomId,
         start_time: toTime(target.start), end_time: toTime(target.start + 60),
+      }).then(saved => {
+        if (saved) offerUndo(`„${session.topic}“ eingeplant.`, () => changeSlot(session.id, { day_id: null, room_id: null, start_time: null, end_time: null }))
       })
     }
     function cancel() { cleanup() }
@@ -489,7 +528,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           </div>
         </div>
         {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
-        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={changeSlot} onChangeDuty={changeDuty} onReorderDuties={reorderDuties} />}
+        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => setPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => setPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
         {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
         {canPlan && !isOverview && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {isDashboard && selectedEvent && <Dashboard
@@ -566,5 +605,6 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         return refresh()
       }} onPasswordChanged={() => onPasswordChanged?.()} onClose={() => setShowAccount(false)} />}
     </div>
+    {undoEntry && <UndoToast entry={undoEntry} onDismiss={() => setUndoEntry(current => current?.id === undoEntry.id ? null : current)} />}
   </div>
 }

@@ -107,7 +107,7 @@ def test_categories_in_public_pdf_and_backup(client):
 
     backup = client.get(f"/api/backups/events/{source}").content
     with ZipFile(BytesIO(backup)) as archive:
-        assert archive.read("manifest.csv").splitlines()[1].startswith(b"7,")
+        assert archive.read("manifest.csv").splitlines()[1].startswith(b"8,")
         assert len(archive.read("slot_categories.csv").splitlines()) == 28
     invalid = BytesIO()
     with ZipFile(BytesIO(backup)) as original, ZipFile(invalid, "w", ZIP_DEFLATED) as output:

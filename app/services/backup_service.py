@@ -60,8 +60,9 @@ from app.services.speaker_service import (
     photo_directory,
 )
 
-FORMAT_VERSION = "7"
-SUPPORTED_VERSIONS = {"1", "2", "3", "4", "5", "6", FORMAT_VERSION}
+FORMAT_VERSION = "8"
+SUPPORTED_VERSIONS = {"1", "2", "3", "4", "5", "6", "7", FORMAT_VERSION}
+DESIGN_VERSIONS = {"7", FORMAT_VERSION}
 MAX_INFO_BODY = 4000
 logger = logging.getLogger(__name__)
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
@@ -369,7 +370,7 @@ def _parse_archive(
             archive_order = tuple(
                 name for name in (LEGACY_ORDER if version in {"1", "2", "3", "4"} else ORDER)
                 if (version not in {"1", "2"} or name not in {"categories", "slot_categories"})
-                and (version == FORMAT_VERSION or name not in DESIGN_TABLES)
+                and (version in DESIGN_VERSIONS or name not in DESIGN_TABLES)
             )
             required = {"manifest.csv", *(f"{name}.csv" for name in archive_order)}
             if not required.issubset(names):
@@ -383,9 +384,11 @@ def _parse_archive(
             rows: dict[str, list[dict]] = {}
             for name in archive_order:
                 columns = list(_columns(name))
-                if version != FORMAT_VERSION and name == "events":
+                if version not in DESIGN_VERSIONS and name == "events":
                     columns = [column for column in columns if column.name not in PROGRAM_DESIGN_COLUMNS]
-                if version not in {"6", FORMAT_VERSION} and name == "slots":
+                if version != FORMAT_VERSION and name == "events":
+                    columns = [column for column in columns if column.name != "program_published"]
+                if version in {"1", "2", "3", "4", "5"} and name == "slots":
                     columns = [column for column in columns if column.name != "speaker_required"]
                 if version in {"1", "2", "3"} and name == "slots":
                     columns = [column for column in columns if column.name != "scope"]
@@ -405,10 +408,13 @@ def _parse_archive(
                     }
                     for row in raw
                 ]
-                if version != FORMAT_VERSION and name == "events":
+                if version not in DESIGN_VERSIONS and name == "events":
                     for row in rows[name]:
                         row.update(dict.fromkeys(PROGRAM_DESIGN_COLUMNS))
-                if version not in {"6", FORMAT_VERSION} and name == "slots":
+                if version != FORMAT_VERSION and name == "events":
+                    for row in rows[name]:
+                        row["program_published"] = True
+                if version in {"1", "2", "3", "4", "5"} and name == "slots":
                     for row in rows[name]:
                         row["speaker_required"] = True
                 if version in {"1", "2", "3"} and name == "slots":
@@ -781,7 +787,7 @@ def restore_backup(db: Session, content: bytes, target_id: int | None) -> dict:
         else:
             event = db.get(Event, target_id)
             old_images, old_photos = _delete_event_contents(db, target_id)
-        for key in ("name", "start_date", "end_date", "accent_color", *PROGRAM_DESIGN_COLUMNS):
+        for key in ("name", "start_date", "end_date", "program_published", "accent_color", *PROGRAM_DESIGN_COLUMNS):
             setattr(event, key, event_data[key])
         for key in ("logo_filename", "header_graphic_filename", "footer_graphic_filename"):
             setattr(event, key, names.get(event_data[key]))

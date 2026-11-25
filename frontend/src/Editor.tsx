@@ -26,6 +26,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   const [name, setName] = useState(kind === 'event' ? event?.name ?? '' : room?.name ?? '')
   const [startDate, setStartDate] = useState(event?.start_date ?? '')
   const [endDate, setEndDate] = useState(event?.end_date ?? '')
+  const [published, setPublished] = useState(event?.program_published ?? false)
   const [date, setDate] = useState(day?.date ?? event?.start_date ?? '')
   const [start, setStart] = useState(kind === 'slot' ? slot?.start_time?.slice(0, 5) ?? day?.start_time.slice(0, 5) ?? '09:00' : day?.start_time.slice(0, 5) ?? '09:00')
   const [end, setEnd] = useState(kind === 'slot'
@@ -50,7 +51,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   async function submit(e: FormEvent) {
     e.preventDefault()
     let body: Record<string, unknown>
-    if (kind === 'event') body = { name, start_date: startDate, end_date: endDate }
+    if (kind === 'event') body = { name, start_date: startDate, end_date: endDate, program_published: published }
     else if (kind === 'day') body = { date, start_time: start, end_time: end }
     else if (kind === 'room') body = { name }
     else body = {
@@ -88,6 +89,8 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
       {kind === 'event' && <>
         <label>Startdatum<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
         <label>Enddatum<input required type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <label className="cancel-checkbox"><input type="checkbox" checked={published} onChange={e => setPublished(e.target.checked)} />Programm veröffentlicht</label>
+        <p className="muted">Erst nach der Veröffentlichung markieren Besucherprogramm und PDF verschobene und geänderte Sessions 24 Stunden lang. Vorher entstehen beim Planen keine Markierungen.</p>
         <p className="muted">Farben, Logo, Grafiken, Partnerlogos und Infoblöcke für Besucherprogramm und PDF unter „Besucherprogramm gestalten“ in der Seitenleiste.</p>
       </>}
       {kind === 'day' && <label>Datum<input required type="date" value={date} min={event?.start_date} max={event?.end_date} onChange={e => setDate(e.target.value)} /></label>}

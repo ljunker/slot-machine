@@ -46,3 +46,39 @@ test('Verschieben lässt den sichtbaren Ausschnitt des Plans stehen', async ({ p
   expect(after).toEqual(before)
   expect(loadingShown).toBe(false)
 })
+
+test('Rückgängig nach dem Verschieben hinterlässt keine Markierung im Besucherprogramm', async ({ page, request }) => {
+  const event = await (await request.post('/api/events', { data: {
+    name: 'Rückgängig-Konferenz', start_date: '2026-10-01', end_date: '2026-10-01', program_published: true,
+  } })).json()
+  const day = await (await request.post(`/api/events/${event.id}/days`, { data: {
+    event_id: event.id, date: '2026-10-01', start_time: '09:00', end_time: '18:00',
+  } })).json()
+  const rooms = []
+  for (const name of ['Saal A', 'Saal B']) rooms.push(await (await request.post('/api/rooms', { data: { event_id: event.id, name } })).json())
+  expect((await request.post('/api/slots', { data: {
+    event_id: event.id, day_id: day.id, room_id: rooms[0].id, topic: 'Eröffnung', start_time: '10:00', end_time: '11:00',
+  } })).ok()).toBeTruthy()
+
+  await page.reload()
+  await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
+  const grip = await page.getByLabel('Eröffnung verschieben').boundingBox()
+  const target = await page.locator(`[data-room-column="${rooms[1].id}"]`).boundingBox()
+  expect(grip).not.toBeNull()
+  expect(target).not.toBeNull()
+  await page.mouse.move(grip!.x + 20, grip!.y + 10)
+  await page.mouse.down()
+  await page.mouse.move(target!.x + 50, grip!.y + 10, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.locator(`[data-room-column="${rooms[1].id}"] [data-slot-id]`)).toContainText('Verschoben')
+
+  await page.getByRole('status').getByRole('button', { name: 'Rückgängig' }).click()
+  await expect(page.locator(`[data-room-column="${rooms[0].id}"] [data-slot-id]`)).toContainText('10:00–11:00')
+  await expect(page.locator('[data-slot-id]')).not.toContainText('Verschoben')
+
+  const publicSchedule = await (await request.get(`/api/public/events/${event.id}/days/${day.id}/schedule`)).json()
+  expect(publicSchedule.rooms.flatMap((room: { slots: { change_notice: unknown }[] }) => room.slots.map(slot => slot.change_notice))).toEqual([null])
+  await page.goto(`/programm/${event.id}`)
+  await expect(page.getByText('Eröffnung').first()).toBeVisible()
+  await expect(page.getByText('Verschoben')).toHaveCount(0)
+})

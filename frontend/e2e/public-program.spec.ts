@@ -1,7 +1,7 @@
 import { expect, test } from './fixtures'
 
 test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Raumraster', async ({ page, request }) => {
-  const eventResponse = await request.post('/api/events', { data: { name: 'Mobile Konferenz', start_date: '2099-06-01', end_date: '2099-06-02' } })
+  const eventResponse = await request.post('/api/events', { data: { name: 'Mobile Konferenz', start_date: '2099-06-01', end_date: '2099-06-02', program_published: true } })
   expect(eventResponse.ok()).toBeTruthy()
   const event = await eventResponse.json() as { id: number }
   const dayResponse = await request.post(`/api/events/${event.id}/days`, { data: { event_id: event.id, date: '2099-06-01', start_time: '09:00', end_time: '18:00' } })
@@ -100,7 +100,7 @@ test('zeigt Programm und PDF ohne Anmeldung, sperrt die Planung', async ({ brows
 
 test('zeigt Session-Titel trotz Kategorie und Geändert-Flag vollständig', async ({ page, request }) => {
   const created = await request.post('/api/events', { data: {
-    name: 'Karten-Test', start_date: '2099-06-01', end_date: '2099-06-01',
+    name: 'Karten-Test', start_date: '2099-06-01', end_date: '2099-06-01', program_published: true,
   } })
   const event = await created.json() as { id: number }
   const day = await (await request.post(`/api/events/${event.id}/days`, { data: {

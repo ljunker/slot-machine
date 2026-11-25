@@ -64,7 +64,8 @@ def legacy_archive(content, version):
     output = BytesIO()
     with ZipFile(BytesIO(content)) as source, ZipFile(output, "w") as target:
         for filename in source.namelist():
-            if filename in {"partner_logos.csv", "info_blocks.csv"} or filename.startswith(("media/header.", "media/footer.", "media/partners/")):
+            design_file = filename in {"partner_logos.csv", "info_blocks.csv"} or filename.startswith(("media/header.", "media/footer.", "media/partners/"))
+            if design_file and version != "7":
                 continue
             if (old_helpers and filename == "duty_assignments.csv") or (version in {"1", "2"} and filename in {"categories.csv", "slot_categories.csv"}):
                 continue
@@ -77,8 +78,10 @@ def legacy_archive(content, version):
                 if version == "1":
                     omit.add("sort_order")
             if filename == "events.csv":
-                omit.update(PROGRAM_DESIGN_COLUMNS)
-            if filename == "slots.csv" and version != "6":
+                omit.add("program_published")
+                if version != "7":
+                    omit.update(PROGRAM_DESIGN_COLUMNS)
+            if filename == "slots.csv" and version not in {"6", "7"}:
                 omit.add("speaker_required")
                 if version in {"1", "2", "3"}:
                     omit.add("scope")

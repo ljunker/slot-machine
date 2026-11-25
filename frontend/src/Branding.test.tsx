@@ -39,7 +39,7 @@ describe('event branding', () => {
     expect(screen.queryByLabelText('Akzentfarbe')).toBeNull()
     expect(screen.getByText(/Besucherprogramm gestalten/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Speichern' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-01' }))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ name: 'Konferenz', start_date: '2099-06-01', end_date: '2099-06-01', program_published: false }))
     expect(onClose).toHaveBeenCalled()
   })
 

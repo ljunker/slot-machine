@@ -3,6 +3,7 @@ from io import BytesIO
 from pypdf import PdfReader
 from sqlalchemy import create_engine, inspect, text
 
+from app.db.migrate_program_published import migrate_program_published
 from app.db.migrate_slot_changes import migrate_slot_changes
 from app.models.slot import Slot
 
@@ -10,7 +11,12 @@ from app.models.slot import Slot
 def make_program(client):
     event = client.post(
         "/api/events",
-        json={"name": "Tagung", "start_date": "2026-10-01", "end_date": "2026-10-01"},
+        json={
+            "name": "Tagung",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-01",
+            "program_published": True,
+        },
     ).json()
     day = client.post(
         f"/api/events/{event['id']}/days",
@@ -287,4 +293,91 @@ def test_legacy_slot_migration_is_repeatable(tmp_path):
             connection.scalar(text("SELECT is_cancelled FROM slots WHERE id = 1")) == 0
         )
         assert len(inspect(connection).get_columns("slots")) == 13
+    engine.dispose()
+
+
+def move(client, slot, room, start, end):
+    response = client.patch(
+        f"/api/slots/{slot['id']}",
+        json={"room_id": room["id"], "start_time": start, "end_time": end},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_moving_back_to_the_previous_position_removes_the_notice(client):
+    day, (first, second) = make_program(client)
+    slot = make_slot(client, day, first)
+    assert move(client, slot, second, "12:00", "13:00")["change_notice"]["type"] == "rescheduled"
+    back = move(client, slot, first, "10:00", "11:00")
+    assert back["change_notice"] is None
+    public = client.get(f"/api/public/events/{slot['event_id']}/days/{day['id']}/schedule").json()
+    assert all(item["change_notice"] is None for room in public["rooms"] for item in room["slots"])
+
+
+def test_notice_keeps_the_position_visitors_saw_first(client):
+    day, (first, second) = make_program(client)
+    slot = make_slot(client, day, first)
+    move(client, slot, second, "12:00", "13:00")
+    notice = move(client, slot, second, "14:00", "15:00")["change_notice"]
+    assert notice["type"] == "rescheduled"
+    assert (notice["previous_room_name"], notice["previous_start_time"], notice["previous_end_time"]) == (
+        "A", "10:00:00", "11:00:00",
+    )
+    assert move(client, slot, first, "10:00", "11:00")["change_notice"] is None
+
+
+def test_expired_notice_starts_from_the_current_position(client, monkeypatch):
+    now = [1_800_000_000]
+    monkeypatch.setattr("app.services.slot_service.epoch_time", lambda: now[0])
+    monkeypatch.setattr("app.models.slot.epoch_time", lambda: now[0])
+    day, (first, second) = make_program(client)
+    slot = make_slot(client, day, first)
+    move(client, slot, second, "12:00", "13:00")
+    now[0] += 86400
+    notice = move(client, slot, first, "10:00", "11:00")["change_notice"]
+    assert notice["type"] == "rescheduled"
+    assert (notice["previous_room_name"], notice["previous_start_time"]) == ("B", "12:00:00")
+
+
+def test_unpublished_program_marks_no_changes(client):
+    event = client.post(
+        "/api/events",
+        json={"name": "Entwurf", "start_date": "2026-10-01", "end_date": "2026-10-01"},
+    ).json()
+    assert event["program_published"] is False
+    day = client.post(
+        f"/api/events/{event['id']}/days",
+        json={"event_id": event["id"], "date": "2026-10-01", "start_time": "09:00", "end_time": "18:00"},
+    ).json()
+    first, second = (
+        client.post("/api/rooms", json={"event_id": event["id"], "name": name}).json()
+        for name in ("A", "B")
+    )
+    slot = make_slot(client, day, first)
+    assert move(client, slot, second, "12:00", "13:00")["change_notice"] is None
+    path = f"/api/slots/{slot['id']}"
+    assert client.patch(path, json={"topic": "Neu"}).json()["change_notice"] is None
+    assert client.patch(path, json={"is_cancelled": True}).json()["change_notice"]["type"] == "cancelled"
+    client.patch(path, json={"is_cancelled": False})
+
+    published = client.patch(f"/api/events/{event['id']}", json={"program_published": True})
+    assert published.json()["program_published"] is True
+    assert move(client, slot, first, "10:00", "11:00")["change_notice"]["type"] == "rescheduled"
+    assert client.patch(f"/api/events/{event['id']}", json={"program_published": None}).status_code == 400
+
+
+def test_program_published_migration_keeps_existing_events_published(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE events (id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL, start_date DATE NOT NULL, end_date DATE NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO events (id, name, start_date, end_date) VALUES (1, 'Alt', '2026-10-01', '2026-10-01')"
+        ))
+    migrate_program_published(engine)
+    migrate_program_published(engine)
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT program_published FROM events WHERE id = 1")) == 1
     engine.dispose()

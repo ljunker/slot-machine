@@ -20,6 +20,7 @@ from app.services.slot_service import SlotService
 def program(client):
     event = client.post("/api/events", json={
         "name": "Gemeinsames Programm", "start_date": "2026-10-01", "end_date": "2026-10-02",
+        "program_published": True,
     }).json()["id"]
     day = client.post(f"/api/events/{event}/days", json={
         "event_id": event, "date": "2026-10-01", "start_time": "09:00", "end_time": "18:00",
@@ -59,7 +60,11 @@ def test_shared_lifecycle_and_stable_public_link(client, program):
     assert changed["change_notice"]["previous_room_name"] == "Alle Räume"
     assert client.get(public_url).json()["room_name"] == "Saal A"
     changed = client.patch(url, json={"scope": "all_rooms", "room_id": None}).json()
-    assert changed["change_notice"]["previous_room_name"] == "Saal A"
+    assert changed["change_notice"] is None
+    changed = client.patch(url, json={"scope": "room", "room_id": rooms[1]}).json()
+    changed = client.patch(url, json={"scope": "all_rooms", "room_id": None, "start_time": "13:00", "end_time": "14:00"}).json()
+    assert changed["change_notice"]["previous_room_name"] == "Alle Räume"
+    assert changed["change_notice"]["previous_start_time"] == "12:00:00"
     assert client.get(public_url).json()["id"] == slot["id"]
     assert client.patch(url, json={"is_cancelled": True}).json()["change_notice"]["type"] == "cancelled"
     assert client.patch(url, json={"is_cancelled": False}).json()["change_notice"]["type"] == "updated"

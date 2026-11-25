@@ -45,7 +45,7 @@ class EventService:
     def update(self, event_id: int, data: EventUpdate):
         event = self.get(event_id)
         changes = data.model_dump(exclude_unset=True)
-        required_patch(changes, {"name", "start_date", "end_date"})
+        required_patch(changes, {"name", "start_date", "end_date", "program_published"})
         start = changes.get("start_date", event.start_date)
         end = changes.get("end_date", event.end_date)
         date_range(start, end)

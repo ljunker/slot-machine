@@ -16,7 +16,7 @@ export type EventDesign = {
   partner_logos?: PartnerLogo[]
   info_blocks?: InfoBlock[]
 }
-export type Event = EventDesign & { id: number; name: string; start_date: string; end_date: string }
+export type Event = EventDesign & { id: number; name: string; start_date: string; end_date: string; program_published?: boolean }
 export type CurrentUser = { id: number; name: string | null; email: string; is_superadmin: boolean; event_roles: Record<string, 'admin' | 'editor' | 'helper'>; csrf_token: string }
 export type EventDay = { id: number; event_id: number; date: string; start_time: string; end_time: string }
 export type Room = { id: number; event_id: number; name: string; sort_order: number }

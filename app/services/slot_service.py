@@ -22,6 +22,8 @@ from app.schemas.slot import (
 from app.services.errors import DomainError, NotFound
 from app.services.validation import name, required_patch, time_range
 
+NOTICE_SECONDS = 86400
+
 
 class SlotService:
     def __init__(self, db: Session):
@@ -142,19 +144,10 @@ class SlotService:
             categories is not None
             and {category.id for category in categories} != set(slot.category_ids)
         )
-        if schedule_changed:
-            if day_id == slot.day_id:
-                slot.previous_room_name = (
-                    "Alle Räume" if slot.scope == "all_rooms" else self.rooms.get_by_id(slot.room_id).name
-                )
-                slot.previous_start_time = slot.start_time
-                slot.previous_end_time = slot.end_time
-            else:
-                slot.previous_room_name = None
-                slot.previous_start_time = None
-                slot.previous_end_time = None
-            slot.schedule_changed_at = int(epoch_time())
-        if content_changed and will_be_planned:
+        published = self.events.get_by_id(slot.event_id).program_published
+        if schedule_changed and published:
+            self._mark_rescheduled(slot, day_id, room_id, start, end, scope)
+        if content_changed and will_be_planned and published:
             slot.content_changed_at = int(epoch_time())
         if not will_be_planned or not was_planned:
             slot.schedule_changed_at = None
@@ -176,6 +169,54 @@ class SlotService:
             slot.categories = categories
         self.db.commit()
         return slot
+
+    def _room_name(self, room_id: int | None, scope: str) -> str:
+        return "Alle Räume" if scope == "all_rooms" else self.rooms.get_by_id(room_id).name
+
+    def _mark_rescheduled(
+        self,
+        slot: Slot,
+        day_id: int,
+        room_id: int | None,
+        start: time,
+        end: time,
+        scope: str,
+    ) -> None:
+        """Mark a move against the position visitors saw before the first move.
+
+        While a "Verschoben" notice is active, its previous position stays the
+        reference. Moving the session back there removes the notice again.
+        """
+        now = int(epoch_time())
+        if day_id != slot.day_id:
+            slot.previous_room_name = None
+            slot.previous_start_time = None
+            slot.previous_end_time = None
+            slot.schedule_changed_at = now
+            return
+        notice_active = (
+            slot.schedule_changed_at is not None
+            and now < slot.schedule_changed_at + NOTICE_SECONDS
+            and slot.previous_start_time is not None
+        )
+        if not notice_active:
+            slot.previous_room_name = self._room_name(slot.room_id, slot.scope)
+            slot.previous_start_time = slot.start_time
+            slot.previous_end_time = slot.end_time
+            slot.schedule_changed_at = now
+            return
+        back_at_previous = (
+            self._room_name(room_id, scope),
+            start,
+            end,
+        ) == (slot.previous_room_name, slot.previous_start_time, slot.previous_end_time)
+        if back_at_previous:
+            slot.schedule_changed_at = None
+            slot.previous_room_name = None
+            slot.previous_start_time = None
+            slot.previous_end_time = None
+        else:
+            slot.schedule_changed_at = now
 
     def _speakers(self, event_id: int, speaker_ids: list[int] | None) -> list[Speaker]:
         if speaker_ids is None:
