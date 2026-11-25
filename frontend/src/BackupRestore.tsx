@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { csrfHeaders } from './api'
 import type { Event } from './types'
+import Dialog, { useConfirm } from './Dialog'
+import InlineMessage from './InlineMessage'
 
 type Preview = {
   name: string
@@ -37,6 +39,7 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
   const [preview, setPreview] = useState<Preview | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirm, confirmDialog] = useConfirm()
   const targetName = events.find(event => event.id === targetId)?.name
 
   async function inspect() {
@@ -55,10 +58,18 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
 
   async function restore() {
     if (!file || !preview) return
-    const message = targetId === null
-      ? `„${preview.name}“ als neue Veranstaltung wiederherstellen?`
-      : `„${targetName}“ vollständig durch Backup „${preview.name}“ ersetzen? Diese Aktion überschreibt alle zugehörigen Daten und Bilder.`
-    if (!window.confirm(message)) return
+    const confirmed = await confirm(targetId === null ? {
+      title: 'Als neue Veranstaltung wiederherstellen?',
+      message: `Aus dem Backup „${preview.name}“ entsteht eine neue Veranstaltung.`,
+      confirmLabel: 'Wiederherstellung starten',
+      danger: false,
+    } : {
+      title: 'Veranstaltung ersetzen?',
+      message: `„${targetName}“ wird vollständig durch das Backup „${preview.name}“ ersetzt. Alle zugehörigen Daten und Bilder werden überschrieben.`,
+      confirmLabel: 'Veranstaltung ersetzen',
+      requireText: targetName,
+    })
+    if (!confirmed) return
     setBusy(true)
     setError('')
     try {
@@ -72,8 +83,7 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
     }
   }
 
-  return <div className="backup-backdrop" role="presentation">
-    <section className="backup-dialog" role="dialog" aria-modal="true" aria-labelledby="backup-title">
+  return <Dialog labelledBy="backup-title" closeDisabled={busy} onClose={onClose}>
       <div className="editor-heading"><h2 id="backup-title">Backup wiederherstellen</h2><button type="button" className="text-button" onClick={onClose} disabled={busy}>Schließen</button></div>
       <label>ZIP-Backup
         <input type="file" accept=".zip,application/zip" disabled={busy} onChange={event => { setFile(event.target.files?.[0] ?? null); setPreview(null); setError('') }} />
@@ -94,7 +104,8 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
         {(preview.remapped_session_ids > 0 || preview.removed_session_links > 0) && <p>Öffentliche Links: {preview.remapped_session_ids} Session-IDs werden neu vergeben; {preview.removed_session_links} bisherige Session-Links entfallen.</p>}
         <button type="button" className="danger" disabled={busy} onClick={() => void restore()}>Wiederherstellen</button>
       </div>}
-      {error && <p className="backup-error" role="alert">{error}</p>}
-    </section>
-  </div>
+      {busy && <InlineMessage>{preview ? 'Stelle Backup wieder her …' : 'Prüfe Backup …'}</InlineMessage>}
+      {error && <InlineMessage tone="error">{error}</InlineMessage>}
+      {confirmDialog}
+  </Dialog>
 }

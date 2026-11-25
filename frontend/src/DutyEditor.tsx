@@ -4,6 +4,7 @@ import DutySignup from './DutySignup'
 import { formatDate } from './date'
 import type { Duty, DutyKind, EventDay, DutyParticipant, Room, Slot, UnplannedSession } from './types'
 import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
+import { useConfirm } from './Dialog'
 
 /** Form values of the saved duty; also the reference for detecting unsaved input. */
 function initialValues(duty: Duty | undefined, days: EventDay[], selectedDay: EventDay | undefined, rooms: Room[], sessions: (Slot | UnplannedSession)[]) {
@@ -43,6 +44,7 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
   onClose: () => void
   onRequestClose?: () => void
 }) {
+  const [confirm, confirmDialog] = useConfirm()
   const initial = initialValues(duty, days, selectedDay, rooms, sessions)
   const [kind, setKind] = useState<DutyKind>(initial.kind)
   const [capacity, setCapacity] = useState(initial.capacity)
@@ -86,7 +88,7 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
   }
 
   async function remove() {
-    if (onDelete && window.confirm('Dienst löschen?')) {
+    if (onDelete && await confirm({ title: 'Dienst löschen?', message: 'Der Dienst und alle Eintragungen von Helfern werden entfernt.', confirmLabel: 'Dienst löschen' })) {
       if (await onDelete()) onClose()
     }
   }
@@ -118,7 +120,8 @@ export default function DutyEditor({ duty, days, selectedDay, rooms, sessions, h
         </select></label>}
         <div className="two-fields"><label>Beginn<input required type="time" value={start} onChange={event => setStart(event.target.value)} /></label><label>Ende<input required type="time" value={end} onChange={event => setEnd(event.target.value)} /></label></div>
       </>}
-      <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={remove}>Löschen</button>}</div>
+      <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={() => void remove()}>Löschen</button>}</div>
     </form>
+    {confirmDialog}
   </aside>
 }

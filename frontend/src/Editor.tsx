@@ -5,6 +5,7 @@ import { toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
 import { formatDate } from './date'
 import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
+import { useConfirm } from './Dialog'
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
@@ -69,6 +70,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   onClose: () => void
   onRequestClose?: () => void
 }) {
+  const [confirm, confirmDialog] = useConfirm()
   const initial = initialValues(kind, { event, day, days, room, slot, rooms, createUnplanned })
   const [name, setName] = useState(initial.name)
   const [startDate, setStartDate] = useState(initial.startDate)
@@ -125,7 +127,16 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   }
 
   async function remove() {
-    if (!onDelete || !window.confirm(`${title} und zugehörige Daten löschen?`)) return
+    if (!onDelete) return
+    const name = kind === 'event' ? event?.name : kind === 'room' ? room?.name : kind === 'slot' ? slot?.topic : day ? formatDate(day.date) : undefined
+    if (!await confirm({
+      title: `${title} löschen?`,
+      message: kind === 'event'
+        ? `„${name}“ wird mit allen Tagen, Räumen, Sessions, Diensten und Bildern endgültig gelöscht.`
+        : `${name ? `„${name}“` : title} und zugehörige Daten werden endgültig gelöscht.`,
+      confirmLabel: `${title} löschen`,
+      requireText: kind === 'event' ? name : undefined,
+    })) return
     if (await onDelete()) onClose()
   }
 
@@ -179,7 +190,8 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
       </>}
       {(kind === 'day' || (kind === 'slot' && planned)) && <div className="two-fields"><label>Beginn<input required type="time" value={start} onChange={e => setStart(e.target.value)} /></label><label>Ende<input required type="time" value={end} onChange={e => setEnd(e.target.value)} /></label></div>}
       {kind === 'slot' && existing && planned && <label className="cancel-checkbox"><input type="checkbox" checked={slotCancelled} onChange={e => setSlotCancelled(e.target.checked)} />Session abgesagt</label>}
-      <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={remove}>Löschen</button>}</div>
+      <div className="editor-actions"><button className="primary" type="submit">Speichern</button>{onDelete && <button className="danger" type="button" onClick={() => void remove()}>Löschen</button>}</div>
     </form>
+    {confirmDialog}
   </aside>
 }

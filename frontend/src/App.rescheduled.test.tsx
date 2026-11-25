@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import App from './App'
 import type { CurrentUser, DaySchedule, Event, EventDay, Slot } from './types'
@@ -24,8 +24,6 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 it('removes one rescheduled notice in the editor and all change notices for the event', async () => {
   let currentSlots = [...slots, cancelled]
-  const confirm = vi.fn(() => true)
-  vi.stubGlobal('confirm', confirm)
   const fetchMock = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
     const path = String(input).replace('/api', '')
     if (options?.method === 'DELETE') {
@@ -61,12 +59,18 @@ it('removes one rescheduled notice in the editor and all change notices for the 
   expect(container.querySelectorAll('.slot-card.notice-rescheduled')).toHaveLength(1)
   expect(fetchMock).toHaveBeenCalledWith('/api/slots/1/rescheduled-notice', expect.objectContaining({ method: 'DELETE' }))
 
-  confirm.mockReturnValueOnce(false)
   fireEvent.click(screen.getByRole('button', { name: 'Alle Änderungs-Flags entfernen' }))
+  let dialog = await screen.findByRole('alertdialog', { name: 'Alle Änderungs-Flags entfernen?' })
+  expect(dialog.textContent).toContain('Abgesagte Sessions bleiben abgesagt.')
+  expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(fetchMock).not.toHaveBeenCalledWith('/api/events/1/change-notices', expect.anything())
   fireEvent.click(screen.getByRole('button', { name: 'Alle Änderungs-Flags entfernen' }))
+  dialog = await screen.findByRole('alertdialog', { name: 'Alle Änderungs-Flags entfernen?' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Flags entfernen' }))
   await waitFor(() => expect(container.querySelectorAll('.slot-card.notice-rescheduled')).toHaveLength(0))
-  expect(confirm).toHaveBeenCalledWith('Alle Verschoben- und Geändert-Flags dieser Veranstaltung entfernen? Abgesagte Sessions bleiben abgesagt.')
+  expect((await screen.findByRole('status')).textContent).toContain('Änderungs-Flags entfernt.')
   expect(container.querySelectorAll('.slot-card.notice-updated')).toHaveLength(0)
   expect(container.querySelectorAll('.slot-card.notice-cancelled')).toHaveLength(1)
   expect(fetchMock).toHaveBeenCalledWith('/api/events/1/change-notices', expect.objectContaining({ method: 'DELETE' }))

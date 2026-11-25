@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import BackupRestore from './BackupRestore'
 import type { Event } from './types'
@@ -17,8 +17,6 @@ it('previews replacement and requires confirmation before restore', async () => 
     ...(String(input).endsWith('/restore') ? { event_id: 7 } : {}),
   }), { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  const confirm = vi.fn(() => false)
-  vi.stubGlobal('confirm', confirm)
   const onComplete = vi.fn(async () => {})
   render(<BackupRestore events={[event]} selectedEventId={7} onComplete={onComplete} onClose={() => {}} />)
   fireEvent.change(screen.getByLabelText('ZIP-Backup'), { target: { files: [new File(['zip'], 'backup.zip')] } })
@@ -26,10 +24,18 @@ it('previews replacement and requires confirmation before restore', async () => 
   await screen.findByText('Backup: Gesichert')
   expect(screen.getByText(/1 bisherige Session-Links entfallen/)).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen' }))
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Bestehend'))
+  let dialog = await screen.findByRole('alertdialog', { name: 'Veranstaltung ersetzen?' })
+  expect(dialog.textContent).toContain('„Bestehend“ wird vollständig durch das Backup „Gesichert“ ersetzt.')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }))
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
   expect(fetchMock).toHaveBeenCalledTimes(1)
-  confirm.mockReturnValue(true)
   fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen' }))
+  dialog = await screen.findByRole('alertdialog', { name: 'Veranstaltung ersetzen?' })
+  const replace = within(dialog).getByRole('button', { name: 'Veranstaltung ersetzen' }) as HTMLButtonElement
+  expect(replace.disabled).toBe(true)
+  fireEvent.change(within(dialog).getByLabelText('Zur Bestätigung „Bestehend“ eingeben'), { target: { value: 'Bestehend' } })
+  expect(replace.disabled).toBe(false)
+  fireEvent.click(replace)
   await waitFor(() => expect(onComplete).toHaveBeenCalledWith(7, []))
   expect(fetchMock).toHaveBeenCalledTimes(2)
   const body = (fetchMock.mock.calls[1] as unknown as [unknown, RequestInit])[1].body as FormData
@@ -45,7 +51,6 @@ it('creates an event without existing target and shows preview errors', async ()
     }), { status: 200 }))
     .mockResolvedValueOnce(new Response(JSON.stringify({ event_id: 9 }), { status: 200 }))
   vi.stubGlobal('fetch', fetchMock)
-  vi.stubGlobal('confirm', vi.fn(() => true))
   const onComplete = vi.fn(async () => {})
   render(<BackupRestore events={[]} selectedEventId={null} onComplete={onComplete} onClose={() => {}} />)
   fireEvent.change(screen.getByLabelText('ZIP-Backup'), { target: { files: [new File(['zip'], 'backup.zip')] } })
@@ -55,6 +60,8 @@ it('creates an event without existing target and shows preview errors', async ()
   fireEvent.click(screen.getByRole('button', { name: 'Vorschau prüfen' }))
   await screen.findByText('Backup: Gesichert')
   fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen' }))
+  const dialog = await screen.findByRole('alertdialog', { name: 'Als neue Veranstaltung wiederherstellen?' })
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederherstellung starten' }))
   await waitFor(() => expect(onComplete).toHaveBeenCalledWith(9, []))
   const body = fetchMock.mock.calls[2][1].body as FormData
   expect(body.get('target_event_id')).toBeNull()
