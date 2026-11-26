@@ -94,3 +94,24 @@ it('shows valid empty states even when an event has no days or rooms', () => {
   expect(screen.getByText('Keine Sessions mit fehlenden Rednern.')).toBeTruthy()
   expect(screen.getByText('Keine Dienste mit offenen Helferplätzen.')).toBeTruthy()
 })
+
+it('separates to-dos from status, marks their state and jumps to the matching panel', () => {
+  render(<Dashboard {...props} />)
+  const todos = screen.getByRole('region', { name: /Zu erledigen/ })
+  const tile = (label: string) => within(todos).getByRole('button', { name: new RegExp(`^${label}:`) }).closest('.metric-tile')!
+  expect(tile('Konflikte').className).toContain('metric-error')
+  expect(tile('Redner fehlen').className).toContain('metric-warning')
+  expect(within(todos).getByText('4 von 4 offen')).toBeTruthy()
+  expect(within(todos).getByText('3 von 7 Helferplätzen besetzt')).toBeTruthy()
+  expect(within(screen.getByRole('region', { name: 'Stand' })).getByText('Absagen')).toBeTruthy()
+  fireEvent.click(within(todos).getByRole('button', { name: 'Konflikte: 1, zur Liste springen' }))
+  expect(document.activeElement?.id).toBe('dashboard-conflicts')
+})
+
+it('shows finished to-dos as done', () => {
+  render(<Dashboard {...props} dayId={2} schedules={schedules.map(day => ({ ...day, rooms: day.rooms.map(room => ({ ...room, slots: day.day_id === 2 ? [slot(4, { day_id: 2, speaker_ids: [9], speakers: [{ id: 9, name: 'Ada' }] })] : room.slots })) }))}
+    helperPlan={{ duties: [duty(6, { day_id: 2, date: days[1].date, capacity: 1, user_ids: [8] })], conflicts: [] }} />)
+  const todos = screen.getByRole('region', { name: /Zu erledigen/ })
+  expect(within(todos).getByText('Alles erledigt')).toBeTruthy()
+  expect(todos.querySelectorAll('.metric-done')).toHaveLength(4)
+})

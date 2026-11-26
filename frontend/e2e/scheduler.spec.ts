@@ -36,7 +36,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator('[data-room-column]').first().locator('[data-slot-id]')).toHaveCount(1)
 
-  const grip = page.getByLabel('Eröffnung verschieben')
+  const grip = page.getByRole('button', { name: 'Eröffnung bearbeiten' })
   const first = await grip.boundingBox()
   const target = await page.locator('[data-room-column]').nth(1).boundingBox()
   expect(first).not.toBeNull()
@@ -49,7 +49,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:30')
   // Erfolgsmeldungen liegen unten rechts über dem Raster; vor dem Ziehen am unteren Kartenrand abwarten, bis sie weg sind.
   await expect(page.locator('.toast')).toHaveCount(0, { timeout: 8000 })
-  const resize = page.getByLabel('Eröffnung verlängern oder verkürzen')
+  const resize = page.locator('.slot-card', { has: page.getByRole('button', { name: 'Eröffnung bearbeiten' }) }).locator('.slot-resize')
   const edge = await resize.boundingBox()
   expect(edge).not.toBeNull()
   await page.mouse.move(edge!.x + edge!.width / 2, edge!.y + edge!.height / 2)

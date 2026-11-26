@@ -15,6 +15,8 @@ Verbindliche Begriffe für Oberfläche, Hilfetexte und Doku. Der Code und die AP
 | **Dienst** | Aufgabe für Helfer: allgemeiner Dienst, Raumdienst oder Session-Dienst. | Schicht, Duty |
 | **Helfer** | Teammitglied, das sich in Dienste einträgt. | |
 | **Tagesplan** / **Helferplan** | Planungsansicht mit Fokus auf Programm bzw. Dienste. | |
+| **Meine Dienste** | Persönliche Ansicht mit den eigenen und den noch offenen Diensten; Startansicht für Helfer. | Meine Schichten |
+| **Einplanen** | Einer ungeplanten Session Tag, Raum und Uhrzeit geben, per Ziehen oder Dialog. | |
 | **Besucherprogramm** | Öffentliche Programmseite für Besucher. | Public-Seite |
 | **Änderungsmarkierung** | Hinweis **Verschoben** oder **Geändert** an einer Session nach der Veröffentlichung. **Abgesagt** ist ein Status, keine Markierung. | Änderungs-Flag, Flag |
 | **Sicherung** | ZIP-Datei mit allen Daten und Bildern einer Veranstaltung. | Backup |

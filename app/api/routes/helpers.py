@@ -1,9 +1,14 @@
+from datetime import date, time
+
 from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.auth import User
 from app.models.duty import Duty
+from app.models.event import Event
+from app.models.room import Room
 from app.schemas.helper import (
     DutyCreate,
     DutyOrder,
@@ -14,6 +19,7 @@ from app.schemas.helper import (
 )
 from app.services.auth import authorize_event, authorize_object, require_user
 from app.services.helper_service import HelperService
+from app.services.ical import duties_calendar
 
 router = APIRouter(tags=["Helpers"], dependencies=[Depends(require_user)])
 
@@ -28,6 +34,27 @@ def list_participants(event_id: int, db: Session = Depends(get_db), user: User =
 def get_helper_plan(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
     authorize_event(db, user, event_id, "helper")
     return HelperService(db).get_plan(event_id)
+
+
+@router.get("/events/{event_id}/my-duties.ics")
+def get_my_duties_calendar(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
+    """Die aktiven Dienste der angemeldeten Person als Kalenderdatei."""
+    authorize_event(db, user, event_id, "helper")
+    plan = HelperService(db).get_plan(event_id)
+    mine = sorted(
+        (duty for duty in plan.duties if user.id in duty.user_ids),
+        key=lambda duty: (duty.date or date.max, duty.start_time or time.max, duty.id),
+    )
+    rooms = {room.id: room.name for room in db.scalars(select(Room).where(Room.event_id == event_id))}
+    event = db.get(Event, event_id)
+    return Response(
+        content=duties_calendar(mine, event.name, rooms),
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="meine-dienste-{event_id}.ics"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.post(

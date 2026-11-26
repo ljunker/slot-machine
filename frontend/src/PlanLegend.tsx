@@ -38,19 +38,22 @@ const PROGRAM_ENTRIES: Entry[] = [
 const DUTY_ENTRIES: Entry[] = [
   { swatch: 'duty-open', icon: 'warning', label: 'Offener Dienst', text: 'es fehlen noch Helfer' },
   { swatch: 'helper-conflict', icon: 'users', label: 'Helferkonflikt', text: 'Helfer ist gleichzeitig eingeteilt' },
+  { swatch: 'duty-mine', icon: 'user', label: 'Du', text: 'du bist für diesen Dienst eingeteilt' },
 ]
 
 /**
  * Leiste über dem Raster: einklappbare Legende der Zustände, Zoom und ein einmaliger
  * Bedienhinweis für alle, die planen dürfen.
  */
-export default function PlanLegend({ canPlan, zoom, onZoom, showDuties, onShowDuties }: {
+export default function PlanLegend({ canPlan, zoom, onZoom, showDuties, onShowDuties, onKeyboardHelp }: {
   canPlan: boolean
   zoom: number
   onZoom: (value: number) => void
   /** Nur im Tagesplan: Umschalter für die Dienstspalten. */
   showDuties?: boolean
   onShowDuties?: (value: boolean) => void
+  /** Öffnet die Übersicht der Tastenkürzel. */
+  onKeyboardHelp?: () => void
 }) {
   const [open, setOpen] = useState(() => readStorage(LEGEND_KEY) === 'true')
   const [hintsSeen, setHintsSeen] = useState(() => readStorage(HINTS_KEY) === 'true')
@@ -84,6 +87,7 @@ export default function PlanLegend({ canPlan, zoom, onZoom, showDuties, onShowDu
         </ul>
         {canPlan && <p className="plan-legend-hints">
           Karte anklicken zum Bearbeiten · am Titel ziehen zum Verschieben · untere Kante ziehen für die Dauer · Dienste lassen sich in ihrer Spalte seitlich anordnen.
+          Per Tastatur: Alt + Pfeiltasten verschieben, Umschalt + Alt + Pfeiltasten ändern die Dauer.
           Kurze Sessions zeigen weniger Angaben; alle Details stehen im Tooltip.
         </p>}
       </div>
@@ -92,6 +96,7 @@ export default function PlanLegend({ canPlan, zoom, onZoom, showDuties, onShowDu
       <input type="checkbox" checked={showDuties ?? false} onChange={event => onShowDuties(event.target.checked)} />
       Dienste anzeigen
     </label>}
+    {onKeyboardHelp && <button type="button" className="text-button plan-keys" aria-keyshortcuts="?" onClick={onKeyboardHelp}><kbd aria-hidden="true">?</kbd>Tastenkürzel</button>}
     <div className="plan-zoom" role="group" aria-label="Rasterhöhe">
       <button type="button" className="icon-button" aria-label="Raster verkleinern" disabled={zoomIndex === 0} onClick={() => onZoom(ZOOM_LEVELS[zoomIndex - 1])}><Icon name="zoom-out" /></button>
       <span className="plan-zoom-value" aria-live="polite">{Math.round(zoom / ZOOM_LEVELS[0] * 100)} %</span>

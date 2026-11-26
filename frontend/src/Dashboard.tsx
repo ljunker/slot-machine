@@ -1,5 +1,6 @@
 import ConflictOverview, { collectConflicts } from './ConflictOverview'
 import { formatDate } from './date'
+import Icon from './Icon'
 import type { DaySchedule, Duty, EventDay, HelperPlan, Room, Slot, UnplannedSession } from './types'
 
 type Session = Slot | UnplannedSession
@@ -45,14 +46,29 @@ export default function Dashboard({ days, rooms, speakerCount, schedules, helper
   const backlog = sessions.filter(slot => slot.day_id === null)
   const cancelled = sessions.filter(slot => slot.is_cancelled)
   const conflicts = collectConflicts(filteredSchedules, helperPlan)
-  const metrics = [
+  const activeDuties = helperPlan.duties.filter(duty => duty.status === 'active' && (dayId === null || duty.day_id === dayId))
+  const capacity = activeDuties.reduce((sum, duty) => sum + duty.capacity, 0)
+  const filled = activeDuties.reduce((sum, duty) => sum + Math.min(duty.user_ids.length, duty.capacity), 0)
+  const openPlaces = capacity - filled
+  /** Status beschreibt den Stand, To-dos zeigen, was noch zu tun ist. Konflikte sind Fehler, der Rest Warnungen. */
+  const status = [
     ['Geplante aktive Sessions', sessions.filter(slot => slot.day_id !== null && !slot.is_cancelled).length],
-    ['Ungeplante Sessions', backlog.length],
     ['Absagen', cancelled.length],
-    ['Offene Helferplätze', openDuties.reduce((sum, duty) => sum + duty.capacity - duty.user_ids.length, 0)],
-    ['Redner fehlen', missingSpeakers.length],
-    ['Konflikte', conflicts.length],
   ] as const
+  const todos: { label: string; value: number; target: string; tone: 'error' | 'warning' }[] = [
+    { label: 'Konflikte', value: conflicts.length, target: 'conflicts', tone: 'error' },
+    { label: 'Redner fehlen', value: missingSpeakers.length, target: 'speakers', tone: 'warning' },
+    { label: 'Offene Helferplätze', value: openPlaces, target: 'duties', tone: 'warning' },
+    { label: 'Ungeplante Sessions', value: backlog.length, target: 'backlog', tone: 'warning' },
+  ]
+  const openTodos = todos.filter(todo => todo.value > 0).length
+
+  /** Springt zum Panel einer Kennzahl und setzt den Fokus auf seine Überschrift. */
+  function showPanel(target: string) {
+    const heading = document.getElementById(`dashboard-${target}`)
+    heading?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    heading?.focus({ preventScroll: true })
+  }
 
   function sessionDetail(slot: Session): string {
     if (slot.day_id === null) return 'Ungeplant · Ohne Tag und Uhrzeit'
@@ -60,9 +76,9 @@ export default function Dashboard({ days, rooms, speakerCount, schedules, helper
     return `${formatDate(dates.get(slot.day_id)!)} · ${slot.start_time.slice(0, 5)}–${slot.end_time.slice(0, 5)} · ${place}`
   }
 
-  function sessionList(title: string, entries: Session[], empty: string) {
+  function sessionList(title: string, target: string, entries: Session[], empty: string) {
     return <section className="dashboard-panel" aria-label={title}>
-      <h3>{title} <span className="dashboard-count">{entries.length}</span></h3>
+      <h3 id={`dashboard-${target}`} tabIndex={-1}>{title} <span className="dashboard-count">{entries.length}</span></h3>
       {entries.length === 0 ? <p className="muted">{empty}</p> : <ul className="dashboard-list">{entries.map(slot => <li key={slot.id}>
         <button type="button" onClick={() => onOpenSlot(slot.day_id, slot.id)} aria-label={`${slot.topic} ${slot.day_id === null ? 'ungeplant' : 'am ' + formatDate(dates.get(slot.day_id)!)} bearbeiten`}>
           <strong>{slot.topic}</strong><small>{sessionDetail(slot)}</small>
@@ -84,10 +100,30 @@ export default function Dashboard({ days, rooms, speakerCount, schedules, helper
     </div> : schedules !== null && <>
       <p className="muted">Veranstaltung gesamt: {days.length} {days.length === 1 ? 'Tag' : 'Tage'} · {rooms.length} {rooms.length === 1 ? 'Raum' : 'Räume'} · {speakerCount} {speakerCount === 1 ? 'Rednerprofil' : 'Rednerprofile'}</p>
       {dayId !== null && <p className="dashboard-filter-note">Ungeplante Sessions haben keinen Tag. Unter <button type="button" className="text-button" onClick={() => onDayChange(null)}>Alle Tage</button> anzeigen.</p>}
-      <dl className="dashboard-metrics">{metrics.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      <section className="dashboard-group" aria-labelledby="dashboard-todos-title">
+        <h3 id="dashboard-todos-title" className="dashboard-group-title">Zu erledigen <span className="dashboard-group-note">{openTodos === 0 ? 'Alles erledigt' : `${openTodos} von ${todos.length} offen`}</span></h3>
+        <dl className="dashboard-metrics dashboard-todos">{todos.map(todo => <div key={todo.label} className={`metric-tile metric-${todo.value > 0 ? todo.tone : 'done'}`}>
+          <dt><button type="button" className="metric-link" aria-label={`${todo.label}: ${todo.value}, zur Liste springen`} onClick={() => showPanel(todo.target)}>{todo.label}</button></dt>
+          <dd><Icon name={todo.value === 0 ? 'check' : todo.tone === 'error' ? 'conflict' : 'warning'} size={20} />{todo.value}</dd>
+        </div>)}</dl>
+        {capacity > 0 && <div className="dashboard-progress">
+          <span id="dashboard-progress-label">{filled} von {capacity} Helferplätzen besetzt</span>
+          <progress aria-labelledby="dashboard-progress-label" max={capacity} value={filled} />
+        </div>}
+      </section>
+      <section className="dashboard-group" aria-labelledby="dashboard-status-title">
+        <h3 id="dashboard-status-title" className="dashboard-group-title">Stand</h3>
+        <dl className="dashboard-metrics dashboard-status">{status.map(([label, value]) => <div key={label} className="metric-tile"><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      </section>
+      <section className="dashboard-panel" aria-label="Konflikte">
+        <h3 id="dashboard-conflicts" tabIndex={-1}>Konflikte <span className="dashboard-count">{conflicts.length}</span></h3>
+        <p className="muted">{conflicts.filter(entry => entry.kind === 'room').length} Raumkonflikte · {conflicts.filter(entry => entry.kind === 'speaker').length} Rednerkonflikte · {conflicts.filter(entry => entry.kind === 'helper').length} Helferkonflikte</p>
+        <ConflictOverview schedules={filteredSchedules} helperPlan={helperPlan} scopeLabel={dayId === null ? 'dieser Veranstaltung' : 'diesem Veranstaltungstag'} onOpenSlot={onOpenSlot} onOpenDuty={onOpenDuty} />
+      </section>
       <div className="dashboard-panels">
+        {sessionList('Redner fehlen', 'speakers', missingSpeakers, 'Keine Sessions mit fehlenden Rednern.')}
         <section className="dashboard-panel" aria-label="Offene Helferplätze">
-          <h3>Offene Helferplätze <span className="dashboard-count">{metrics[3][1]}</span></h3>
+          <h3 id="dashboard-duties" tabIndex={-1}>Offene Helferplätze <span className="dashboard-count">{openPlaces}</span></h3>
           {openDuties.length === 0 ? <p className="muted">Keine Dienste mit offenen Helferplätzen.</p> : <ul className="dashboard-list">{openDuties.map(duty => <li key={duty.id}>
             <button type="button" onClick={() => onOpenDuty(duty.day_id!, duty.id)} aria-label={`${dutyTitle(duty)} am ${formatDate(duty.date!)} bearbeiten`}>
               <strong>{dutyTitle(duty)}</strong>
@@ -96,15 +132,9 @@ export default function Dashboard({ days, rooms, speakerCount, schedules, helper
             </button>
           </li>)}</ul>}
         </section>
-        {sessionList('Redner fehlen', missingSpeakers, 'Keine Sessions mit fehlenden Rednern.')}
-        {sessionList('Ungeplante Sessions', backlog, dayId === null ? 'Keine ungeplanten Sessions.' : 'Ungeplante Sessions unter „Alle Tage“ anzeigen.')}
-        {sessionList('Absagen', cancelled, 'Keine abgesagten Sessions.')}
+        {sessionList('Ungeplante Sessions', 'backlog', backlog, dayId === null ? 'Keine ungeplanten Sessions.' : 'Ungeplante Sessions unter „Alle Tage“ anzeigen.')}
+        {sessionList('Absagen', 'cancelled', cancelled, 'Keine abgesagten Sessions.')}
       </div>
-      <section className="dashboard-panel" aria-label="Konflikte">
-        <h3>Konflikte <span className="dashboard-count">{conflicts.length}</span></h3>
-        <p className="muted">{conflicts.filter(entry => entry.kind === 'room').length} Raumkonflikte · {conflicts.filter(entry => entry.kind === 'speaker').length} Rednerkonflikte · {conflicts.filter(entry => entry.kind === 'helper').length} Helferkonflikte</p>
-        <ConflictOverview schedules={filteredSchedules} helperPlan={helperPlan} scopeLabel={dayId === null ? 'dieser Veranstaltung' : 'diesem Veranstaltungstag'} onOpenSlot={onOpenSlot} onOpenDuty={onOpenDuty} />
-      </section>
     </>}
   </section>
 }

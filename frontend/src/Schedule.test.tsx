@@ -18,6 +18,10 @@ const schedule: DaySchedule = {
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
+function resizeHandle(name: string): HTMLElement {
+  return screen.getByRole('button', { name }).closest('.slot-card')!.querySelector<HTMLElement>('.slot-resize')!
+}
+
 describe('schedule interactions', () => {
   it('shows empty room and collision marks', () => {
     const { container } = render(<Schedule schedule={schedule} onEdit={() => {}} onChange={async () => {}} />)
@@ -42,15 +46,15 @@ describe('schedule interactions', () => {
       const { container } = render(<Schedule schedule={schedule} focus={focus} onEdit={onEdit} onChange={onChange} />)
       fireEvent.click(screen.getByRole('button', { name: 'Erster bearbeiten' }))
       expect(onEdit).toHaveBeenCalledWith(schedule.rooms[0].slots[0])
-      fireEvent.pointerDown(screen.getByLabelText('Erster verschieben'), { button: 0, clientY: 100 })
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Erster bearbeiten' }), { button: 0, clientY: 100 })
       fireEvent.pointerMove(window, { clientY: 148, clientX: 350 })
       fireEvent.pointerUp(window)
       expect(onChange).toHaveBeenCalledWith(1, { room_id: 2, start_time: '10:30', end_time: '11:30' })
-      fireEvent.pointerDown(container.querySelector('[aria-label="Erster verlängern oder verkürzen"]')!, { button: 0, clientY: 100 })
+      fireEvent.pointerDown(resizeHandle('Erster bearbeiten'), { button: 0, clientY: 100 })
       fireEvent.pointerMove(window, { clientY: 124, clientX: 100 })
       fireEvent.pointerUp(window)
       expect(onChange).toHaveBeenCalledWith(1, { end_time: '11:15' })
-      fireEvent.pointerDown(screen.getByLabelText('Erster verschieben'), { button: 0, clientY: 100 })
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Erster bearbeiten' }), { button: 0, clientY: 100 })
       fireEvent.pointerMove(window, { clientY: 148, clientX: 700 })
       fireEvent.pointerUp(window)
       expect(onChange).toHaveBeenCalledTimes(2)
@@ -64,13 +68,13 @@ describe('schedule interactions', () => {
     const card = container.querySelector('[data-slot-id="1"]') as HTMLElement
     fireEvent.click(card)
     expect(onEdit).toHaveBeenCalledTimes(1)
-    const grip = screen.getByLabelText('Erster verschieben')
+    const grip = screen.getByRole('button', { name: 'Erster bearbeiten' })
     fireEvent.pointerDown(grip, { button: 0, clientY: 100 })
     fireEvent.pointerUp(window)
     fireEvent.click(grip)
     expect(onChange).not.toHaveBeenCalled()
     expect(onEdit).toHaveBeenCalledTimes(2)
-    const resize = container.querySelector('[aria-label="Erster verlängern oder verkürzen"]')!
+    const resize = resizeHandle('Erster bearbeiten')
     fireEvent.pointerDown(resize, { button: 0, clientY: 100 })
     fireEvent.pointerMove(window, { clientY: 148, clientX: 10 })
     fireEvent.pointerUp(window)

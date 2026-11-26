@@ -14,6 +14,8 @@
 @import "./styles/management.css";
 @import "./styles/auth.css";
 @import "./styles/dashboard.css";
+@import "./styles/my-duties.css";
+@import "./styles/plan-list.css";
 @import "./styles/public.css";
 @import "./styles/design-editor.css";
 @import "./styles/toast.css";

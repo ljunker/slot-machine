@@ -1,0 +1,104 @@
+/* Tagesplan als Liste für schmale Bildschirme (Umschalter „Liste / Raster“). */
+.plan-view-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.plan-view-toggle button {
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--subtext);
+  font-weight: 700;
+}
+.plan-view-toggle button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--link);
+}
+.plan-room-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  margin: 0 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  scrollbar-width: thin;
+}
+.plan-room-tabs button {
+  flex: 0 0 auto;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--subtext);
+  font-weight: 700;
+}
+.plan-room-tabs button[aria-selected="true"] {
+  border-color: var(--link);
+  background: var(--link);
+  color: var(--surface);
+}
+.plan-list-items {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.plan-list-item {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  overflow: hidden;
+  border: 1px solid var(--card-border);
+  border-left: 4px solid var(--card-accent);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+.plan-list-item.collision {
+  border-color: var(--danger-accent);
+}
+.plan-list-item.notice-cancelled {
+  opacity: 0.75;
+}
+.plan-list-item.duty-mine {
+  border-color: var(--link);
+  box-shadow: 0 0 0 1px var(--link);
+}
+.plan-list-main {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.plan-list-main time {
+  color: var(--subtext);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.plan-list-main strong {
+  font-size: var(--text-base);
+}
+.plan-list-main small {
+  color: var(--subtext);
+  font-size: var(--text-sm);
+}
+.plan-list-duty .duty-signup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}

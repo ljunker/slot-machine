@@ -34,13 +34,13 @@ test('bearbeitet gemeinsame Sessions mit Balken, Diensten, Konflikten und stabil
   const right = (await columns.nth(1).boundingBox())!
   expect(box!.width).toBeGreaterThan(left.width + right.width)
 
-  const grip = (await page.getByLabel('Gemeinsame Pause verschieben', { exact: true }).boundingBox())!
+  const grip = (await page.getByRole('button', { name: 'Gemeinsame Pause bearbeiten', exact: true }).boundingBox())!
   await page.mouse.move(grip.x + 30, grip.y + 10)
   await page.mouse.down()
   await page.mouse.move(right.x + 40, grip.y + 34, { steps: 8 })
   await page.mouse.up()
   await expect(bar).toContainText('10:15–11:15')
-  const resized = (await page.getByLabel('Gemeinsame Pause verlängern oder verkürzen').boundingBox())!
+  const resized = (await page.locator('.slot-card', { has: page.getByRole('button', { name: 'Gemeinsame Pause bearbeiten', exact: true }) }).locator('.slot-resize').boundingBox())!
   await page.mouse.move(resized.x + 30, resized.y + resized.height / 2)
   await page.mouse.down()
   await page.mouse.move(resized.x + 30, resized.y + resized.height / 2 + 24, { steps: 8 })

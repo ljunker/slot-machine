@@ -18,8 +18,8 @@ test('Verschieben lässt den sichtbaren Ausschnitt des Plans stehen', async ({ p
   await page.reload()
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
   const scroll = page.locator('.schedule-scroll')
-  await expect(page.getByLabel('Abendvortrag verschieben')).toBeAttached()
-  await page.getByLabel('Abendvortrag verschieben').scrollIntoViewIfNeeded()
+  await expect(page.getByRole('button', { name: 'Abendvortrag bearbeiten' })).toBeAttached()
+  await page.getByRole('button', { name: 'Abendvortrag bearbeiten' }).scrollIntoViewIfNeeded()
   const before = await scroll.evaluate(element => ({ top: element.scrollTop, left: element.scrollLeft }))
   expect(before.top).toBeGreaterThan(0)
   expect(before.left).toBeGreaterThan(0)
@@ -32,7 +32,7 @@ test('Verschieben lässt den sichtbaren Ausschnitt des Plans stehen', async ({ p
     }).observe(document.body, { childList: true, subtree: true, characterData: true })
   })
 
-  const grip = await page.getByLabel('Abendvortrag verschieben').boundingBox()
+  const grip = await page.getByRole('button', { name: 'Abendvortrag bearbeiten' }).boundingBox()
   expect(grip).not.toBeNull()
   await page.mouse.move(grip!.x + 20, grip!.y + 10)
   await page.mouse.down()
@@ -62,7 +62,7 @@ test('Rückgängig nach dem Verschieben hinterlässt keine Markierung im Besuche
 
   await page.reload()
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
-  const grip = await page.getByLabel('Eröffnung verschieben').boundingBox()
+  const grip = await page.getByRole('button', { name: 'Eröffnung bearbeiten' }).boundingBox()
   const target = await page.locator(`[data-room-column="${rooms[1].id}"]`).boundingBox()
   expect(grip).not.toBeNull()
   expect(target).not.toBeNull()
