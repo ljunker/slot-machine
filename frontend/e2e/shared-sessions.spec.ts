@@ -1,5 +1,11 @@
 import { expect, test } from './fixtures'
 
+
+// Diese Tests prüfen die Dienstspalten im Tagesplan; dort sind sie standardmäßig ausgeblendet.
+test.beforeEach(async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('slot-machine-plan-show-duties', 'true'))
+})
+
 test('bearbeitet gemeinsame Sessions mit Balken, Diensten, Konflikten und stabilen Besucherlinks', async ({ page, request, browser }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
   const event = await (await request.post('/api/events', { data: {
@@ -12,7 +18,7 @@ test('bearbeitet gemeinsame Sessions mit Balken, Diensten, Konflikten und stabil
   for (const name of ['Saal A', 'Saal B']) rooms.push(await (await request.post('/api/rooms', { data: { event_id: event.id, name } })).json())
   await page.goto('/')
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
-  await page.getByRole('button', { name: 'Slot hinzufügen' }).click()
+  await page.getByRole('button', { name: 'Session hinzufügen', exact: true }).click()
   await page.getByLabel('Thema').fill('Gemeinsame Pause')
   await page.getByLabel('Geltungsbereich').selectOption('all_rooms')
   await expect(page.getByLabel('Raum', { exact: true })).toHaveCount(0)
@@ -103,7 +109,7 @@ test('plant gemeinsame Sessions ohne Räume und aus der Seitenleiste wieder ein'
   const day = await (await request.post(`/api/events/${event.id}/days`, { data: { event_id: event.id, date: '2026-10-01', start_time: '09:00', end_time: '18:00' } })).json()
   await page.goto('/')
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
-  await page.getByRole('button', { name: 'Slot hinzufügen' }).click()
+  await page.getByRole('button', { name: 'Session hinzufügen', exact: true }).click()
   await page.getByLabel('Thema').fill('Frühstück')
   await page.getByLabel('Geltungsbereich').selectOption('all_rooms')
   await page.getByRole('button', { name: 'Speichern' }).click()

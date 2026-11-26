@@ -40,5 +40,5 @@ test('zeigt Legende, Bedienhinweis und Zoom über dem Plan', async ({ page, requ
   await expect(page.getByText('150 %')).toBeVisible()
 
   await page.locator('[data-slot-id]', { hasText: 'Keynote' }).click({ position: { x: 20, y: 70 } })
-  await expect(page.getByRole('complementary', { name: 'Slot bearbeiten' })).toBeVisible()
+  await expect(page.getByRole('complementary', { name: 'Session bearbeiten' })).toBeVisible()
 })

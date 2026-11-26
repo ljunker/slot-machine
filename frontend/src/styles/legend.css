@@ -105,6 +105,25 @@
 .legend-swatch.legend-category {
   border-top: 4px solid #e07a5f;
 }
+.plan-duty-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--subtext);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+.plan-duty-toggle input {
+  width: auto;
+  margin: 0;
+}
 .plan-zoom {
   display: inline-flex;
   align-items: center;

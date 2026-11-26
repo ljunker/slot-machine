@@ -3,6 +3,7 @@ import { csrfHeaders } from './api'
 import type { Event } from './types'
 import Dialog, { useConfirm } from './Dialog'
 import InlineMessage from './InlineMessage'
+import Icon from './Icon'
 
 type Preview = {
   name: string
@@ -27,9 +28,12 @@ async function sendBackup(path: 'preview' | 'restore', file: File, targetId: num
   return response.json()
 }
 
-export default function BackupRestore({ events, selectedEventId, allowCreate = true, onComplete, onClose }: {
+/** Ein Ort für beides: Sicherung der gewählten Veranstaltung herunterladen und eine Sicherung wiederherstellen. */
+export default function BackupRestore({ events, selectedEventId, downloadEvent, allowCreate = true, onComplete, onClose }: {
   events: Event[]
   selectedEventId: number | null
+  /** Veranstaltung, deren Sicherung heruntergeladen werden darf. */
+  downloadEvent?: Event
   allowCreate?: boolean
   onComplete: (eventId: number, warnings?: string[]) => Promise<void>
   onClose: () => void
@@ -60,12 +64,12 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
     if (!file || !preview) return
     const confirmed = await confirm(targetId === null ? {
       title: 'Als neue Veranstaltung wiederherstellen?',
-      message: `Aus dem Backup „${preview.name}“ entsteht eine neue Veranstaltung.`,
+      message: `Aus der Sicherung „${preview.name}“ entsteht eine neue Veranstaltung.`,
       confirmLabel: 'Wiederherstellung starten',
       danger: false,
     } : {
       title: 'Veranstaltung ersetzen?',
-      message: `„${targetName}“ wird vollständig durch das Backup „${preview.name}“ ersetzt. Alle zugehörigen Daten und Bilder werden überschrieben.`,
+      message: `„${targetName}“ wird vollständig durch die Sicherung „${preview.name}“ ersetzt. Alle zugehörigen Daten und Bilder werden überschrieben.`,
       confirmLabel: 'Veranstaltung ersetzen',
       requireText: targetName,
     })
@@ -74,7 +78,7 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
     setError('')
     try {
       const result = await sendBackup('restore', file, targetId)
-      if (result.event_id === undefined) throw new Error('Restore lieferte keine Veranstaltung')
+      if (result.event_id === undefined) throw new Error('Die Wiederherstellung lieferte keine Veranstaltung')
       await onComplete(result.event_id, result.warnings ?? [])
     } catch (cause) {
       setError((cause as Error).message)
@@ -84,8 +88,14 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
   }
 
   return <Dialog labelledBy="backup-title" closeDisabled={busy} onClose={onClose}>
-      <div className="editor-heading"><h2 id="backup-title">Backup wiederherstellen</h2><button type="button" className="text-button" onClick={onClose} disabled={busy}>Schließen</button></div>
-      <label>ZIP-Backup
+      <div className="editor-heading"><h2 id="backup-title">Sicherung &amp; Wiederherstellung</h2><button type="button" className="text-button" onClick={onClose} disabled={busy}>Schließen</button></div>
+      {downloadEvent && <section className="backup-section" aria-labelledby="backup-download-title">
+        <h3 id="backup-download-title">Sicherung herunterladen</h3>
+        <p className="muted">ZIP-Datei mit allen Daten und Bildern von „{downloadEvent.name}“.</p>
+        <a className="secondary button-link" href={`/api/backups/events/${downloadEvent.id}`} download><Icon name="download" />Sicherung herunterladen</a>
+      </section>}
+      <h3 className="backup-section-title">Sicherung wiederherstellen</h3>
+      <label>Sicherungsdatei (ZIP)
         <input type="file" accept=".zip,application/zip" disabled={busy} onChange={event => { setFile(event.target.files?.[0] ?? null); setPreview(null); setError('') }} />
       </label>
       <label>Ziel
@@ -97,14 +107,14 @@ export default function BackupRestore({ events, selectedEventId, allowCreate = t
       <button type="button" className="primary" disabled={!file || busy} onClick={() => void inspect()}>Vorschau prüfen</button>
       {preview && <div className="backup-preview">
         {preview.warnings?.map(warning => <p role="status" key={warning}>{warning}</p>)}
-        <strong>Backup: {preview.name}</strong>
+        <strong>Sicherung: {preview.name}</strong>
         <p>{targetId === null ? 'Neue Veranstaltung' : `Ersetzt: ${targetName}`}</p>
         {targetId !== null && <p>Bestehende Session-Links können danach andere Inhalte zeigen.</p>}
         <p>{Object.entries(preview.counts).map(([name, count]) => `${name}: ${count}`).join(' · ')}</p>
         {(preview.remapped_session_ids > 0 || preview.removed_session_links > 0) && <p>Öffentliche Links: {preview.remapped_session_ids} Session-IDs werden neu vergeben; {preview.removed_session_links} bisherige Session-Links entfallen.</p>}
         <button type="button" className="danger" disabled={busy} onClick={() => void restore()}>Wiederherstellen</button>
       </div>}
-      {busy && <InlineMessage>{preview ? 'Stelle Backup wieder her …' : 'Prüfe Backup …'}</InlineMessage>}
+      {busy && <InlineMessage>{preview ? 'Stelle Sicherung wieder her …' : 'Prüfe Sicherung …'}</InlineMessage>}
       {error && <InlineMessage tone="error">{error}</InlineMessage>}
       {confirmDialog}
   </Dialog>

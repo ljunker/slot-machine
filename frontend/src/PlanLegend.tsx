@@ -2,18 +2,13 @@ import { useState } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { ZOOM_LEVELS } from './time'
+import { readStorage, writeStorage } from './storage'
 
 const LEGEND_KEY = 'slot-machine-plan-legend-open'
 const HINTS_KEY = 'slot-machine-plan-hints-seen'
 const ZOOM_KEY = 'slot-machine-plan-zoom'
+const DUTIES_KEY = 'slot-machine-plan-show-duties'
 
-function readStorage(key: string): string | null {
-  try { return window.localStorage.getItem(key) } catch { return null }
-}
-
-function writeStorage(key: string, value: string) {
-  try { window.localStorage.setItem(key, value) } catch { /* Speicher gesperrt: Zustand gilt nur bis zum Neuladen */ }
-}
 
 /** Zoomstufe des Rasters, pro Browser gemerkt. */
 export function usePlanZoom(): [number, (value: number) => void] {
@@ -22,6 +17,12 @@ export function usePlanZoom(): [number, (value: number) => void] {
     return (ZOOM_LEVELS as readonly number[]).includes(stored) ? stored : ZOOM_LEVELS[0]
   })
   return [zoom, value => { setZoom(value); writeStorage(ZOOM_KEY, String(value)) }]
+}
+
+/** Ob der Tagesplan die Dienstspalten zeigt; standardmäßig nur das Programm. Pro Browser gemerkt. */
+export function useShowDuties(): [boolean, (value: boolean) => void] {
+  const [shown, setShown] = useState(() => readStorage(DUTIES_KEY) === 'true')
+  return [shown, value => { setShown(value); writeStorage(DUTIES_KEY, String(value)) }]
 }
 
 type Entry = { swatch: string; icon: IconName; label: string; text: string }
@@ -43,7 +44,14 @@ const DUTY_ENTRIES: Entry[] = [
  * Leiste über dem Raster: einklappbare Legende der Zustände, Zoom und ein einmaliger
  * Bedienhinweis für alle, die planen dürfen.
  */
-export default function PlanLegend({ canPlan, zoom, onZoom }: { canPlan: boolean; zoom: number; onZoom: (value: number) => void }) {
+export default function PlanLegend({ canPlan, zoom, onZoom, showDuties, onShowDuties }: {
+  canPlan: boolean
+  zoom: number
+  onZoom: (value: number) => void
+  /** Nur im Tagesplan: Umschalter für die Dienstspalten. */
+  showDuties?: boolean
+  onShowDuties?: (value: boolean) => void
+}) {
   const [open, setOpen] = useState(() => readStorage(LEGEND_KEY) === 'true')
   const [hintsSeen, setHintsSeen] = useState(() => readStorage(HINTS_KEY) === 'true')
   const zoomIndex = Math.max(0, (ZOOM_LEVELS as readonly number[]).indexOf(zoom))
@@ -80,6 +88,10 @@ export default function PlanLegend({ canPlan, zoom, onZoom }: { canPlan: boolean
         </p>}
       </div>
     </details>
+    {onShowDuties && <label className="plan-duty-toggle">
+      <input type="checkbox" checked={showDuties ?? false} onChange={event => onShowDuties(event.target.checked)} />
+      Dienste anzeigen
+    </label>}
     <div className="plan-zoom" role="group" aria-label="Rasterhöhe">
       <button type="button" className="icon-button" aria-label="Raster verkleinern" disabled={zoomIndex === 0} onClick={() => onZoom(ZOOM_LEVELS[zoomIndex - 1])}><Icon name="zoom-out" /></button>
       <span className="plan-zoom-value" aria-live="polite">{Math.round(zoom / ZOOM_LEVELS[0] * 100)} %</span>

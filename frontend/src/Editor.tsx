@@ -94,7 +94,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   const now = useNoticeNow(slot ? [slot] : [])
   const notice = slot ? activeNotice(slot, now) : null
   const existing = kind === 'event' ? !!event : kind === 'day' ? !!day : kind === 'room' ? !!room : !!slot
-  const title = kind === 'slot' && (createUnplanned || slot?.day_id === null) ? 'Session' : { event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot' }[kind]
+  const title = { event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Session' }[kind]
 
   const form = useRef<HTMLFormElement>(null)
   const { dirty, save } = useUnsavedChanges(savedFields(kind, {

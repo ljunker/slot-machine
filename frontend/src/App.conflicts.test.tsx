@@ -77,7 +77,7 @@ it('keeps the helper plan active across day changes and opens sessions there', a
   expect(screen.getByRole('button', { name: 'Helferplan' }).getAttribute('aria-pressed')).toBe('true')
   expect(screen.getByLabelText('Helferplan')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Dienst hinzufügen' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Slot hinzufügen' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Session hinzufügen' })).toBeTruthy()
   fireEvent.click(screen.getAllByRole('button', { name: /^2\. Juni 2099/ })[0])
   await screen.findByRole('button', { name: 'Zweiter bearbeiten' })
   expect(screen.getByRole('button', { name: 'Helferplan' }).getAttribute('aria-pressed')).toBe('true')

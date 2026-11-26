@@ -104,3 +104,19 @@
   display: block;
   color: var(--warning-text);
 }
+@media (max-width: 600px) {
+  /* Bearbeitungspanel als Vollbild mit fester Aktionsleiste. */
+  .editor {
+    width: 100vw;
+    border-left: 0;
+  }
+  .editor-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: var(--space-1) calc(var(--space-5) * -1) 0;
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+}

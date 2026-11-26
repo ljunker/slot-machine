@@ -72,7 +72,7 @@ describe('public program', () => {
     expect(details.open).toBe(true)
     expect(within(details).getByText('Willkommen zur Konferenz.')).toBeTruthy()
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Saal B' }))
-    expect(screen.getByRole('tabpanel', { name: 'Saal B' }).textContent).toContain('keine Programmpunkte')
+    expect(screen.getByRole('tabpanel', { name: 'Saal B' }).textContent).toContain('keine Sessions')
   })
 
   it('shows invalid link, empty event, and load error states', async () => {

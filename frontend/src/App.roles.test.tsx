@@ -37,36 +37,48 @@ it.each(['Testperson', null])('shows the account name %s and initials in the hea
   expect(screen.getByRole('radiogroup', { name: 'Darstellung' })).toBeTruthy()
 })
 
+function manageLabels(): string[] {
+  fireEvent.click(screen.getByRole('button', { name: 'Veranstaltung verwalten' }))
+  return within(screen.getByRole('group', { name: 'Veranstaltung verwalten' })).getAllByRole('button').map(button => button.textContent ?? '')
+}
+
 it('shows planning actions to editors without admin controls', async () => {
   mockApi()
   render(<App currentUser={user('editor')} />)
-  await screen.findByRole('button', { name: 'Slot hinzufügen' })
-  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
+  await screen.findByRole('button', { name: 'Session hinzufügen' })
   expect(screen.getByRole('button', { name: 'Dienst hinzufügen' })).toBeTruthy()
-  for (const name of ['+ Veranstaltung', 'Tag hinzufügen', 'Raum hinzufügen', 'Team verwalten', 'Restore', 'Benutzer', 'Bearbeiten']) {
-    expect(screen.queryByRole('button', { name })).toBeNull()
-  }
-  expect(screen.queryByRole('link', { name: 'Backup herunterladen' })).toBeNull()
+  for (const name of ['Tag hinzufügen', 'Raum hinzufügen']) expect(screen.queryByRole('button', { name })).toBeNull()
+  expect(manageLabels()).toEqual(['Änderungsmarkierungen entfernen'])
+  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
+  expect(screen.queryByRole('button', { name: 'Benutzer' })).toBeNull()
 })
 
-it('shows event controls to event admins without global controls', async () => {
+it('bundles the event administration in one menu for event admins', async () => {
   mockApi()
   render(<App currentUser={user('admin')} />)
   await screen.findByRole('button', { name: 'Tag hinzufügen' })
-  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
   expect(screen.getByRole('button', { name: 'Raum hinzufügen' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Team verwalten' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy()
-  expect(screen.queryByRole('button', { name: '+ Veranstaltung' })).toBeNull()
-  expect(screen.queryByRole('button', { name: 'Benutzer' })).toBeNull()
+  expect(manageLabels()).toEqual(['Stammdaten bearbeiten', 'Team verwalten', 'Besucherprogramm gestalten', 'Sicherung & Wiederherstellung', 'Änderungsmarkierungen entfernen'])
+  fireEvent.click(screen.getByRole('button', { name: 'Sicherung & Wiederherstellung' }))
+  const dialog = screen.getByRole('dialog', { name: 'Sicherung & Wiederherstellung' })
+  expect(within(dialog).getByRole('link', { name: 'Sicherung herunterladen' }).getAttribute('href')).toBe('/api/backups/events/1')
+  expect(within(dialog).getByLabelText('Sicherungsdatei (ZIP)')).toBeTruthy()
+  expect(screen.getByRole('navigation', { name: 'Planung' }).textContent).not.toMatch(/Team verwalten|Sicherung|Bearbeiten/)
+})
+
+it('hides the administration menu from helpers', async () => {
+  mockApi()
+  render(<App currentUser={user('helper')} />)
+  await screen.findByRole('button', { name: 'Tagesplan' })
+  expect(screen.queryByRole('button', { name: 'Veranstaltung verwalten' })).toBeNull()
 })
 
 it.each([
   ['helper', false, ['Mein Konto', 'Abmelden']],
   ['editor', false, ['Mein Konto', 'Abmelden']],
-  ['admin', false, ['Mein Konto', 'Restore', 'Abmelden']],
-  ['admin', true, ['Mein Konto', 'Benutzer', 'Restore', '+ Veranstaltung', 'Abmelden']],
-] as const)('shows the permitted menu actions for %s (superadmin: %s)', async (role, isSuperadmin, labels) => {
+  ['admin', false, ['Mein Konto', 'Abmelden']],
+  ['admin', true, ['Mein Konto', 'Benutzer', 'Abmelden']],
+] as const)('keeps only account actions in the header menu for %s (superadmin: %s)', async (role, isSuperadmin, labels) => {
   mockApi()
   const onLogout = vi.fn()
   render(<App currentUser={{ ...user(role), is_superadmin: isSuperadmin }} onLogout={onLogout} />)
@@ -79,29 +91,36 @@ it.each([
   expect(screen.queryByRole('group', { name: 'Header-Aktionen' })).toBeNull()
 })
 
-it.each([false, true])('keeps the appropriate menu actions without events (superadmin: %s)', async isSuperadmin => {
+it('offers superadmins a new event and the restore in the administration menu', async () => {
+  mockApi()
+  render(<App currentUser={{ ...user('admin'), is_superadmin: true }} />)
+  await screen.findByRole('button', { name: 'Tagesplan' })
+  expect(manageLabels()).toEqual(['Stammdaten bearbeiten', 'Team verwalten', 'Besucherprogramm gestalten', 'Sicherung & Wiederherstellung', 'Änderungsmarkierungen entfernen', 'Neue Veranstaltung'])
+})
+
+it.each([false, true])('keeps the appropriate administration actions without events (superadmin: %s)', async isSuperadmin => {
   mockApi(false)
   render(<App currentUser={{ ...user('admin'), is_superadmin: isSuperadmin }} />)
   await screen.findByText('Erstelle zuerst eine Veranstaltung.')
-  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
-  const labels = within(screen.getByRole('group', { name: 'Header-Aktionen' })).getAllByRole('button').map(button => button.textContent)
-  expect(labels).toEqual(isSuperadmin ? ['Mein Konto', 'Benutzer', 'Restore', '+ Veranstaltung'] : ['Mein Konto'])
+  if (isSuperadmin) expect(manageLabels()).toEqual(['Sicherung & Wiederherstellung', 'Neue Veranstaltung'])
+  else expect(screen.queryByRole('button', { name: 'Veranstaltung verwalten' })).toBeNull()
 })
 
 it('disables event creation while loading and enables it afterwards', async () => {
   let finish!: (response: Response) => void
   mockApi(false, new Promise(resolve => { finish = resolve }))
   render(<App currentUser={{ ...user('admin'), is_superadmin: true }} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
-  const create = screen.getByRole('button', { name: '+ Veranstaltung' }) as HTMLButtonElement
+  const trigger = screen.getByRole('button', { name: 'Veranstaltung verwalten' })
+  fireEvent.click(trigger)
+  const create = screen.getByRole('button', { name: 'Neue Veranstaltung' }) as HTMLButtonElement
   expect(create.disabled).toBe(true)
   fireEvent.click(create)
-  expect(screen.getByRole('button', { name: 'Menü' }).getAttribute('aria-expanded')).toBe('true')
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
   await act(async () => finish(new Response(JSON.stringify([]))))
   expect(create.disabled).toBe(false)
   fireEvent.click(create)
   expect(screen.getByRole('heading', { name: 'Veranstaltung anlegen' })).toBeTruthy()
-  expect(screen.getByRole('button', { name: 'Menü' }).getAttribute('aria-expanded')).toBe('false')
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
 
 it('offers the program as PDF and JSON to everyone in the planning team', async () => {

@@ -13,6 +13,7 @@ test('gestaltet das Besucherprogramm im Editor und zeigt es öffentlich lesbar a
 
   await page.reload()
   await page.getByRole('combobox', { name: 'Veranstaltung wählen' }).selectOption({ label: 'Round Dance Festival E2E' })
+  await page.getByRole('button', { name: 'Veranstaltung verwalten' }).click()
   await page.getByRole('button', { name: 'Besucherprogramm gestalten' }).click()
   const dialog = page.getByRole('dialog', { name: 'Besucherprogramm gestalten' })
   await dialog.getByRole('button', { name: /Flyer-Farben übernehmen/ }).click()

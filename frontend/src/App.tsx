@@ -9,7 +9,8 @@ import { DutyDetails, SlotDetails } from './ReadOnlyDetails'
 import ConflictOverview from './ConflictOverview'
 import Dashboard from './Dashboard'
 import Schedule from './Schedule'
-import PlanLegend, { usePlanZoom } from './PlanLegend'
+import PlanLegend, { usePlanZoom, useShowDuties } from './PlanLegend'
+import { matches, SEARCH_THRESHOLD, SidebarSearch, SidebarSection, useCollapsedSections } from './SidebarSection'
 import Icon from './Icon'
 import type { DutyPatch } from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
@@ -45,7 +46,7 @@ function initials(name: string | null | undefined, email: string): string {
 }
 
 const PANEL_NAMES: Record<Panel['kind'], string> = {
-  event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot', speaker: 'Rednerprofil', category: 'Kategorie', duty: 'Dienst',
+  event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Session', speaker: 'Rednerprofil', category: 'Kategorie', duty: 'Dienst',
 }
 
 export default function App({ currentUser, onLogout, onProfileChange, onPasswordChanged }: {
@@ -96,6 +97,15 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [showAccount, setShowAccount] = useState(false)
   const [clearingChangeNotices, setClearingChangeNotices] = useState(false)
   const [zoom, setZoom] = usePlanZoom()
+  const [showDuties, setShowDuties] = useShowDuties()
+  const [collapsedSections, toggleSection] = useCollapsedSections()
+  const [speakerQuery, setSpeakerQuery] = useState('')
+  const [unplannedQuery, setUnplannedQuery] = useState('')
+  const [dutiesAllDays, setDutiesAllDays] = useState(false)
+  /** Nur auf schmalen Bildschirmen: Seitenleiste als ausklappbare Schublade. */
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const sidebarOpener = useRef<HTMLButtonElement>(null)
+  const sidebarClose = useRef<HTMLButtonElement>(null)
   const loadNumber = useRef(0)
   const overviewLoadNumber = useRef(0)
   const isSuperadmin = currentUser.is_superadmin
@@ -174,6 +184,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   }
 
   function openPanel(next: Panel | null) {
+    setSidebarOpen(false)
     if (next && panel && next.kind === panel.kind && next.id === panel.id && !!next.createUnplanned === !!panel.createUnplanned) return
     guard(() => setPanel(next))
   }
@@ -202,6 +213,21 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   }, [panelDirty])
 
   useEffect(() => { void loadAll(null, null) }, [])
+
+  /** Schublade: Fokus hinein, Escape schließt, danach zurück zum Öffner (sofern er sichtbar ist). */
+  const sidebarWasOpen = useRef(false)
+  useEffect(() => {
+    if (!sidebarOpen) {
+      if (sidebarWasOpen.current && sidebarOpener.current?.offsetParent) sidebarOpener.current.focus()
+      sidebarWasOpen.current = false
+      return
+    }
+    sidebarWasOpen.current = true
+    sidebarClose.current?.focus()
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setSidebarOpen(false) }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [sidebarOpen])
 
   useEffect(() => {
     if (!isOverview || eventId === null || loading || loadError) return
@@ -341,15 +367,15 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
 
   async function clearEventChangeNotices() {
     if (eventId === null || !await confirm({
-      title: 'Alle Änderungs-Flags entfernen?',
-      message: 'Alle Verschoben- und Geändert-Flags dieser Veranstaltung werden entfernt. Abgesagte Sessions bleiben abgesagt.',
-      confirmLabel: 'Flags entfernen',
+      title: 'Alle Änderungsmarkierungen entfernen?',
+      message: 'Alle Markierungen „Verschoben“ und „Geändert“ dieser Veranstaltung werden entfernt. Abgesagte Sessions bleiben abgesagt.',
+      confirmLabel: 'Markierungen entfernen',
     })) return
     setClearingChangeNotices(true)
     try {
       await write<void>('DELETE', `/events/${eventId}/change-notices`)
       await refresh()
-      showSuccess('Änderungs-Flags entfernt.')
+      showSuccess('Änderungsmarkierungen entfernt.')
     } catch (cause) { setError((cause as Error).message) }
     finally { setClearingChangeNotices(false) }
   }
@@ -504,13 +530,30 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     window.addEventListener('pointercancel', cancel)
   }
 
+  /** Kopfzeilen-Menü: nur Kontoaktionen. */
   const headerActions: HeaderMenuAction[] = [
     { label: 'Mein Konto', onClick: () => { setShowTeam(false); setShowUsers(false); setShowRestore(false); setShowAccount(true) } },
   ]
   if (isSuperadmin) headerActions.push({ label: 'Benutzer', onClick: () => setShowUsers(true) })
-  if (isSuperadmin || selectedEvent && isAdmin) headerActions.push({ label: 'Restore', onClick: () => setShowRestore(true) })
-  if (isSuperadmin) headerActions.push({ label: '+ Veranstaltung', disabled: loading, onClick: () => openPanel({ kind: 'event', id: null }) })
   if (onLogout) headerActions.push({ label: 'Abmelden', separatorBefore: true, onClick: onLogout })
+
+  /** Menü „Veranstaltung verwalten“ neben der Auswahl: alles, was die Veranstaltung als Ganzes betrifft. */
+  const manageActions: HeaderMenuAction[] = []
+  if (selectedEvent && isAdmin) manageActions.push(
+    { label: 'Stammdaten bearbeiten', icon: 'edit', onClick: () => openPanel({ kind: 'event', id: selectedEvent.id }) },
+    { label: 'Team verwalten', icon: 'users', onClick: () => setShowTeam(true) },
+    { label: 'Besucherprogramm gestalten', icon: 'palette', onClick: () => setShowDesign(true) },
+  )
+  if (isSuperadmin || selectedEvent && isAdmin) manageActions.push({ label: 'Sicherung & Wiederherstellung', icon: 'download', onClick: () => setShowRestore(true) })
+  if (selectedEvent && canPlan) manageActions.push({ label: 'Änderungsmarkierungen entfernen', icon: 'changed', separatorBefore: manageActions.length > 0,
+    disabled: clearingChangeNotices, onClick: () => void clearEventChangeNotices() })
+  if (isSuperadmin) manageActions.push({ label: 'Neue Veranstaltung', icon: 'plus', separatorBefore: manageActions.length > 0, disabled: loading,
+    onClick: () => openPanel({ kind: 'event', id: null }) })
+
+  const visibleDuties = dutiesAllDays ? helperPlan.duties : helperPlan.duties.filter(duty => duty.day_id === null || duty.day_id === dayId)
+  const visibleSpeakers = speakers.filter(person => matches(speakerQuery, person.name))
+  const visibleUnplanned = unplanned.filter(session => matches(unplannedQuery, session.topic, ...session.speakers.map(speaker => speaker.name)))
+  const sectionProps = (id: string) => ({ collapsed: collapsedSections.has(id), onToggle: () => toggleSection(id) })
 
   return <UnsavedChangesProvider value={registerEditor}><div className="app-shell">
     <header className="app-header">
@@ -522,6 +565,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           </select>
           {selectedEvent && <span className="event-switcher-dates">{formatDate(selectedEvent.start_date)} – {formatDate(selectedEvent.end_date)}</span>}
         </div>}
+        {manageActions.length > 0 && <HeaderMenu label="Veranstaltung verwalten" panelLabel="Veranstaltung verwalten" align="left" triggerClassName="header-secondary manage-trigger" leading={<Icon name="settings" />} actions={manageActions} />}
       </div>
       <div className="header-actions">
         <ThemeControl variant="segmented" />
@@ -530,68 +574,61 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       </div>
     </header>
     <div className="workspace">
-      <nav className="sidebar" aria-label="Planung" inert={loading}>
-        <section>
-          <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
-          {selectedEvent ? <p className="sidebar-event-name">{selectedEvent.name}</p> : <p className="muted">Keine Veranstaltung</p>}
-          {selectedEvent && (isAdmin || canPlan) && <div className="sidebar-actions">
-            {isAdmin && <button type="button" className="secondary small" onClick={() => setShowTeam(true)}>Team verwalten</button>}
-            {isAdmin && <button type="button" className="secondary small" onClick={() => setShowDesign(true)}>Besucherprogramm gestalten</button>}
-            {isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download><Icon name="download" />Backup herunterladen</a>}
-            {canPlan && <button type="button" className="danger small clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
-          </div>}
-        </section>
-        {selectedEvent && <section>
-          <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" aria-label="Tag hinzufügen" onClick={() => openPanel({ kind: 'day', id: null })}><Icon name="plus" />Tag</button>}</div>
+      {sidebarOpen && <div className="sidebar-backdrop" aria-hidden="true" onClick={() => setSidebarOpen(false)} />}
+      <nav id="planning-sidebar" className={`sidebar${sidebarOpen ? ' open' : ''}`} aria-label="Planung" inert={loading}>
+        <div className="sidebar-drawer-head"><strong>Planung</strong><button ref={sidebarClose} type="button" className="icon-button" aria-label="Planung schließen" onClick={() => setSidebarOpen(false)}><Icon name="close" /></button></div>
+        {!selectedEvent && <p className="muted">Keine Veranstaltung</p>}
+        {selectedEvent && <SidebarSection title="Tage" {...sectionProps('days')} action={isAdmin && <button className="text-button" aria-label="Tag hinzufügen" onClick={() => openPanel({ kind: 'day', id: null })}><Icon name="plus" />Tag</button>}>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" onClick={() => guard(() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) })}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            <button type="button" aria-current={day.id === dayId ? 'date' : undefined} onClick={() => guard(() => { setPanel(null); setSidebarOpen(false); if (isOverview) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) })}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
             {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} title="Tag bearbeiten" onClick={() => openPanel({ kind: 'day', id: day.id })}><Icon name="edit" /></button>}
           </div>)}</div>
-        </section>}
-        {selectedEvent && <section>
-          <div className="section-heading"><h2>Räume</h2>{isAdmin && <button className="text-button" aria-label="Raum hinzufügen" onClick={() => openPanel({ kind: 'room', id: null })}><Icon name="plus" />Raum</button>}</div>
+        </SidebarSection>}
+        {selectedEvent && <SidebarSection title="Ungeplante Sessions" count={unplanned.length} {...sectionProps('unplanned')} action={canPlan && <button className="text-button" aria-label="Ungeplante Session hinzufügen" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}><Icon name="plus" />Session</button>}>
+          {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
+          {unplanned.length > SEARCH_THRESHOLD && <SidebarSearch label="Ungeplante Sessions durchsuchen" value={unplannedQuery} onChange={setUnplannedQuery} />}
+          <div className="unplanned-list">{visibleUnplanned.map(session => <div className="unplanned-row" key={session.id}>
+            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} title="In einen Raum ziehen" onPointerDown={event => beginBacklogDrag(event, session)}><Icon name="grip" /></button>}
+            <button type="button" className="unplanned-name" onClick={() => openPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
+          </div>)}</div>
+          {unplanned.length > 0 && visibleUnplanned.length === 0 && <p className="muted">Keine Treffer</p>}
+          {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
+        </SidebarSection>}
+        {selectedEvent && <SidebarSection title="Räume" {...sectionProps('rooms')} action={isAdmin && <button className="text-button" aria-label="Raum hinzufügen" onClick={() => openPanel({ kind: 'room', id: null })}><Icon name="plus" />Raum</button>}>
           {rooms.length === 0 && <p className="muted">Noch keine Räume</p>}
           <div className="room-list">{rooms.map((room, index) => <div className="room-row" key={room.id}>
             {isAdmin ? <button type="button" className="room-name" onClick={() => openPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
             {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} title={index === 0 ? 'Steht bereits ganz oben' : 'Nach oben verschieben'} disabled={index === 0} onClick={() => void reorder(room.id, -1)}><Icon name="arrow-up" /></button>}
             {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} title={index === rooms.length - 1 ? 'Steht bereits ganz unten' : 'Nach unten verschieben'} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}><Icon name="arrow-down" /></button>}
           </div>)}</div>
-        </section>}
-        {selectedEvent && <section>
-          <div className="section-heading"><h2>Kategorien</h2>{isAdmin && <button className="text-button" aria-label="Kategorie hinzufügen" onClick={() => openPanel({ kind: 'category', id: null })}><Icon name="plus" />Kategorie</button>}</div>
+        </SidebarSection>}
+        {selectedEvent && <SidebarSection title="Kategorien" {...sectionProps('categories')} action={isAdmin && <button className="text-button" aria-label="Kategorie hinzufügen" onClick={() => openPanel({ kind: 'category', id: null })}><Icon name="plus" />Kategorie</button>}>
           {categories.length === 0 && <p className="muted">Noch keine Kategorien</p>}
           <div className="room-list">{categories.map(category => <div className="room-row" key={category.id}>
             {isAdmin ? <button type="button" className="room-name category-name" onClick={() => openPanel({ kind: 'category', id: category.id })}><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</button> : <span className="room-name category-name"><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</span>}
           </div>)}</div>
-        </section>}
-        {selectedEvent && <section>
-          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2>{canPlan && <button className="text-button" aria-label="Session hinzufügen" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}><Icon name="plus" />Session</button>}</div>
-          {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
-          <div className="unplanned-list">{unplanned.map(session => <div className="unplanned-row" key={session.id}>
-            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} title="In einen Raum ziehen" onPointerDown={event => beginBacklogDrag(event, session)}><Icon name="grip" /></button>}
-            <button type="button" className="unplanned-name" onClick={() => openPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
-          </div>)}</div>
-          {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
-        </section>}
-        {selectedEvent && canPlan && <section>
-          <div className="section-heading"><h2>Redner</h2><button className="text-button" aria-label="Redner hinzufügen" onClick={() => openPanel({ kind: 'speaker', id: null })}><Icon name="plus" />Redner</button></div>
+        </SidebarSection>}
+        {selectedEvent && canPlan && <SidebarSection title="Redner" count={speakers.length} {...sectionProps('speakers')} action={<button className="text-button" aria-label="Redner hinzufügen" onClick={() => openPanel({ kind: 'speaker', id: null })}><Icon name="plus" />Redner</button>}>
           {speakers.length === 0 && <p className="muted">Noch keine Redner</p>}
-          <div className="room-list">{speakers.map(person => <div className="room-row" key={person.id}>
+          {speakers.length > SEARCH_THRESHOLD && <SidebarSearch label="Redner durchsuchen" value={speakerQuery} onChange={setSpeakerQuery} />}
+          <div className="room-list">{visibleSpeakers.map(person => <div className="room-row" key={person.id}>
             <button type="button" className="room-name" onClick={() => openPanel({ kind: 'speaker', id: person.id })}>{person.name}</button>
           </div>)}</div>
-        </section>}
-        {selectedEvent && <section>
-          <div className="section-heading"><h2>Dienste ({helperPlan.duties.length})</h2></div>
-          {helperPlan.duties.length === 0 && <p className="muted">Noch keine Dienste</p>}
-          <div className="duty-list">{helperPlan.duties.map(duty => <button type="button" key={duty.id} onClick={() => openPanel({ kind: 'duty', id: duty.id })}>
+          {speakers.length > 0 && visibleSpeakers.length === 0 && <p className="muted">Keine Treffer</p>}
+        </SidebarSection>}
+        {selectedEvent && <SidebarSection title="Dienste" count={visibleDuties.length} {...sectionProps('duties')}>
+          {days.length > 1 && <label className="sidebar-filter"><input type="checkbox" checked={dutiesAllDays} onChange={event => setDutiesAllDays(event.target.checked)} />Alle Tage zeigen</label>}
+          {visibleDuties.length === 0 && <p className="muted">{helperPlan.duties.length === 0 ? 'Noch keine Dienste' : 'Keine Dienste an diesem Tag'}</p>}
+          <div className="duty-list">{visibleDuties.map(duty => <button type="button" key={duty.id} onClick={() => openPanel({ kind: 'duty', id: duty.id })}>
             <strong>{duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')}{duty.title && duty.session_topic ? `: ${duty.session_topic}` : ''}</strong>
             <small>{duty.date ? formatDate(duty.date) : 'Ohne Tag'} · {duty.status === 'cancelled' ? 'Abgesagt' : duty.status === 'unplanned' ? 'Ungeplant' : duty.start_time?.slice(0, 5) + '–' + duty.end_time?.slice(0, 5)} · {duty.users.length ? duty.users.map(helper => helper.name).join(', ') : 'Offen'} · {duty.user_ids.length}/{duty.capacity} Plätze</small>
           </button>)}</div>
-        </section>}
+        </SidebarSection>}
       </nav>
       <main className="main-area" aria-busy={refreshing || undefined}>
         {refreshing && !loading && <div className="refresh-indicator" aria-hidden="true" />}
+        {selectedEvent && <button ref={sidebarOpener} type="button" className="secondary sidebar-toggle" aria-expanded={sidebarOpen} aria-controls="planning-sidebar" onClick={() => setSidebarOpen(true)}><Icon name="menu" />Planung</button>}
         {selectedEvent && <div className="planning-views" role="group" aria-label="Planungsansicht">
           {isAdmin && <button type="button" aria-pressed={isDashboard} onClick={() => guard(() => { setPanel(null); setView('dashboard') })}>Dashboard</button>}
           <button type="button" aria-pressed={view === 'schedule'} onClick={() => setView('schedule')}>Tagesplan</button>
@@ -606,12 +643,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
               { label: 'Programm als JSON', icon: 'download', href: `/api/events/${selectedEvent.id}/program.json`, download: true },
             ]} />}
             {selectedEvent && canPlan && !isOverview && <button className="secondary" aria-label="Dienst hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}><Icon name="plus" />Dienst</button>}
-            {selectedDay && canPlan && !isOverview && <button className="primary" aria-label="Slot hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}><Icon name="plus" />Slot</button>}
+            {selectedDay && canPlan && !isOverview && <button className="primary" aria-label="Session hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}><Icon name="plus" />Session</button>}
           </div>
         </div>
         {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
-        {!isOverview && !loading && schedule && <PlanLegend canPlan={canPlan} zoom={zoom} onZoom={setZoom} />}
-        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} pxPerMinute={zoom} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
+        {!isOverview && !loading && schedule && <PlanLegend canPlan={canPlan} zoom={zoom} onZoom={setZoom} showDuties={showDuties} onShowDuties={view === 'schedule' ? setShowDuties : undefined} />}
+        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} pxPerMinute={zoom} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} showDuties={showDuties} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
         {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
         {isDashboard && selectedEvent && <Dashboard
           days={days} rooms={rooms} speakerCount={speakers.length} schedules={overviewSchedules}
@@ -678,10 +715,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         onClose={() => setPanel(current => current === panel ? null : current)}
         onRequestClose={() => openPanel(null)}
       />}
-      {showRestore && isAdmin && <BackupRestore events={events} selectedEventId={eventId} allowCreate={isSuperadmin} onComplete={async (restoredId, warnings = []) => {
+      {showRestore && isAdmin && <BackupRestore events={events} selectedEventId={eventId} downloadEvent={selectedEvent} allowCreate={isSuperadmin} onComplete={async (restoredId, warnings = []) => {
         setPanel(null)
-        if (await loadAll(restoredId, null)) { setShowRestore(false); showSuccess(['Backup wiederhergestellt.', ...warnings].join(' ')) }
-        else throw new Error('Restore abgeschlossen, aber Planungsansicht konnte nicht geladen werden')
+        if (await loadAll(restoredId, null)) { setShowRestore(false); showSuccess(['Sicherung wiederhergestellt.', ...warnings].join(' ')) }
+        else throw new Error('Wiederherstellung abgeschlossen, aber die Planungsansicht konnte nicht geladen werden')
       }} onClose={() => setShowRestore(false)} />}
       {showTeam && isAdmin && eventId !== null && <TeamManagement eventId={eventId} currentUserId={currentUser.id} onClose={() => setShowTeam(false)} />}
       {showDesign && isAdmin && selectedEvent && <ProgramDesignEditor event={selectedEvent} onChanged={() => refresh()} onClose={() => setShowDesign(false)} />}

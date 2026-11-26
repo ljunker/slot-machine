@@ -44,6 +44,15 @@
 .dialog-actions-end {
   justify-content: flex-end;
 }
+.backup-section {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.backup-section .muted {
+  margin: 0;
+}
 .backup-preview {
   display: grid;
   gap: var(--space-2);

@@ -32,7 +32,7 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   await page.getByRole('tabpanel', { name: 'Saal A' }).locator('summary').click()
   await expect(page.getByText('Willkommen zur Konferenz.')).toBeVisible()
   await page.getByRole('tab', { name: 'Saal B' }).click()
-  await expect(page.getByRole('tabpanel', { name: 'Saal B' })).toContainText('keine Programmpunkte')
+  await expect(page.getByRole('tabpanel', { name: 'Saal B' })).toContainText('keine Sessions')
   await expect(page.getByRole('button', { name: /Bearbeiten|\+ Slot/ })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
@@ -84,7 +84,7 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await page.getByRole('combobox', { name: 'Veranstaltung wählen' }).selectOption(String(event.id))
   await page.getByRole('button', { name: 'Eröffnung bearbeiten' }).click()
-  await expect(page.getByRole('complementary', { name: 'Slot bearbeiten' })).toContainText('Vorher: 10:00–11:00 Uhr · Saal A')
+  await expect(page.getByRole('complementary', { name: 'Session bearbeiten' })).toContainText('Vorher: 10:00–11:00 Uhr · Saal A')
   await page.getByRole('checkbox', { name: 'Session abgesagt' }).check()
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator(`[data-slot-id="${slot.id}"]`)).toContainText('Abgesagt')
