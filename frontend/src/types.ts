@@ -80,7 +80,8 @@ export type UnplannedSession = Omit<Slot, 'day_id' | 'room_id' | 'start_time' | 
   start_time: null
   end_time: null
 }
-export type PublicSlot = Pick<Slot, 'id' | 'event_id' | 'scope' | 'room_id' | 'topic' | 'description' | 'start_time' | 'end_time' | 'is_cancelled' | 'change_notice' | 'categories'> & { speakers: { name: string }[] }
+export type PublicSpeaker = { id?: number; name: string; bio?: string | null; website?: string | null; photo_url?: string | null }
+export type PublicSlot = Pick<Slot, 'id' | 'event_id' | 'scope' | 'room_id' | 'topic' | 'description' | 'start_time' | 'end_time' | 'is_cancelled' | 'change_notice' | 'categories'> & { speakers: PublicSpeaker[] }
 export type PublicSession = PublicSlot & { date: string; room_name: string }
 export type ScheduleRoom = Room & { slots: Slot[] }
 export type CollisionPair = { first_slot_id: number; second_slot_id: number }

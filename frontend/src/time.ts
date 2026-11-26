@@ -54,3 +54,13 @@ export function layoutSlots<T extends Pick<Slot, 'id' | 'start_time' | 'end_time
     return entries.map(entry => ({ ...entry, lanes: laneEnds.length }))
   })
 }
+
+/** Minuten seit Mitternacht in lokaler Zeit. */
+export function minutesOfDay(date: Date): number {
+  return date.getHours() * 60 + date.getMinutes()
+}
+
+/** Läuft die Session zur angegebenen Minute? Abgesagte Sessions laufen nie. */
+export function isRunning(slot: { start_time: string; end_time: string; is_cancelled?: boolean }, minute: number): boolean {
+  return !slot.is_cancelled && toMinutes(slot.start_time) <= minute && minute < toMinutes(slot.end_time)
+}

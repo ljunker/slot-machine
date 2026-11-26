@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { request } from './api'
 import { programDesign } from './branding'
-import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './changeNotice'
-import { formatDate } from './date'
+import { useNoticeNow } from './changeNotice'
+import { pageTitle, usePageTitle } from './pageTitle'
 import { PublicFooter, PublicHeader } from './PublicChrome'
-import CategoryLabels from './CategoryLabels'
+import PublicSessionDetails from './PublicSessionDetails'
 import type { Event, PublicSession } from './types'
 
 export default function PublicSessionPage({ eventId, sessionId }: { eventId: number; sessionId: number }) {
@@ -14,7 +14,7 @@ export default function PublicSessionPage({ eventId, sessionId }: { eventId: num
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const now = useNoticeNow(session ? [session] : [])
-  const notice = session ? activeNotice(session, now) : null
+  usePageTitle(session ? pageTitle(session.topic, event?.name) : event ? pageTitle('Programm', event.name) : null, event?.logo_url)
 
   useEffect(() => {
     let active = true
@@ -48,12 +48,7 @@ export default function PublicSessionPage({ eventId, sessionId }: { eventId: num
       </div>}
       {!loading && !error && session && <article className="public-session-page">
         <span className="eyebrow">SESSION</span>
-        <h2>{session.topic}</h2>
-        <CategoryLabels categories={session.categories} />
-        {notice && <p className={`public-change-notice notice-${notice.type}`}><strong>{noticeLabel(notice)}</strong>{previousPlanning(notice) && <span>Vorher: {previousPlanning(notice)}</span>}</p>}
-        <p>{formatDate(session.date)} · {session.start_time.slice(0, 5)}–{session.end_time.slice(0, 5)} Uhr · {session.room_name}</p>
-        {session.speakers.length > 0 && <p>Redner: {session.speakers.map(speaker => speaker.name).join(', ')}</p>}
-        {session.description && <p className="public-description">{session.description}</p>}
+        <PublicSessionDetails slot={session} roomName={session.room_name} date={session.date} now={now} />
       </article>}
     </main>
     <PublicFooter event={event} showInfo={false} />

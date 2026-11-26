@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -32,6 +32,8 @@ from app.services.event_branding import (
     logo_path,
 )
 from app.services.event_service import EventService
+from app.services.ical import session_calendar
+from app.services.public_meta import public_base_url
 from app.services.program_design_service import ProgramDesignService
 from app.services.program_export import build_program_export
 from app.services.program_pdf import build_program_pdf
@@ -70,6 +72,21 @@ def get_event(event_id: int, db: Session = Depends(get_db)):
 def get_unplanned_sessions(event_id: int, db: Session = Depends(get_db), user: User = Depends(require_user)):
     authorize_event(db, user, event_id, "helper")
     return SlotService(db).get_unplanned_for_event(event_id)
+
+
+@public_router.get("/{event_id}/sessions/{slot_id}.ics")
+def get_public_session_calendar(event_id: int, slot_id: int, request: Request, db: Session = Depends(get_db)):
+    session = SlotService(db).get_public_session(event_id, slot_id)
+    event = EventService(db).get(event_id)
+    url = f"{public_base_url(request)}/programm/{event_id}/sessions/{slot_id}"
+    return Response(
+        content=session_calendar(session, event.name, url),
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="session-{slot_id}.ics"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @public_router.get("/{event_id}/sessions/{slot_id}", response_model=PublicSessionResponse)

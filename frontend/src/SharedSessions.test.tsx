@@ -99,7 +99,8 @@ it('shows one desktop bar, includes the session in every mobile room, and opens 
   const { container } = render(<PublicSchedule schedule={schedule} />)
   expect(container.querySelectorAll('.public-desktop-program [data-slot-id="5"]')).toHaveLength(1)
   fireEvent.click(screen.getByRole('button', { name: /Mittagspause,.*Details anzeigen/ }))
-  expect(screen.getByRole('region', { name: 'Session-Details' }).textContent).toContain('Alle Räume')
+  expect(screen.getByRole('dialog', { name: 'Mittagspause' }).textContent).toContain('Alle Räume')
+  fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
   for (const name of ['Saal A', 'Saal B']) {
     fireEvent.click(screen.getByRole('tab', { name }))
     const panel = screen.getByRole('tabpanel')

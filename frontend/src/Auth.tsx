@@ -5,6 +5,7 @@ import { request, setCsrfToken, write } from './api'
 import InlineMessage from './InlineMessage'
 import PasswordField from './PasswordField'
 import type { CurrentUser } from './types'
+import { APP_TITLE, pageTitle, usePageTitle } from './pageTitle'
 
 const PASSWORD_HINT = 'Mindestens 12 Zeichen.'
 const INVALID_LINK = 'Link ungültig oder abgelaufen'
@@ -19,6 +20,7 @@ async function login(email: string, password: string): Promise<CurrentUser> {
 
 /** Card layout shared by all sign-in pages, with the product name above the title. */
 function AuthCard({ title, children }: { title: string; children: ReactNode }) {
+  usePageTitle(pageTitle(title, APP_TITLE))
   return <main className="auth-page"><section className="auth-card">
     <div className="auth-brand" aria-hidden="true"><span className="auth-brand-mark" />Event Scheduler</div>
     <h1>{title}</h1>
