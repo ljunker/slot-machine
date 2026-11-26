@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { contrastRatio, programDesign } from './branding'
-import ProgramDesignEditor from './ProgramDesignEditor'
+import ProgramDesignEditor, { PALETTES } from './ProgramDesignEditor'
 import PublicProgram from './PublicProgram'
 import PublicSessionPage from './PublicSessionPage'
 import type { Event } from './types'
@@ -19,7 +19,7 @@ const flyer: Event = {
   info_blocks: [{ id: 5, title: 'Sprache', body: 'Cues auf Englisch', sort_order: 0 }],
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function vars(event: Partial<Event>, theme: 'light' | 'dark') {
   const style = programDesign({ accent_color: null, logo_url: null, ...event }).style as Record<string, string>
@@ -104,64 +104,159 @@ describe('program design', () => {
 })
 
 describe('program design editor', () => {
-  function stubApi() {
+  function stubApi(fail?: (method: string, path: string) => boolean) {
     const calls: { method: string; path: string; body: unknown }[] = []
+    let created = 100
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:vorschau')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
+      const method = init?.method ?? 'GET'
       const body = init?.body instanceof FormData ? init.body.get('image') ?? init.body.get('logo') : init?.body ? JSON.parse(String(init.body)) : undefined
-      calls.push({ method: init?.method ?? 'GET', path, body })
-      return init?.method === 'PUT' || init?.method === 'DELETE' ? new Response(null, { status: 204 }) : new Response(JSON.stringify(flyer), { status: 200 })
+      calls.push({ method, path, body })
+      if (fail?.(method, path)) return new Response(JSON.stringify({ detail: 'Datei zu groß' }), { status: 400 })
+      if (method === 'PUT' || method === 'DELETE') return new Response(null, { status: 204 })
+      if (method === 'POST' && /(partner-logos|info-blocks)$/.test(path)) return new Response(JSON.stringify({ id: ++created }), { status: 201 })
+      return new Response(JSON.stringify(flyer), { status: 200 })
     }))
-    vi.stubGlobal('confirm', vi.fn(() => true))
     return calls
   }
 
-  it('saves colours and texts and applies the flyer palette', async () => {
+  const plain: Event = { ...flyer, background_color: null, text_color: null, accent_color: null, header_background_color: null, card_color: null, program_eyebrow: null, program_subtitle: null, website_url: null }
+
+  it('keeps every palette readable', () => {
+    for (const { name, colors } of PALETTES) {
+      for (const surface of [colors.background_color, colors.card_color]) {
+        expect(contrastRatio(colors.text_color, surface), `${name} text`).toBeGreaterThanOrEqual(4.5)
+        expect(contrastRatio(colors.accent_color, surface), `${name} accent`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
+  })
+
+  it('collects colour and text changes and saves them together', async () => {
     const calls = stubApi()
     const onChanged = vi.fn(async () => {})
-    const plain: Event = { ...flyer, background_color: null, text_color: null, accent_color: null, header_background_color: null, card_color: null, program_eyebrow: null, program_subtitle: null, website_url: null }
     render(<ProgramDesignEditor event={plain} onChanged={onChanged} onClose={() => {}} />)
+    expect(screen.queryByRole('button', { name: /Flyer-Farben/ })).toBeNull()
+    expect(screen.getByText('Alles gespeichert')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Änderungen speichern' }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.queryByLabelText('Farbe Hintergrund')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /Flyer-Farben übernehmen/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Vorlage Creme und Petrol' }))
     expect((screen.getByLabelText('Farbe Hintergrund') as HTMLInputElement).value).toBe('#faf7f0')
     fireEvent.click(screen.getByRole('checkbox', { name: 'Session-Karten' }))
     fireEvent.change(screen.getByLabelText('Überschrift'), { target: { value: 'PROGRAMM' } })
     fireEvent.change(screen.getByLabelText('Webadresse'), { target: { value: 'https://rdf.example.org' } })
+    expect(screen.getByText('6 ungespeicherte Änderungen')).toBeTruthy()
     const preview = screen.getByLabelText('Vorschau des Besucherprogramms')
     expect(preview.textContent).toContain('PROGRAMM')
-    fireEvent.click(screen.getByRole('button', { name: 'Farben und Texte speichern' }))
-    await screen.findByText('Gestaltung gespeichert.')
-    const patch = calls.find(call => call.method === 'PATCH')
-    expect(patch?.path).toBe('/api/events/3')
-    expect(patch?.body).toEqual({
+    expect(preview.querySelector('.public-slot.notice-cancelled')).toBeTruthy()
+    expect(preview.querySelector('.public-slot.notice-rescheduled')).toBeTruthy()
+    expect(preview.querySelector('.category-labels')).toBeTruthy()
+    expect(calls).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+    await screen.findByText('Alle Änderungen gespeichert.')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual({ method: 'PATCH', path: '/api/events/3', body: {
       background_color: '#FAF7F0', text_color: '#1D488B', accent_color: '#167B7B', header_background_color: '#FAF7F0', card_color: null,
       program_eyebrow: 'PROGRAMM', program_subtitle: null, website_url: 'https://rdf.example.org',
-    })
+    } })
     expect(onChanged).toHaveBeenCalled()
   })
 
-  it('manages partners, info blocks and graphics', async () => {
+  it('discards the draft', () => {
+    const calls = stubApi()
+    render(<ProgramDesignEditor event={flyer} onChanged={async () => {}} onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Überschrift'), { target: { value: 'ANDERS' } })
+    fireEvent.click(screen.getByRole('button', { name: 'ECTA nach unten' }))
+    expect(screen.getByText('2 ungespeicherte Änderungen')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }))
+    expect((screen.getByLabelText('Überschrift') as HTMLInputElement).value).toBe('PROGRAMM')
+    expect(screen.getByText('Alles gespeichert')).toBeTruthy()
+    expect(calls).toHaveLength(0)
+  })
+
+  it('asks before closing with unsaved changes', async () => {
+    stubApi()
+    const onClose = vi.fn()
+    render(<ProgramDesignEditor event={flyer} onChanged={async () => {}} onClose={onClose} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    fireEvent.change(screen.getByLabelText('Überschrift'), { target: { value: 'ANDERS' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    fireEvent.click(await screen.findByRole('button', { name: 'Abbrechen' }))
+    expect((screen.getByLabelText('Überschrift') as HTMLInputElement).value).toBe('ANDERS')
+    fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Verwerfen' }))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2))
+  })
+
+  it('saves partners, info blocks, order and graphics in one go', async () => {
     const calls = stubApi()
     const onChanged = vi.fn(async () => {})
     render(<ProgramDesignEditor event={flyer} onChanged={onChanged} onClose={() => {}} />)
     fireEvent.change(screen.getByLabelText('Neuer Partner'), { target: { value: 'Neuer Club' } })
     fireEvent.click(screen.getByRole('button', { name: 'Partner hinzufügen' }))
-    await waitFor(() => expect(calls.some(call => call.method === 'POST' && call.path === '/api/events/3/partner-logos')).toBe(true))
     fireEvent.click(screen.getByRole('button', { name: 'ECTA nach unten' }))
-    await waitFor(() => expect(calls.find(call => call.method === 'PUT')?.body).toEqual({ ids: [2, 1] }))
-    expect((screen.getByRole('button', { name: 'ECTA nach oben' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Butterflies nach oben' }) as HTMLButtonElement).disabled).toBe(true)
 
-    const info = screen.getByRole('form', { name: 'Infoblock Sprache' })
+    const info = screen.getByRole('group', { name: 'Infoblock Sprache' })
     fireEvent.change(info.querySelector('textarea')!, { target: { value: 'Cues auf Englisch und Deutsch' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Infoblock speichern' }))
-    await waitFor(() => expect(calls.find(call => call.method === 'PATCH' && call.path === '/api/events/3/info-blocks/5')?.body)
-      .toEqual({ title: 'Sprache', body: 'Cues auf Englisch und Deutsch' }))
+    fireEvent.change(screen.getByLabelText('Neuer Infoblock'), { target: { value: 'Anfahrt' } })
+    fireEvent.keyDown(screen.getByLabelText('Neuer Infoblock'), { key: 'Enter' })
 
     const file = new File(['png'], 'skyline.png', { type: 'image/png' })
     fireEvent.change(screen.getByLabelText('Fußgrafik'), { target: { files: [file] } })
-    await waitFor(() => expect(calls.some(call => call.method === 'POST' && call.path === '/api/events/3/graphics/footer')).toBe(true))
+    expect(screen.getByText('Neu ausgewählt: skyline.png')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Kopfgrafik entfernen' }))
-    await waitFor(() => expect(calls.some(call => call.method === 'DELETE' && call.path === '/api/events/3/graphics/header')).toBe(true))
-    expect(onChanged.mock.calls.length).toBeGreaterThanOrEqual(5)
+    expect(screen.getByText('Wird beim Speichern entfernt.')).toBeTruthy()
+    expect(screen.getByText('6 ungespeicherte Änderungen')).toBeTruthy()
+    expect(calls).toHaveLength(0)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+    await screen.findByText('Alle Änderungen gespeichert.')
+    const summary = calls.map(call => `${call.method} ${call.path}`)
+    expect(summary).toEqual([
+      'DELETE /api/events/3/graphics/header',
+      'POST /api/events/3/graphics/footer',
+      'POST /api/events/3/partner-logos',
+      'PUT /api/events/3/partner-logos/order',
+      'PATCH /api/events/3/info-blocks/5',
+      'POST /api/events/3/info-blocks',
+    ])
+    expect(calls.find(call => call.path.endsWith('partner-logos/order'))?.body).toEqual({ ids: [2, 1, 101] })
+    expect(calls.find(call => call.path.endsWith('info-blocks/5'))?.body).toEqual({ title: 'Sprache', body: 'Cues auf Englisch und Deutsch' })
+    expect(onChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes a saved partner only after confirming and saving', async () => {
+    const calls = stubApi()
+    render(<ProgramDesignEditor event={flyer} onChanged={async () => {}} onClose={() => {}} />)
+    const group = screen.getByRole('group', { name: 'Partner Butterflies' })
+    fireEvent.click(within(group).getByRole('button', { name: 'Löschen' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Partner entfernen' }))
+    await waitFor(() => expect(screen.queryByRole('group', { name: 'Partner Butterflies' })).toBeNull())
+    expect(calls).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+    await screen.findByText('Alle Änderungen gespeichert.')
+    expect(calls.map(call => `${call.method} ${call.path}`)).toEqual(['DELETE /api/events/3/partner-logos/2'])
+  })
+
+  it('does not create a partner twice when a later step fails', async () => {
+    let failing = true
+    const calls = stubApi((method, path) => failing && method === 'POST' && path.endsWith('/image'))
+    render(<ProgramDesignEditor event={flyer} onChanged={async () => {}} onClose={() => {}} />)
+    fireEvent.change(screen.getByLabelText('Neuer Partner'), { target: { value: 'Neuer Club' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Partner hinzufügen' }))
+    const group = screen.getByRole('group', { name: 'Partner Neuer Club' })
+    fireEvent.change(within(group).getByLabelText('Partnerlogo'), { target: { files: [new File(['png'], 'club.png', { type: 'image/png' })] } })
+    fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+    await screen.findByText(/Nicht alles wurde gespeichert: Datei zu groß/)
+    failing = false
+    fireEvent.click(screen.getByRole('button', { name: 'Änderungen speichern' }))
+    await screen.findByText('Alle Änderungen gespeichert.')
+    expect(calls.filter(call => call.method === 'POST' && call.path === '/api/events/3/partner-logos')).toHaveLength(1)
+    expect(calls.filter(call => call.path === '/api/events/3/partner-logos/101/image')).toHaveLength(2)
   })
 })
