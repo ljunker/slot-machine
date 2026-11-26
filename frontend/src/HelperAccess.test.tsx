@@ -34,7 +34,7 @@ it('shows helper read-only details and persists own signup and leave', async () 
   const fetch = mockApi()
   const { container } = render(<App currentUser={currentUser} />)
   await screen.findByRole('button', { name: 'Vortrag ansehen' })
-  for (const name of ['+ Slot', '+ Dienst', '+ Helfer', '+ Redner', '+ Session', 'Team verwalten', 'Alle Änderungs-Flags entfernen']) {
+  for (const name of ['Slot hinzufügen', 'Dienst hinzufügen', 'Helfer hinzufügen', 'Redner hinzufügen', 'Session hinzufügen', 'Team verwalten', 'Alle Änderungs-Flags entfernen']) {
     expect(screen.queryByRole('button', { name })).toBeNull()
   }
   expect(container.querySelector('.slot-resize, .duty-resize')).toBeNull()
@@ -60,8 +60,8 @@ it('closes editing panels and removes editing controls when switching to helper 
   render(<App currentUser={currentUser} />)
   await screen.findByRole('button', { name: 'Vortrag ansehen' })
   fireEvent.change(screen.getByLabelText('Veranstaltung wählen'), { target: { value: '2' } })
-  await screen.findByRole('button', { name: '+ Dienst' })
-  fireEvent.click(screen.getByRole('button', { name: '+ Dienst' }))
+  await screen.findByRole('button', { name: 'Dienst hinzufügen' })
+  fireEvent.click(screen.getByRole('button', { name: 'Dienst hinzufügen' }))
   expect(screen.getByRole('heading', { name: 'Dienst anlegen' })).toBeTruthy()
   fireEvent.change(screen.getByLabelText('Veranstaltung wählen'), { target: { value: '1' } })
   await screen.findByRole('button', { name: 'Vortrag ansehen' })

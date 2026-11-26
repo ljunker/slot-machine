@@ -1,0 +1,145 @@
+/*
+ * Design-Tokens. Farben wechseln mit dem Theme, alle anderen Werte gelten für beide Themes.
+ * Bedeutung der Zustandsfarben: siehe docs/designsystem.md.
+ */
+:root {
+  /* Typografie: Inter als Variable Font (selbst gehostet), Größen in rem, Untergrenze 12 px */
+  --font-sans: "Inter Variable", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --text-xs: 0.75rem; /* 12 px: Metadaten, Badges, Labels */
+  --text-sm: 0.8125rem; /* 13 px: Listen, Sekundärtext */
+  --text-md: 0.875rem; /* 14 px: Buttons, Formulare */
+  --text-base: 0.9375rem; /* 15 px: Fließtext */
+  --text-lg: 1.125rem; /* 18 px: Panel-Überschriften */
+  --text-xl: 1.5rem; /* 24 px: Seitenüberschrift */
+  --text-2xl: 1.75rem; /* 28 px: Kennzahlen, große Titel */
+
+  /* Abstände im 4er-Raster */
+  --space-half: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-10: 40px;
+
+  /* Radien */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 999px;
+
+  /* Schatten (Farbe kommt aus --shadow und wechselt mit dem Theme) */
+  --shadow-sm: 0 2px 6px var(--shadow);
+  --shadow-md: 0 8px 24px var(--shadow);
+  --shadow-lg: 0 20px 50px var(--shadow);
+
+  /* Feste Höhen */
+  --control-height: 38px;
+  --header-control-height: 44px;
+
+  font-family: var(--font-sans);
+  font-size: 100%;
+  color: var(--text);
+  background: var(--page-bg);
+  font-synthesis: none;
+  color-scheme: light;
+  --page-bg: #f5f7fb;
+  --surface: #fff;
+  --surface-soft: #fbfcfe;
+  --header-bg: #15213c;
+  --header-text: #fff;
+  --header-muted: #b9c6df;
+  --header-eyebrow: #92b7ff;
+  --text: #172039;
+  --text-strong: #293958;
+  --input-text: #1b2943;
+  --subtext: #596783;
+  --muted: #5d687e;
+  --eyebrow: #536690;
+  --border: #dce2ed;
+  --border-soft: #edf0f5;
+  --primary: #4569dd;
+  --primary-hover: #3156cf;
+  --on-accent: #fff;
+  --link: #365cc4;
+  --link-hover: #274fc0;
+  --icon: #5570a7;
+  --selected: #eaf0ff;
+  --drop: #f8faff;
+  --card: #e7efff;
+  --card-hover: #dbe8ff;
+  --card-border: #b9cdfb;
+  --card-accent: #5c7fe2;
+  --handle: #7993bd;
+  --danger-bg: #fff0ed;
+  --danger-border: #ffc3bb;
+  --danger-accent: #b83627;
+  --danger-text: #9e3327;
+  --warning-bg: #fff7df;
+  --warning-border: #e8a527;
+  --warning-text: #765000;
+  --cancel-bg: #f0f1f4;
+  --cancel-border: #737e92;
+  --change-bg: #f8ecff;
+  --change-border: #9862bf;
+  --change-text: #6b3a8f;
+  --success-bg: #eaf7ef;
+  --success-border: #7cc49a;
+  --success-text: #1d6b3d;
+  --border-strong: #8792aa;
+  --on-danger: #fff;
+  --shadow: #17203916;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page-bg: #0e1626;
+  --surface: #182337;
+  --surface-soft: #1d2a40;
+  --header-bg: #0a1120;
+  --header-text: #f3f7ff;
+  --header-muted: #aebbd3;
+  --header-eyebrow: #adc9ff;
+  --text: #e9eef8;
+  --text-strong: #edf3ff;
+  --input-text: #edf3ff;
+  --subtext: #c4d0e2;
+  --muted: #a9b7cc;
+  --eyebrow: #a6b9dc;
+  --border: #3d4d67;
+  --border-soft: #2c3b53;
+  --primary: #83a7ff;
+  --primary-hover: #a0bbff;
+  --on-accent: #0b1731;
+  --link: #a9c4ff;
+  --link-hover: #d2e0ff;
+  --icon: #a9c4ff;
+  --selected: #243c63;
+  --drop: #253750;
+  --card: #243b5b;
+  --card-hover: #2e4c73;
+  --card-border: #668cc7;
+  --card-accent: #a3c0ff;
+  --handle: #96b5df;
+  --danger-bg: #49272f;
+  --danger-border: #a75666;
+  --danger-accent: #ff9c9f;
+  --danger-text: #ffc5c0;
+  --warning-bg: #49391e;
+  --warning-border: #b88b42;
+  --warning-text: #ffdb8c;
+  --cancel-bg: #323844;
+  --cancel-border: #b5bfce;
+  --change-bg: #372846;
+  --change-border: #caa4ee;
+  --change-text: #e2c8f7;
+  --success-bg: #1d3a2b;
+  --success-border: #4f9a6e;
+  --success-text: #a8e6c0;
+  --border-strong: #5a6c8a;
+  --on-danger: #2a0b0e;
+  --shadow: #0000004d;
+}

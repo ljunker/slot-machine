@@ -91,7 +91,7 @@ for (const viewport of [
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
         const account = page.locator('.account-name')
         await expect(account.locator('strong')).toHaveAttribute('title', name)
-        await expect(account.locator('span')).toHaveAttribute('title', email)
+        await expect(page.locator('.app-header')).not.toContainText(email)
         await expect(account).toContainText(name)
         const trigger = page.getByRole('button', { name: 'Menü', exact: true })
         const themeBounds = (await page.getByRole('radiogroup', { name: 'Darstellung' }).boundingBox())!
@@ -100,12 +100,8 @@ for (const viewport of [
         expect(themeBounds.height).toBe(44)
         expect(triggerBounds.height).toBe(44)
         expect(themeBounds.y).toBe(triggerBounds.y)
-        if (viewport.width <= 600) {
-          expect(accountBounds.y).toBeGreaterThanOrEqual(themeBounds.y + themeBounds.height)
-        } else {
-          expect(accountBounds.width).toBeLessThanOrEqual(240)
-          expect(Math.abs(accountBounds.y + accountBounds.height / 2 - (themeBounds.y + 22))).toBeLessThan(1)
-        }
+        if (viewport.width > 600) expect(accountBounds.width).toBeLessThanOrEqual(240)
+        expect(Math.abs(accountBounds.y + accountBounds.height / 2 - (themeBounds.y + 22))).toBeLessThan(1)
         await page.locator('.app-header').screenshot({ path: testInfo.outputPath('header-toolbar.png') })
         await expect(page.getByRole('button', { name: 'Mein Konto', exact: true })).toBeHidden()
         await trigger.click()

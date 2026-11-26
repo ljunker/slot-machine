@@ -4,6 +4,7 @@ import CategoryLabels from './CategoryLabels'
 import { formatDate } from './date'
 import { displayUrl } from './PublicChrome'
 import type { PublicSlot, PublicSpeaker } from './types'
+import { NoticeIcon } from './NoticeBadge'
 
 export function sessionPath(slot: Pick<PublicSlot, 'event_id' | 'id'>): string {
   return `/programm/${slot.event_id}/sessions/${slot.id}`
@@ -79,7 +80,7 @@ export default function PublicSessionDetails({ slot, roomName, date, now, titleI
   return <>
     <h2 id={titleId} className="public-session-title">{slot.topic}</h2>
     <CategoryLabels categories={slot.categories} />
-    {notice && <p className={`public-change-notice notice-${notice.type}`}><strong>{noticeLabel(notice)}</strong>{previous && <span>Vorher: {previous}</span>}</p>}
+    {notice && <p className={`public-change-notice notice-${notice.type}`}><strong><NoticeIcon notice={notice} />{noticeLabel(notice)}</strong>{previous && <span>Vorher: {previous}</span>}</p>}
     <p className="public-session-when">
       {running && <span className="public-running-badge">Läuft gerade</span>}
       {date ? `${formatDate(date)} · ` : ''}{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)} Uhr · {slot.scope === 'all_rooms' ? 'Alle Räume' : roomName}

@@ -1,0 +1,73 @@
+.toast-region {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.toast,
+.undo-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--header-bg);
+  color: var(--header-text);
+  font-size: var(--text-md);
+  box-shadow: var(--shadow-md);
+}
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.toast-icon {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--header-eyebrow);
+}
+.toast-success .toast-icon {
+  background: #6fd39a;
+}
+.toast-error {
+  border-left: 4px solid #ff8a80;
+}
+.toast-error .toast-icon {
+  background: #ff8a80;
+}
+.toast .icon-button,
+.undo-toast .icon-button {
+  color: var(--header-muted);
+}
+.undo-toast {
+  padding-left: var(--space-4);
+}
+.undo-toast .undo-action {
+  border: 0;
+  background: transparent;
+  color: var(--header-eyebrow);
+  font-weight: 800;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+}
+.undo-toast .undo-action:hover:not(:disabled),
+.undo-toast .undo-action:focus-visible {
+  background: #ffffff1f;
+}
+@media (max-width: 600px) {
+  .toast-region {
+    right: 16px;
+    left: 16px;
+    width: auto;
+    justify-items: stretch;
+  }
+}

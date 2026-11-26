@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import Schedule from './Schedule'
+import Schedule, { cardDensity } from './Schedule'
 import type { DaySchedule } from './types'
 
 const schedule: DaySchedule = {
@@ -55,6 +55,61 @@ describe('schedule interactions', () => {
       fireEvent.pointerUp(window)
       expect(onChange).toHaveBeenCalledTimes(2)
     } finally { Element.prototype.getBoundingClientRect = original }
+  })
+
+  it('opens a card with a single click anywhere on it, but not after dragging', () => {
+    const onEdit = vi.fn()
+    const onChange = vi.fn(async () => {})
+    const { container } = render(<Schedule schedule={schedule} onEdit={onEdit} onChange={onChange} />)
+    const card = container.querySelector('[data-slot-id="1"]') as HTMLElement
+    fireEvent.click(card)
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    const grip = screen.getByLabelText('Erster verschieben')
+    fireEvent.pointerDown(grip, { button: 0, clientY: 100 })
+    fireEvent.pointerUp(window)
+    fireEvent.click(grip)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onEdit).toHaveBeenCalledTimes(2)
+    const resize = container.querySelector('[aria-label="Erster verlängern oder verkürzen"]')!
+    fireEvent.pointerDown(resize, { button: 0, clientY: 100 })
+    fireEvent.pointerMove(window, { clientY: 148, clientX: 10 })
+    fireEvent.pointerUp(window)
+    fireEvent.click(container.querySelector('[data-slot-id="1"]')!)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledTimes(2)
+  })
+
+  it('labels room conflicts with text and icon, not only with colour', () => {
+    const { container } = render(<Schedule schedule={schedule} onEdit={() => {}} onChange={async () => {}} />)
+    const first = container.querySelector('[data-slot-id="1"]') as HTMLElement
+    expect(first.querySelector('.status-conflict')?.textContent).toBe('Raumkonflikt')
+    expect(first.querySelector('.status-conflict svg')).not.toBeNull()
+    expect(first.title).toContain('Raumkonflikt')
+  })
+
+  it('chooses the card density from the duration and shows details only on large cards', () => {
+    expect([cardDensity(15), cardDensity(29), cardDensity(30), cardDensity(59), cardDensity(60)])
+      .toEqual(['compact', 'compact', 'medium', 'medium', 'full'])
+    const withSpeakers: DaySchedule = { ...schedule, collisions: [], rooms: [{ ...schedule.rooms[0], slots: [
+      { ...schedule.rooms[0].slots[0], speakers: [{ id: 1, name: 'Ada' }] },
+      { ...schedule.rooms[0].slots[1], start_time: '12:00:00', end_time: '12:15:00', speakers: [{ id: 1, name: 'Ada' }] },
+    ] }] }
+    const { container } = render(<Schedule schedule={withSpeakers} onEdit={() => {}} onChange={async () => {}} />)
+    const long = container.querySelector('[data-slot-id="1"]') as HTMLElement
+    const short = container.querySelector('[data-slot-id="2"]') as HTMLElement
+    expect(long.className).toContain('density-full')
+    expect(long.querySelector('.slot-speakers')?.textContent).toBe('Ada')
+    expect(short.className).toContain('density-compact')
+    expect(short.querySelector('.slot-speakers')).toBeNull()
+    expect(short.title).toContain('Redner: Ada')
+  })
+
+  it('scales the grid with the zoom level and draws half-hour lines', () => {
+    const { container } = render(<Schedule schedule={schedule} pxPerMinute={3.2} onEdit={() => {}} onChange={async () => {}} />)
+    const first = container.querySelector('[data-slot-id="1"]') as HTMLElement
+    expect(first.style.top).toBe('192px')
+    expect(first.style.height).toBe('192px')
+    expect(container.querySelectorAll('.room-column .half-hour-line').length).toBeGreaterThan(0)
   })
 
   it('names speaker conflicts across rooms', () => {

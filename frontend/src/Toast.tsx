@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import Icon from './Icon'
 
 export type ToastTone = 'success' | 'info' | 'error'
 export type ToastEntry = { id: number; tone: ToastTone; message: string }
@@ -41,7 +42,7 @@ function Toast({ toast, onDismiss }: { toast: ToastEntry; onDismiss: (id: number
     onFocus={() => setPaused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false) }}>
     <span className="toast-icon" aria-hidden="true" />
     <span className="toast-message">{toast.message}</span>
-    <button type="button" className="icon-button" aria-label="Meldung schließen" onClick={() => dismiss.current(toast.id)}>×</button>
+    <button type="button" className="icon-button" aria-label="Meldung schließen" onClick={() => dismiss.current(toast.id)}><Icon name="close" /></button>
   </div>
 }
 

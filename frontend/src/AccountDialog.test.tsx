@@ -149,7 +149,7 @@ it('updates the auth state and helper plan while retaining the event, day and vi
   render(<AuthGate />)
   await screen.findByRole('button', { name: /^1\. Juni 2099/ })
   fireEvent.change(screen.getByLabelText('Veranstaltung wählen'), { target: { value: '2' } })
-  await screen.findByRole('button', { name: '+ Dienst' })
+  await screen.findByRole('button', { name: 'Dienst hinzufügen' })
   fireEvent.click(screen.getByRole('button', { name: /^2\. Juni 2099/ }))
   await waitFor(() => expect(document.querySelector('.day-row.active')?.textContent).toContain('2. Juni 2099'))
   fireEvent.click(screen.getByRole('button', { name: 'Helferplan' }))

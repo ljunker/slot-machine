@@ -1,0 +1,74 @@
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+}
+.auth-card {
+  width: min(430px, 100%);
+  display: grid;
+  gap: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-7);
+}
+.auth-card h1,
+.auth-card p {
+  margin: 0;
+}
+.auth-card form {
+  display: grid;
+  gap: var(--space-4);
+}
+.auth-card label,
+.management-form label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--subtext);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.auth-card a:not(.primary):not(.secondary) {
+  color: var(--link);
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--eyebrow);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.auth-brand-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--primary), var(--change-border));
+}
+.auth-facts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.auth-facts div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: var(--space-2);
+  font-size: var(--text-md);
+}
+.auth-facts dt {
+  color: var(--subtext);
+  font-weight: 700;
+}
+.auth-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

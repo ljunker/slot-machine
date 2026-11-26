@@ -24,26 +24,26 @@ function mockApi(hasEvents = true, eventsResponse?: Promise<Response>) {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-it.each(['Testperson', null])('shows the account name %s and full email in the header', async name => {
+it.each(['Testperson', null])('shows the account name %s and initials in the header, without the email', async name => {
   mockApi(false)
   const currentUser = { ...user('helper'), name }
   const { container } = render(<App currentUser={currentUser} />)
   await screen.findByText('Erstelle zuerst eine Veranstaltung.')
-  const account = container.querySelector('.account-name')!
-  expect(account.querySelector('strong')?.textContent ?? null).toBe(name)
-  expect(account.querySelector('strong')?.title ?? null).toBe(name)
-  expect(account.querySelector('span')?.textContent).toBe(currentUser.email)
-  expect(account.querySelector('span')?.title).toBe(currentUser.email)
+  const account = container.querySelector('.account-name')
+  expect(account?.querySelector('strong')?.textContent ?? null).toBe(name)
+  expect(account?.querySelector('strong')?.title ?? null).toBe(name)
+  expect(container.querySelector('.app-header')?.textContent).not.toContain(currentUser.email)
+  expect(screen.getByRole('button', { name: 'Menü' }).textContent).toContain(name ? 'TE' : currentUser.email.slice(0, 2).toUpperCase())
   expect(screen.getByRole('radiogroup', { name: 'Darstellung' })).toBeTruthy()
 })
 
 it('shows planning actions to editors without admin controls', async () => {
   mockApi()
   render(<App currentUser={user('editor')} />)
-  await screen.findByRole('button', { name: '+ Slot' })
+  await screen.findByRole('button', { name: 'Slot hinzufügen' })
   fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
-  expect(screen.getByRole('button', { name: '+ Dienst' })).toBeTruthy()
-  for (const name of ['+ Veranstaltung', '+ Tag', '+ Raum', 'Team verwalten', 'Restore', 'Benutzer', 'Bearbeiten']) {
+  expect(screen.getByRole('button', { name: 'Dienst hinzufügen' })).toBeTruthy()
+  for (const name of ['+ Veranstaltung', 'Tag hinzufügen', 'Raum hinzufügen', 'Team verwalten', 'Restore', 'Benutzer', 'Bearbeiten']) {
     expect(screen.queryByRole('button', { name })).toBeNull()
   }
   expect(screen.queryByRole('link', { name: 'Backup herunterladen' })).toBeNull()
@@ -52,9 +52,9 @@ it('shows planning actions to editors without admin controls', async () => {
 it('shows event controls to event admins without global controls', async () => {
   mockApi()
   render(<App currentUser={user('admin')} />)
-  await screen.findByRole('button', { name: '+ Tag' })
+  await screen.findByRole('button', { name: 'Tag hinzufügen' })
   fireEvent.click(screen.getByRole('button', { name: 'Menü' }))
-  expect(screen.getByRole('button', { name: '+ Raum' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: 'Raum hinzufügen' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Team verwalten' })).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy()
   expect(screen.queryByRole('button', { name: '+ Veranstaltung' })).toBeNull()

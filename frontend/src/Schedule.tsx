@@ -3,12 +3,14 @@ import type { CSSProperties, PointerEvent } from 'react'
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
+import Icon from './Icon'
+import type { IconName } from './Icon'
 import DutySignup from './DutySignup'
 import CategoryLabels, { CategoryStripe } from './CategoryLabels'
 import { sharedPresentation } from './sharedSessions'
 
 type SlotPatch = { room_id?: number | null; start_time?: string; end_time?: string }
-type Drag = { slot: Slot; mode: 'move' | 'resize'; originY: number; delta: number; roomId: number | null; overProgram: boolean }
+type Drag = { slot: Slot; mode: 'move' | 'resize'; originX: number; originY: number; delta: number; roomId: number | null; overProgram: boolean; moved: boolean }
 type ActiveDuty = Duty & { day_id: number; start_time: string; end_time: string }
 export type DutyPatch = { kind?: 'general' | 'room'; room_id?: number | null; start_time?: string; end_time?: string }
 type DutyTarget = { roomId: number | null }
@@ -71,13 +73,33 @@ function helperColumnWidth(duties: ActiveDuty[]) {
   return Math.max(320, lanes * 220)
 }
 
+/** Wie viel eine Karte zeigt, abhängig von der Dauer: ab 60 Minuten alles, ab 30 Minuten das Wichtigste, darunter eine Zeile. */
+export type CardDensity = 'full' | 'medium' | 'compact'
+export function cardDensity(minutes: number): CardDensity {
+  return minutes >= 60 ? 'full' : minutes >= 30 ? 'medium' : 'compact'
+}
+
+/** Zustände einer Karte mit Farbe (Klasse), Icon und Kurzlabel. Bedeutung siehe docs/designsystem.md. */
+export type CardStatus = { key: string; tone: 'conflict' | 'action' | 'change' | 'inactive'; icon: IconName; label: string }
+
+export function StatusBadges({ statuses }: { statuses: CardStatus[] }) {
+  if (!statuses.length) return null
+  return <span className="status-badges">
+    {statuses.map(status => <span key={status.key} className={`status-badge status-${status.tone}`}>
+      <Icon name={status.icon} size={13} /><span className="status-label">{status.label}</span>
+    </span>)}
+  </span>
+}
+
 function dutyTitle(duty: Duty): string {
   if (duty.kind === 'session' && duty.title && duty.session_topic) return `${duty.title}: ${duty.session_topic}`
   return duty.title || duty.session_topic || (duty.kind === 'room' ? 'Raumdienst' : 'Allgemeiner Dienst')
 }
 
-export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, hasSharedBacklog = false, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties, readOnly = false, currentUserId, onSignup }: {
+export default function Schedule({ schedule, helperPlan = { duties: [], conflicts: [] }, focus = 'program', backlogPreview, hasSharedBacklog = false, onEdit, onEditDuty, onChange, onChangeDuty, onReorderDuties, readOnly = false, currentUserId, onSignup, pxPerMinute = PX_PER_MINUTE }: {
   readOnly?: boolean
+  /** Höhe einer Minute im Raster (Zoomstufe). */
+  pxPerMinute?: number
   currentUserId?: number
   onSignup?: (duty: Duty, leave: boolean) => Promise<void>
   schedule: DaySchedule
@@ -96,13 +118,14 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const [dutyDrag, setDutyDrag] = useState<DutyDrag | null>(null)
   const dutyDragRef = useRef<DutyDrag | null>(null)
   const suppressDutyClick = useRef<number | null>(null)
+  const suppressSlotClick = useRef<number | null>(null)
   const shared = schedule.shared_slots ?? []
   const rooms = schedule.rooms.length || shared.length === 0 && !hasSharedBacklog ? schedule.rooms : [{ id: 0, event_id: 0, name: 'Alle Räume', sort_order: 0, slots: [] }]
   const sharedLabelWidth = focus === 'helpers' ? '165px' : `calc((100% - ${180 * (rooms.length - 1)}px) / ${rooms.length || 1} - 18px)`
   const presentation = sharedPresentation(schedule.rooms.flatMap(room => room.slots), shared)
   const start = toMinutes(schedule.start_time)
   const end = toMinutes(schedule.end_time)
-  const height = (end - start) * PX_PER_MINUTE
+  const height = (end - start) * pxPerMinute
   const collisionIds = new Set(schedule.collisions.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
   const speakerConflictIds = new Set(schedule.speaker_conflicts.flatMap(pair => [pair.first_slot_id, pair.second_slot_id]))
   const activeDuties = helperPlan.duties.filter((duty): duty is ActiveDuty =>
@@ -132,18 +155,23 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   function roomName(slot: Slot) { return slot.scope === 'all_rooms' ? 'Alle Räume' : roomById.get(slot.room_id!) }
   const hours: number[] = []
   for (let minute = Math.ceil(start / 60) * 60; minute <= end; minute += 60) hours.push(minute)
+  const halfHours: number[] = []
+  for (let minute = Math.ceil(start / 30) * 30; minute <= end; minute += 30) if (minute % 60 !== 0) halfHours.push(minute)
+  const gridLines = <>
+    {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * pxPerMinute }} />)}
+    {halfHours.map(minute => <div className="half-hour-line" key={`half-${minute}`} style={{ top: (minute - start) * pxPerMinute }} />)}
+  </>
 
   function begin(event: PointerEvent, slot: Slot, mode: 'move' | 'resize') {
     if (readOnly || event.button !== 0) return
     event.preventDefault()
-    const initial: Drag = { slot, mode, originY: event.clientY, delta: 0, roomId: slot.room_id, overProgram: true }
+    const initial: Drag = { slot, mode, originX: event.clientX, originY: event.clientY, delta: 0, roomId: slot.room_id, overProgram: true, moved: false }
     dragRef.current = initial
-    setDrag(initial)
 
     function move(pointer: globalThis.PointerEvent) {
       const current = dragRef.current
       if (!current) return
-      const delta = snappedDelta(pointer.clientY - current.originY)
+      const delta = snappedDelta(pointer.clientY - current.originY, pxPerMinute)
       let roomId = current.roomId
       let overProgram = current.overProgram
       if (current.mode === 'move') {
@@ -158,9 +186,9 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
           }
         }
       }
-      const next = { ...current, delta, roomId, overProgram }
+      const next = { ...current, delta, roomId, overProgram, moved: current.moved || Math.abs(pointer.clientX - current.originX) > 3 || Math.abs(pointer.clientY - current.originY) > 3 }
       dragRef.current = next
-      setDrag(next)
+      if (next.moved) setDrag(next)
     }
 
     function finish() {
@@ -170,7 +198,9 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       const current = dragRef.current
       dragRef.current = null
       setDrag(null)
-      if (!current) return
+      if (!current?.moved) return
+      suppressSlotClick.current = current.slot.id
+      window.setTimeout(() => { if (suppressSlotClick.current === current.slot.id) suppressSlotClick.current = null }, 0)
       if (current.mode === 'move') {
         if (!current.overProgram) return
         const patch = { ...movePatch(current.slot, current.delta, current.roomId ?? 0, start, end), room_id: current.roomId }
@@ -226,7 +256,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       const reorderIds = reordering && targetRect
         ? reorderedDutyIds(columnDuties(current.duty.room_id), current.duty, pointer.clientX, targetRect)
         : null
-      const next = { ...current, delta: reordering ? 0 : snappedDelta(dy), target, reordering, reorderIds,
+      const next = { ...current, delta: reordering ? 0 : snappedDelta(dy, pxPerMinute), target, reordering, reorderIds,
         moved: current.moved || Math.abs(pointer.clientX - current.originX) > 3 || Math.abs(pointer.clientY - current.originY) > 3 }
       dutyDragRef.current = next
       if (next.moved) setDutyDrag(next)
@@ -276,29 +306,47 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     window.addEventListener('pointercancel', cancel)
   }
 
+  function slotStatuses(slot: Slot, notice: ReturnType<typeof activeNotice>): CardStatus[] {
+    const statuses: CardStatus[] = []
+    if (collisionIds.has(slot.id)) statuses.push({ key: 'room', tone: 'conflict', icon: 'conflict', label: 'Raumkonflikt' })
+    if (speakerConflictIds.has(slot.id)) statuses.push({ key: 'speaker', tone: 'conflict', icon: 'user', label: 'Rednerkonflikt' })
+    if (notice) statuses.push({ key: 'notice', tone: notice.type === 'cancelled' ? 'inactive' : 'change',
+      icon: notice.type === 'rescheduled' ? 'moved' : notice.type === 'cancelled' ? 'cancelled' : 'changed', label: noticeLabel(notice) })
+    return statuses
+  }
+
   function card(slot: Slot, top: number, cardHeight: number, lane: number, lanes: number, ghost = false) {
     const notice = activeNotice(slot, now)
-    const compactNotice = notice && cardHeight < 45
+    const statuses = ghost ? [] : slotStatuses(slot, notice)
+    const time = `${slot.start_time.slice(0, 5)}–${slot.end_time.slice(0, 5)}`
+    const title = `${slot.topic}${slot.scope === 'all_rooms' ? ' · Alle Räume' : ''}`
+    const density = cardDensity(toMinutes(slot.end_time) - toMinutes(slot.start_time))
+    const tooltip = [title, `${time} Uhr`, slot.speakers.length ? `Redner: ${slot.speakers.map(speaker => speaker.name).join(', ')}` : '',
+      slot.categories?.length ? `Kategorien: ${slot.categories.map(category => category.name).join(', ')}` : '',
+      ...statuses.map(status => status.label), readOnly ? 'Klicken für Details' : 'Ziehen zum Verschieben, Klicken zum Bearbeiten'].filter(Boolean).join('\n')
     return <article
       key={slot.id}
       data-slot-id={slot.id}
-      className={`slot-card${collisionIds.has(slot.id) ? ' collision' : ''}${speakerConflictIds.has(slot.id) ? ' speaker-conflict' : ''}${notice ? ` notice-${notice.type}` : ''}${ghost ? ' ghost' : ''}`}
-      style={{ top, height: cardHeight, left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
-      tabIndex={ghost ? undefined : 0}
-      onDoubleClick={ghost ? undefined : () => onEdit(slot)}
-      onKeyDown={ghost ? undefined : event => { if (event.key === 'Enter') onEdit(slot) }}
+      className={`slot-card density-${density}${collisionIds.has(slot.id) ? ' collision' : ''}${speakerConflictIds.has(slot.id) ? ' speaker-conflict' : ''}${notice ? ` notice-${notice.type}` : ''}${ghost ? ' ghost' : ''}`}
+      style={{ top, height: cardHeight, left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%`, '--status-count': statuses.length } as CSSProperties}
+      title={ghost ? undefined : tooltip}
+      aria-hidden={ghost ? true : undefined}
+      onClick={ghost ? undefined : () => {
+        if (suppressSlotClick.current === slot.id) return
+        onEdit(slot)
+      }}
     >
       <CategoryStripe categories={slot.categories} />
       <div className="slot-grip" onPointerDown={ghost || readOnly ? undefined : event => begin(event, slot, 'move')} aria-label={readOnly ? undefined : `${slot.topic} verschieben`}>
-        <strong>{compactNotice ? `${noticeLabel(notice)}: ` : ''}{slot.topic}{slot.scope === 'all_rooms' ? ' · Alle Räume' : ''}</strong>
-        <span>{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
+        {ghost ? <strong className="slot-title">{title}</strong>
+          : <button type="button" className="slot-title" aria-label={`${slot.topic} ${readOnly ? 'ansehen' : 'bearbeiten'}`}>{title}</button>}
+        <time className="slot-time">{time}</time>
       </div>
-      {slot.speakers.length > 0 && <small>{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
-      <CategoryLabels categories={slot.categories} />
-      {!ghost && notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
-      {!ghost && speakerConflictIds.has(slot.id) && <span className="slot-conflict-badge">Rednerkonflikt</span>}
-      {!ghost && <button className="slot-edit" type="button" onClick={() => onEdit(slot)} aria-label={`${slot.topic} ${readOnly ? 'ansehen' : 'bearbeiten'}`}>{readOnly ? 'Details' : 'Bearbeiten'}</button>}
-      {!ghost && !readOnly && <div className="slot-resize" onPointerDown={event => begin(event, slot, 'resize')} aria-label={`${slot.topic} verlängern oder verkürzen`} />}
+      <StatusBadges statuses={statuses} />
+      {density === 'full' && slot.speakers.length > 0 && <small className="slot-speakers">{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
+      {density === 'full' && <CategoryLabels categories={slot.categories} />}
+      {!ghost && !readOnly && <div className="slot-resize" title="Ziehen, um die Dauer zu ändern" onPointerDown={event => begin(event, slot, 'resize')}
+        onClick={event => event.stopPropagation()} aria-label={`${slot.topic} verlängern oder verkürzen`} />}
     </article>
   }
 
@@ -322,12 +370,18 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   function dutyCard(duty: ActiveDuty, lane: number, lanes: number, ghost = false) {
     const conflictingHelperIds = ghost ? undefined : dutyConflictHelperIds.get(duty.id)
     const conflictingHelpers = duty.users.filter(helper => conflictingHelperIds?.has(helper.id))
+    const density = cardDensity(toMinutes(duty.end_time) - toMinutes(duty.start_time))
+    const statuses: CardStatus[] = []
+    if (!ghost && conflictingHelpers.length) statuses.push({ key: 'helper', tone: 'conflict', icon: 'users', label: 'Helferkonflikt' })
+    // Bei großen Karten steht „Offen“ schon in der Helferzeile; das Badge braucht es dann nur für Restplätze.
+    if (!ghost && duty.user_ids.length < duty.capacity && (density !== 'full' || duty.user_ids.length > 0)) statuses.push({ key: 'open', tone: 'action', icon: 'warning',
+      label: duty.user_ids.length === 0 ? 'Offen' : `${duty.capacity - duty.user_ids.length} frei` })
     return <article
       key={duty.id}
       data-duty-id={duty.id}
-      className={`duty-card${duty.user_ids.length === 0 ? ' duty-open' : ''}${ghost ? ' ghost' : ''}`}
-      style={{ top: (toMinutes(duty.start_time) - start) * PX_PER_MINUTE, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * PX_PER_MINUTE,
-        left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%` }}
+      className={`duty-card density-${density}${duty.user_ids.length === 0 ? ' duty-open' : ''}${conflictingHelpers.length ? ' helper-conflict' : ''}${ghost ? ' ghost' : ''}`}
+      style={{ top: (toMinutes(duty.start_time) - start) * pxPerMinute, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * pxPerMinute,
+        left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%`, '--status-count': statuses.length } as CSSProperties}
       role={ghost ? undefined : 'button'}
       tabIndex={ghost ? undefined : 0}
       aria-hidden={ghost ? true : undefined}
@@ -341,15 +395,16 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       }}
     >
       <div className="duty-grip" onPointerDown={ghost || readOnly ? undefined : event => beginDuty(event, duty, 'move')}>
-        <strong>{dutyTitle(duty)}</strong><span>{duty.start_time.slice(0, 5)}–{duty.end_time.slice(0, 5)}</span>
-        <small>{duty.users.length ? duty.users.map((helper, index) => <Fragment key={helper.id}>
+        <strong>{dutyTitle(duty)}</strong><time className="slot-time">{duty.start_time.slice(0, 5)}–{duty.end_time.slice(0, 5)}</time>
+        <small className="duty-helpers">{duty.users.length ? duty.users.map((helper, index) => <Fragment key={helper.id}>
           {index > 0 && ', '}
           <span className={conflictingHelperIds?.has(helper.id) ? 'helper-conflict-name' : undefined}
             title={conflictingHelperIds?.has(helper.id) ? 'Helferkonflikt' : undefined}>{helper.name}</span>
         </Fragment>) : 'Offen'}</small>
       </div>
+      <StatusBadges statuses={statuses} />
       {!ghost && currentUserId !== undefined && onSignup && <DutySignup duty={duty} currentUserId={currentUserId} onSignup={onSignup} />}
-      {!ghost && !readOnly && <div className="duty-resize" onPointerDown={event => beginDuty(event, duty, 'resize')}
+      {!ghost && !readOnly && <div className="duty-resize" title="Ziehen, um die Dauer zu ändern" onPointerDown={event => beginDuty(event, duty, 'resize')}
         onClick={event => event.stopPropagation()} aria-label={`${dutyTitle(duty)} verlängern oder verkürzen`} />}
     </article>
   }
@@ -359,7 +414,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     const ordered = reorderIds ? duties.map(duty => ({ ...duty, sort_order: reorderIds.indexOf(duty.id) })) : duties
     return <div key={label} className={`duty-column${dutyDrag?.mode === 'move' && dutyDrag.target?.roomId === roomId ? ' drop-target' : ''}`}
       data-duty-column={roomId === 0 ? undefined : roomId ?? 'general'} aria-label={label} style={{ gridColumn: column, gridRow: 3, height }}>
-      {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
+      {gridLines}
       {duties.length === 0 && <span className="empty-room">Keine Dienste</span>}
       {layoutDuties(ordered).filter(({ duty }) => duty.id !== dutyDrag?.duty.id || !dutyPreview).map(({ duty, lane, lanes }) =>
         dutyCard(duty, lane, lanes, Boolean(reorderIds && duty.id === dutyDrag?.duty.id)))}
@@ -368,8 +423,8 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   }
 
   return <div className={`schedule-scroll${readOnly ? ' schedule-readonly' : ''}`} aria-label={focus === 'helpers' ? 'Helferplan' : 'Tagesplan'}>
-    {schedule.speaker_conflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Rednerkonflikte">
-      <h3>Rednerkonflikte</h3>
+    {schedule.speaker_conflicts.length > 0 && <section className="conflict-list-banner" aria-label="Rednerkonflikte">
+      <h3><Icon name="user" />Rednerkonflikte</h3>
       <ul>{schedule.speaker_conflicts.map(conflict => {
         const first = slotById.get(conflict.first_slot_id)
         const second = slotById.get(conflict.second_slot_id)
@@ -377,8 +432,8 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         return <li key={`${first.id}-${second.id}`}>{conflict.speaker_ids.map(id => speakerById.get(id)).filter(Boolean).join(', ')}: {first.topic} ({roomName(first)}, {first.start_time.slice(0, 5)}–{first.end_time.slice(0, 5)}) und {second.topic} ({roomName(second)}, {second.start_time.slice(0, 5)}–{second.end_time.slice(0, 5)})</li>
       })}</ul>
     </section>}
-    {dutyConflicts.length > 0 && <section className="speaker-conflict-list" aria-label="Helferkonflikte">
-      <h3>Helferkonflikte</h3><ul>{dutyConflicts.flatMap(pair => pair.user_ids.map(id => <li key={`${pair.first_duty_id}-${pair.second_duty_id}-${id}`}>
+    {dutyConflicts.length > 0 && <section className="conflict-list-banner" aria-label="Helferkonflikte">
+      <h3><Icon name="users" />Helferkonflikte</h3><ul>{dutyConflicts.flatMap(pair => pair.user_ids.map(id => <li key={`${pair.first_duty_id}-${pair.second_duty_id}-${id}`}>
         {helperById.get(id) ?? `Helfer ${id}`}: {dutyTitle(dutyById.get(pair.first_duty_id)!)} und {dutyTitle(dutyById.get(pair.second_duty_id)!)}
       </li>))}</ul>
     </section>}
@@ -391,7 +446,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       {rooms.map((room, index) => <div className="room-subhead" key={`program-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 2 }}>Programm</div>)}
       {rooms.map((room, index) => <div className="room-subhead duty-subhead" key={`duty-${room.id}`} style={{ gridColumn: (focus === 'helpers' ? 3 : 4) + index * 2, gridRow: 2 }}>Helferdienste</div>)}
       <div className="time-axis" style={{ gridColumn: 1, gridRow: 3, height }}>
-        {hours.map(minute => <div className="hour-label" key={minute} style={{ top: Math.max(9, Math.min(height - 9, (minute - start) * PX_PER_MINUTE)) }}>{toTime(minute)}</div>)}
+        {hours.map(minute => <div className="hour-label" key={minute} style={{ top: Math.max(9, Math.min(height - 9, (minute - start) * pxPerMinute)) }}>{toTime(minute)}</div>)}
       </div>
       {dutyColumn(generalDuties, 'Allgemeine Dienste', 2, null)}
       {rooms.map((room, index) => <div
@@ -401,26 +456,26 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         key={room.id}
         style={{ gridColumn: (focus === 'helpers' ? 4 : 3) + index * 2, gridRow: 3, height }}
       >
-        {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
+        {gridLines}
         {room.slots.length === 0 && shared.length === 0 && !drag && <span className="empty-room">Noch keine Slots</span>}
         {layoutSlots([...room.slots, ...presentation.repeated]).filter(({ slot }) => slot.id !== drag?.slot.id || (drag.mode === 'move' && !drag.overProgram)).map(({ slot, lane, lanes }) =>
-          card(slot, (toMinutes(slot.start_time) - start) * PX_PER_MINUTE, (toMinutes(slot.end_time) - toMinutes(slot.start_time)) * PX_PER_MINUTE, lane, lanes))}
+          card(slot, (toMinutes(slot.start_time) - start) * pxPerMinute, (toMinutes(slot.end_time) - toMinutes(slot.start_time)) * pxPerMinute, lane, lanes))}
         {drag && (drag.mode === 'resize' || drag.overProgram) && drag.roomId === room.id && previewStart !== null && previewEnd !== null && card(
           { ...drag.slot, room_id: room.id, start_time: toTime(previewStart), end_time: toTime(previewEnd) },
-          (previewStart - start) * PX_PER_MINUTE,
-          (previewEnd - previewStart) * PX_PER_MINUTE,
+          (previewStart - start) * pxPerMinute,
+          (previewEnd - previewStart) * pxPerMinute,
           0, 1, true,
         )}
-        {backlogPreview?.roomId === room.id && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * PX_PER_MINUTE, height: 60 * PX_PER_MINUTE }}><strong>{backlogPreview.topic}</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
+        {backlogPreview?.roomId === room.id && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * pxPerMinute, height: 60 * pxPerMinute }}><strong>{backlogPreview.topic}</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
       </div>)}
       {rooms.map((room, index) => dutyColumn(roomDuties[index], `Helferdienste ${room.name}`, (focus === 'helpers' ? 3 : 4) + index * 2, room.id))}
       {rooms.length > 0 && <div className="shared-slot-layer" data-shared-layer style={{ gridColumn: `${focus === 'helpers' ? 4 : 3} / ${(focus === 'helpers' ? 5 : 4) + (rooms.length - 1) * 2}`, gridRow: 3, height, '--shared-label-width': sharedLabelWidth } as CSSProperties}>
         {presentation.spanning.filter(slot => slot.id !== drag?.slot.id || drag.mode === 'move' && !drag.overProgram).map(slot =>
-          card(slot, (toMinutes(slot.start_time) - start) * PX_PER_MINUTE, (toMinutes(slot.end_time) - toMinutes(slot.start_time)) * PX_PER_MINUTE, 0, 1))}
+          card(slot, (toMinutes(slot.start_time) - start) * pxPerMinute, (toMinutes(slot.end_time) - toMinutes(slot.start_time)) * pxPerMinute, 0, 1))}
         {drag?.slot.scope === 'all_rooms' && (drag.mode === 'resize' || drag.overProgram) && previewStart !== null && previewEnd !== null && card(
           { ...drag.slot, start_time: toTime(previewStart), end_time: toTime(previewEnd) },
-          (previewStart - start) * PX_PER_MINUTE, (previewEnd - previewStart) * PX_PER_MINUTE, 0, 1, true)}
-        {backlogPreview?.roomId === null && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * PX_PER_MINUTE, height: 60 * PX_PER_MINUTE }}><strong>{backlogPreview.topic} · Alle Räume</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
+          (previewStart - start) * pxPerMinute, (previewEnd - previewStart) * pxPerMinute, 0, 1, true)}
+        {backlogPreview?.roomId === null && <article className="slot-card ghost backlog-ghost" style={{ top: (backlogPreview.start - start) * pxPerMinute, height: 60 * pxPerMinute }}><strong>{backlogPreview.topic} · Alle Räume</strong><span>{toTime(backlogPreview.start)}–{toTime(backlogPreview.start + 60)}</span></article>}
       </div>}
     </div>
   </div>

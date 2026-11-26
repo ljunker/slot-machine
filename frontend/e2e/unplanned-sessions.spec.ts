@@ -10,15 +10,15 @@ test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async (
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' }).locator('option:checked')).toHaveText('Backlog-Konferenz')
 
-  await page.getByRole('button', { name: '+ Session' }).click()
+  await page.getByRole('button', { name: 'Session hinzufügen' }).click()
   await page.getByLabel('Thema').fill('Ungeplanter Vortrag')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('button', { name: 'Ungeplanter Vortrag einplanen' })).toBeVisible()
 
-  await page.getByRole('button', { name: '+ Tag' }).click()
+  await page.getByRole('button', { name: 'Tag hinzufügen' }).click()
   await page.getByLabel('Datum').fill('2026-10-01')
   await page.getByRole('button', { name: 'Speichern' }).click()
-  await page.getByRole('button', { name: '+ Raum' }).click()
+  await page.getByRole('button', { name: 'Raum hinzufügen' }).click()
   await page.getByLabel('Name').fill('Saal')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator('.editor')).toHaveCount(0)

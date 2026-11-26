@@ -12,8 +12,11 @@ export function toTime(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
-export function snappedDelta(pixels: number): number {
-  return Math.round(pixels / (SNAP_MINUTES * PX_PER_MINUTE)) * SNAP_MINUTES
+/** Zoomstufen des Rasters in Pixel pro Minute; die erste ist der Standard. */
+export const ZOOM_LEVELS = [PX_PER_MINUTE, 2.4, 3.2] as const
+
+export function snappedDelta(pixels: number, pxPerMinute: number = PX_PER_MINUTE): number {
+  return Math.round(pixels / (SNAP_MINUTES * pxPerMinute)) * SNAP_MINUTES
 }
 
 export function movePatch(slot: Pick<Slot, 'start_time' | 'end_time'>, delta: number, roomId: number, dayStart: number, dayEnd: number) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Icon from './Icon'
 
 export type UndoEntry = { id: number; message: string; undo: () => Promise<unknown> }
 
@@ -34,6 +35,6 @@ export default function UndoToast({ entry, onDismiss }: { entry: UndoEntry; onDi
     onFocus={() => setPaused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false) }}>
     <span>{entry.message}</span>
     <button type="button" className="undo-action" disabled={busy} onClick={() => void undo()}>Rückgängig</button>
-    <button type="button" className="icon-button" aria-label="Hinweis schließen" onClick={() => dismiss.current()}>×</button>
+    <button type="button" className="icon-button" aria-label="Hinweis schließen" onClick={() => dismiss.current()}><Icon name="close" /></button>
   </div>
 }

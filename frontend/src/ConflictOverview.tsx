@@ -1,5 +1,6 @@
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
 import { formatDate } from './date'
+import Icon from './Icon'
 
 type ConflictEntry = {
   key: string
@@ -93,8 +94,8 @@ export default function ConflictOverview({ schedules, helperPlan, onOpenSlot, on
     <p className="conflict-count">{entries.length} {entries.length === 1 ? 'Konflikt' : 'Konflikte'} in {scopeLabel}</p>
     <ol className="conflict-list">{entries.map(entry => <li key={entry.key} className={`conflict-item conflict-${entry.kind}`}>
       <div className="conflict-heading">
-        <strong>{entry.kind === 'room' ? 'Raumkonflikt' : entry.kind === 'speaker' ? 'Rednerkonflikt' : `Helferkonflikt: ${entry.people[0]}`}</strong>
-        <span>{formatDate(entry.date)} · {entry.startTime.slice(0, 5)}–{entry.endTime.slice(0, 5)}</span>
+        <strong><Icon name={entry.kind === 'room' ? 'conflict' : entry.kind === 'speaker' ? 'user' : 'users'} />{entry.kind === 'room' ? 'Raumkonflikt' : entry.kind === 'speaker' ? 'Rednerkonflikt' : `Helferkonflikt: ${entry.people[0]}`}</strong>
+        <span>{formatDate(entry.date)} · <time>{entry.startTime.slice(0, 5)}–{entry.endTime.slice(0, 5)}</time></span>
       </div>
       {entry.kind !== 'helper' && entry.people.length > 0 && <p>Betroffen: {entry.people.join(', ')}</p>}
       <div className="conflict-participants">{[entry.first, entry.second].map(participant => <button

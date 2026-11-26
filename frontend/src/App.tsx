@@ -9,6 +9,8 @@ import { DutyDetails, SlotDetails } from './ReadOnlyDetails'
 import ConflictOverview from './ConflictOverview'
 import Dashboard from './Dashboard'
 import Schedule from './Schedule'
+import PlanLegend, { usePlanZoom } from './PlanLegend'
+import Icon from './Icon'
 import type { DutyPatch } from './Schedule'
 import SpeakerEditor from './SpeakerEditor'
 import CategoryEditor from './CategoryEditor'
@@ -20,8 +22,8 @@ import BackupRestore from './BackupRestore'
 import AccountDialog from './AccountDialog'
 import { TeamManagement, UserManagement } from './TeamManagement'
 import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
-import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
-import { formatDate } from './date'
+import { SNAP_MINUTES, toMinutes, toTime } from './time'
+import { formatDate, formatWeekdayDate } from './date'
 import { pageTitle, usePageTitle } from './pageTitle'
 import UndoToast from './UndoToast'
 import { ToastRegion, useToasts } from './Toast'
@@ -35,6 +37,12 @@ import type { SlotPositionPatch } from './optimistic'
 
 type Panel = { kind: EditorKind | 'speaker' | 'category' | 'duty'; id: number | null; createUnplanned?: boolean }
 type BacklogPreview = { roomId: number | null; start: number; topic: string }
+
+/** Initialen für den Avatar im Kopfbereich, z. B. „Ada Müller“ → „AM“. */
+function initials(name: string | null | undefined, email: string): string {
+  const parts = (name || email.split('@')[0]).split(/[\s._-]+/).filter(Boolean)
+  return (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] ?? '?').slice(0, 2)).toUpperCase()
+}
 
 const PANEL_NAMES: Record<Panel['kind'], string> = {
   event: 'Veranstaltung', day: 'Tag', room: 'Raum', slot: 'Slot', speaker: 'Rednerprofil', category: 'Kategorie', duty: 'Dienst',
@@ -87,6 +95,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [showUsers, setShowUsers] = useState(false)
   const [showAccount, setShowAccount] = useState(false)
   const [clearingChangeNotices, setClearingChangeNotices] = useState(false)
+  const [zoom, setZoom] = usePlanZoom()
   const loadNumber = useRef(0)
   const overviewLoadNumber = useRef(0)
   const isSuperadmin = currentUser.is_superadmin
@@ -465,7 +474,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       for (const column of document.querySelectorAll<HTMLElement>(session.scope === 'all_rooms' ? '[data-program-column]' : '[data-room-column]')) {
         const rect = column.getBoundingClientRect()
         if (pointer.clientX < rect.left || pointer.clientX > rect.right || pointer.clientY < rect.top || pointer.clientY > rect.bottom) continue
-        const start = dayStart + Math.round((pointer.clientY - rect.top) / (SNAP_MINUTES * PX_PER_MINUTE)) * SNAP_MINUTES
+        const start = dayStart + Math.round((pointer.clientY - rect.top) / (SNAP_MINUTES * zoom)) * SNAP_MINUTES
         if (start < dayStart || start + 60 > dayEnd) return null
         return { roomId: session.scope === 'all_rooms' ? null : Number(column.dataset.roomColumn), start, topic: session.topic }
       }
@@ -505,67 +514,68 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
 
   return <UnsavedChangesProvider value={registerEditor}><div className="app-shell">
     <header className="app-header">
-      <div><span className="eyebrow">EVENT SCHEDULER</span><h1>Programmplanung</h1><p>Veranstaltungen, Räume und Slots an einem Ort.</p></div>
+      <div className="header-context">
+        <h1 className="header-brand"><span className="header-brand-mark" aria-hidden="true" />Programmplanung</h1>
+        {events.length > 0 && <div className="event-switcher">
+          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { const next = Number(e.target.value); guard(() => { setPanel(null); setShowTeam(false); setShowDesign(false); setShowRestore(false); void loadAll(next, null) }) }}>
+            {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
+          </select>
+          {selectedEvent && <span className="event-switcher-dates">{formatDate(selectedEvent.start_date)} – {formatDate(selectedEvent.end_date)}</span>}
+        </div>}
+      </div>
       <div className="header-actions">
         <ThemeControl variant="segmented" />
-        <div className="account-name">
-          {currentUser.name && <strong title={currentUser.name}>{currentUser.name}</strong>}
-          <span title={currentUser.email}>{currentUser.email}</span>
-        </div>
-        <HeaderMenu actions={headerActions} />
+        {currentUser.name && <div className="account-name"><strong title={currentUser.name}>{currentUser.name}</strong></div>}
+        <HeaderMenu actions={headerActions} labelHidden leading={<span className="avatar" aria-hidden="true">{initials(currentUser.name, currentUser.email)}</span>} />
       </div>
     </header>
     <div className="workspace">
       <nav className="sidebar" aria-label="Planung" inert={loading}>
         <section>
           <div className="section-heading"><h2>Veranstaltung</h2>{selectedEvent && isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'event', id: selectedEvent.id })}>Bearbeiten</button>}</div>
-          <select aria-label="Veranstaltung wählen" value={eventId ?? ''} onChange={e => { const next = Number(e.target.value); guard(() => { setPanel(null); setShowTeam(false); setShowDesign(false); setShowRestore(false); void loadAll(next, null) }) }}>
-            {events.length === 0 && <option value="">Keine Veranstaltung</option>}
-            {events.map(event => <option key={event.id} value={event.id}>{event.name}</option>)}
-          </select>
-          {selectedEvent && <p className="muted">{formatDate(selectedEvent.start_date)} bis {formatDate(selectedEvent.end_date)}</p>}
+          {selectedEvent ? <p className="sidebar-event-name">{selectedEvent.name}</p> : <p className="muted">Keine Veranstaltung</p>}
           {selectedEvent && (isAdmin || canPlan) && <div className="sidebar-actions">
             {isAdmin && <button type="button" className="secondary small" onClick={() => setShowTeam(true)}>Team verwalten</button>}
             {isAdmin && <button type="button" className="secondary small" onClick={() => setShowDesign(true)}>Besucherprogramm gestalten</button>}
-            {isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download>Backup herunterladen</a>}
+            {isAdmin && <a className="program-link" href={`/api/backups/events/${selectedEvent.id}`} download><Icon name="download" />Backup herunterladen</a>}
             {canPlan && <button type="button" className="danger small clear-change-button" disabled={clearingChangeNotices} onClick={() => void clearEventChangeNotices()}>Alle Änderungs-Flags entfernen</button>}
           </div>}
         </section>
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'day', id: null })}>+ Tag</button>}</div>
+          <div className="section-heading"><h2>Tage</h2>{isAdmin && <button className="text-button" aria-label="Tag hinzufügen" onClick={() => openPanel({ kind: 'day', id: null })}><Icon name="plus" />Tag</button>}</div>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
             <button type="button" onClick={() => guard(() => { setPanel(null); if (isOverview) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) })}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} onClick={() => openPanel({ kind: 'day', id: day.id })}>✎</button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} title="Tag bearbeiten" onClick={() => openPanel({ kind: 'day', id: day.id })}><Icon name="edit" /></button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Räume</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'room', id: null })}>+ Raum</button>}</div>
+          <div className="section-heading"><h2>Räume</h2>{isAdmin && <button className="text-button" aria-label="Raum hinzufügen" onClick={() => openPanel({ kind: 'room', id: null })}><Icon name="plus" />Raum</button>}</div>
           {rooms.length === 0 && <p className="muted">Noch keine Räume</p>}
           <div className="room-list">{rooms.map((room, index) => <div className="room-row" key={room.id}>
             {isAdmin ? <button type="button" className="room-name" onClick={() => openPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} title={index === 0 ? 'Steht bereits ganz oben' : 'Nach oben verschieben'} disabled={index === 0} onClick={() => void reorder(room.id, -1)}>↑</button>}
-            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} title={index === rooms.length - 1 ? 'Steht bereits ganz unten' : 'Nach unten verschieben'} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}>↓</button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach oben`} title={index === 0 ? 'Steht bereits ganz oben' : 'Nach oben verschieben'} disabled={index === 0} onClick={() => void reorder(room.id, -1)}><Icon name="arrow-up" /></button>}
+            {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} title={index === rooms.length - 1 ? 'Steht bereits ganz unten' : 'Nach unten verschieben'} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}><Icon name="arrow-down" /></button>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Kategorien</h2>{isAdmin && <button className="text-button" onClick={() => openPanel({ kind: 'category', id: null })}>+ Kategorie</button>}</div>
+          <div className="section-heading"><h2>Kategorien</h2>{isAdmin && <button className="text-button" aria-label="Kategorie hinzufügen" onClick={() => openPanel({ kind: 'category', id: null })}><Icon name="plus" />Kategorie</button>}</div>
           {categories.length === 0 && <p className="muted">Noch keine Kategorien</p>}
           <div className="room-list">{categories.map(category => <div className="room-row" key={category.id}>
             {isAdmin ? <button type="button" className="room-name category-name" onClick={() => openPanel({ kind: 'category', id: category.id })}><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</button> : <span className="room-name category-name"><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</span>}
           </div>)}</div>
         </section>}
         {selectedEvent && <section>
-          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2>{canPlan && <button className="text-button" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}>+ Session</button>}</div>
+          <div className="section-heading"><h2>Ungeplante Sessions ({unplanned.length})</h2>{canPlan && <button className="text-button" aria-label="Session hinzufügen" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}><Icon name="plus" />Session</button>}</div>
           {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
           <div className="unplanned-list">{unplanned.map(session => <div className="unplanned-row" key={session.id}>
-            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} onPointerDown={event => beginBacklogDrag(event, session)}>⠿</button>}
+            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} title="In einen Raum ziehen" onPointerDown={event => beginBacklogDrag(event, session)}><Icon name="grip" /></button>}
             <button type="button" className="unplanned-name" onClick={() => openPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
           </div>)}</div>
           {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
         </section>}
         {selectedEvent && canPlan && <section>
-          <div className="section-heading"><h2>Redner</h2><button className="text-button" onClick={() => openPanel({ kind: 'speaker', id: null })}>+ Redner</button></div>
+          <div className="section-heading"><h2>Redner</h2><button className="text-button" aria-label="Redner hinzufügen" onClick={() => openPanel({ kind: 'speaker', id: null })}><Icon name="plus" />Redner</button></div>
           {speakers.length === 0 && <p className="muted">Noch keine Redner</p>}
           <div className="room-list">{speakers.map(person => <div className="room-row" key={person.id}>
             <button type="button" className="room-name" onClick={() => openPanel({ kind: 'speaker', id: person.id })}>{person.name}</button>
@@ -588,21 +598,21 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           <button type="button" aria-pressed={view === 'helpers'} onClick={() => setView('helpers')}>Helferplan</button>
           <button type="button" aria-pressed={view === 'conflicts'} onClick={() => guard(() => { setPanel(null); setView('conflicts') })}>Konflikte</button>
         </div>}
-        <div className="plan-heading"><div><span className="eyebrow">{isDashboard ? 'PLANUNGSSTAND' : view === 'conflicts' ? 'GESAMTE VERANSTALTUNG' : view === 'helpers' ? 'HELFERPLAN' : 'TAGESANSICHT'}</span><h2>{isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatDate(selectedDay.date) : 'Programm'}</h2><p>{isOverview ? selectedEvent?.name : selectedDay ? `${selectedDay.start_time.slice(0, 5)}–${selectedDay.end_time.slice(0, 5)} Uhr · ${rooms.length} Räume` : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
+        <div className="plan-heading"><div className="plan-title"><h2>{isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatWeekdayDate(selectedDay.date) : 'Programm'}</h2><p>{isOverview ? 'Gesamte Veranstaltung' : selectedDay ? <><time>{selectedDay.start_time.slice(0, 5)}–{selectedDay.end_time.slice(0, 5)}</time> Uhr · {rooms.length} {rooms.length === 1 ? 'Raum' : 'Räume'}</> : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <HeaderMenu label="Exportieren" panelLabel="Export" triggerClassName="secondary menu-trigger" actions={[
-              { label: 'PDF-Programm herunterladen', href: `/api/events/${selectedEvent.id}/program.pdf`, download: true },
-              { label: 'Programm als JSON', href: `/api/events/${selectedEvent.id}/program.json`, download: true },
+              { label: 'PDF-Programm herunterladen', icon: 'download', href: `/api/events/${selectedEvent.id}/program.pdf`, download: true },
+              { label: 'Programm als JSON', icon: 'download', href: `/api/events/${selectedEvent.id}/program.json`, download: true },
             ]} />}
-            {selectedEvent && canPlan && !isOverview && <button className="secondary" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}>+ Dienst</button>}
-            {selectedDay && canPlan && !isOverview && <button className="primary" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}>+ Slot</button>}
+            {selectedEvent && canPlan && !isOverview && <button className="secondary" aria-label="Dienst hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}><Icon name="plus" />Dienst</button>}
+            {selectedDay && canPlan && !isOverview && <button className="primary" aria-label="Slot hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}><Icon name="plus" />Slot</button>}
           </div>
         </div>
         {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
-        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
+        {!isOverview && !loading && schedule && <PlanLegend canPlan={canPlan} zoom={zoom} onZoom={setZoom} />}
+        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} pxPerMinute={zoom} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
         {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
-        {canPlan && !isOverview && schedule && <p className="hint">Slot oder Dienst am Kopf ziehen, um ihn zu verschieben. Dienste lassen sich innerhalb ihrer Spalte seitlich anordnen. Untere Kante ziehen, um die Dauer zu ändern. Session-Dienste ändern bei Raum- oder Zeitwechsel ihre Session mit. Rot: Raumkollision. Gelber Rahmen: Rednerkonflikt. Helferdienste stehen neben dem Raumprogramm.{view === 'helpers' ? ' Bei parallelen Diensten horizontal scrollen.' : ''}</p>}
         {isDashboard && selectedEvent && <Dashboard
           days={days} rooms={rooms} speakerCount={speakers.length} schedules={overviewSchedules}
           helperPlan={helperPlan} unplanned={unplanned}
