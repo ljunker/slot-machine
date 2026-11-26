@@ -7,12 +7,72 @@
   padding: var(--space-5) var(--space-4);
 }
 .sidebar section {
-  padding-bottom: var(--space-6);
-  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-soft);
+}
+.sidebar section.collapsed {
+  padding-bottom: 0;
+}
+.sidebar section.collapsed .section-heading {
+  margin-bottom: 0;
 }
 .sidebar section:last-child {
   border-bottom: 0;
+}
+.section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-align: left;
+}
+.section-toggle:hover {
+  color: var(--text-strong);
+}
+.section-chevron {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+.section-toggle[aria-expanded="false"] .section-chevron {
+  transform: rotate(-90deg);
+}
+.section-count {
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-search {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+.sidebar-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  color: var(--subtext);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.sidebar-filter input {
+  width: auto;
+  margin: 0;
+}
+/* Kopf und Öffner der Schublade gibt es nur auf schmalen Bildschirmen. */
+.sidebar-drawer-head,
+.sidebar-toggle,
+.sidebar-backdrop {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .section-chevron {
+    transition: none;
+  }
 }
 .section-heading,
 .editor-heading {
@@ -175,15 +235,6 @@
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
-.sidebar-actions {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-}
-.sidebar-actions .program-link {
-  padding: var(--space-half) 0;
-}
 .cancel-checkbox {
   display: flex !important;
   align-items: center;
@@ -196,14 +247,46 @@
   color: var(--subtext);
   font-size: var(--text-xs);
 }
-.sidebar-event-name {
-  margin: 0;
-  color: var(--text-strong);
-  font-size: var(--text-md);
-  font-weight: 700;
-  overflow-wrap: anywhere;
-}
 .unplanned-grip {
   display: grid;
   place-items: center;
+}
+@media (max-width: 600px) {
+  /* Seitenleiste als Schublade: standardmäßig zu, über „Planung“ zu öffnen. */
+  .sidebar {
+    display: none;
+  }
+  .sidebar.open {
+    display: block;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(340px, 88vw);
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    background: #0008;
+  }
+  .sidebar-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: calc(var(--space-2) * -1) 0 var(--space-3);
+    color: var(--text-strong);
+    font-size: var(--text-md);
+  }
+  .sidebar-toggle {
+    display: inline-flex;
+    margin: 0 var(--space-2) var(--space-3) 0;
+  }
+  .sidebar section {
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-3);
+  }
 }

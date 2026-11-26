@@ -2,15 +2,15 @@ import { expect, test } from './fixtures'
 
 test('plant ungeplante Session per Drag & Drop und entplant sie wieder', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Menü', exact: true }).click()
-  await page.getByRole('button', { name: '+ Veranstaltung' }).click()
+  await page.getByRole('button', { name: 'Veranstaltung verwalten' }).click()
+  await page.getByRole('button', { name: 'Neue Veranstaltung' }).click()
   await page.getByLabel('Name').fill('Backlog-Konferenz')
   await page.getByLabel('Startdatum').fill('2026-10-01')
   await page.getByLabel('Enddatum').fill('2026-10-01')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' }).locator('option:checked')).toHaveText('Backlog-Konferenz')
 
-  await page.getByRole('button', { name: 'Session hinzufügen' }).click()
+  await page.getByRole('button', { name: 'Ungeplante Session hinzufügen' }).click()
   await page.getByLabel('Thema').fill('Ungeplanter Vortrag')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('button', { name: 'Ungeplanter Vortrag einplanen' })).toBeVisible()

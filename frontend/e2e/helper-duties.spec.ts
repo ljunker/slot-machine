@@ -1,6 +1,12 @@
 import { expect, test, createTeamAccount } from './fixtures'
 import type { Locator } from '@playwright/test'
 
+
+// Diese Tests prüfen die Dienstspalten im Tagesplan; dort sind sie standardmäßig ausgeblendet.
+test.beforeEach(async ({ page }) => {
+  await page.evaluate(() => localStorage.setItem('slot-machine-plan-show-duties', 'true'))
+})
+
 test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page, request }) => {
   const eventResponse = await request.post('/api/events', { data: {
     name: 'Helfertest', start_date: '2026-10-01', end_date: '2026-10-01',
@@ -304,22 +310,22 @@ test('Helfer legt Namen fest und übernimmt Dienste ohne Bearbeitungsrechte', as
   await page.getByLabel('Name', { exact: true }).fill('Ada Helferin')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('button', { name: 'Helferplan', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Menü', exact: true }).click()
-  for (const name of ['Dienst hinzufügen', 'Slot hinzufügen', 'Session hinzufügen', 'Helfer hinzufügen', 'Team verwalten', 'Restore', 'Alle Änderungs-Flags entfernen']) {
+  for (const name of ['Dienst hinzufügen', 'Session hinzufügen', 'Ungeplante Session hinzufügen', 'Helfer hinzufügen', 'Veranstaltung verwalten']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
-  await page.getByRole('button', { name: 'Menü', exact: true }).click()
   await expect(page.locator('.slot-resize, .duty-resize')).toHaveCount(0)
   await page.getByRole('button', { name: 'Lesbare Session ansehen', exact: true }).click()
   await expect(page.getByLabel('Sessiondetails')).toContainText('Details für Helfer')
   await expect(page.getByRole('button', { name: 'Speichern' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Schließen', exact: true }).click()
+  await page.getByRole('button', { name: 'Helferplan', exact: true }).click()
   await page.getByRole('button', { name: 'Eintragen in Einlass', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Austragen aus Einlass', exact: true })).toBeVisible()
   await expect(page.locator(`[data-duty-id="${duty.id}"]`)).toContainText('Ada Helferin')
   expect((await (await request.get(`/api/duties/${duty.id}`)).json()).user_ids).toEqual([account.id])
   if (process.env.HELPER_ACCESS_SCREENSHOT) await page.screenshot({ path: process.env.HELPER_ACCESS_SCREENSHOT, fullPage: true })
   await page.reload()
+  await page.getByRole('button', { name: 'Helferplan', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Austragen aus Einlass', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Austragen aus Einlass', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Eintragen in Einlass', exact: true })).toBeVisible()

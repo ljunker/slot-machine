@@ -41,7 +41,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 async function editFirstDescription() {
   render(<App currentUser={currentUser} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Erster bearbeiten' }))
-  const editor = screen.getByRole('complementary', { name: 'Slot bearbeiten' })
+  const editor = screen.getByRole('complementary', { name: 'Session bearbeiten' })
   expect(within(editor).queryByText('Ungespeichert')).toBeNull()
   fireEvent.change(within(editor).getByLabelText('Beschreibung'), { target: { value: 'Halb fertig' } })
   expect(within(editor).getByText('Ungespeichert')).toBeTruthy()
@@ -76,9 +76,9 @@ it('discards unsaved input and opens the other slot', async () => {
 
 it('saves unsaved input before closing the editor', async () => {
   await editFirstDescription()
-  fireEvent.click(within(screen.getByRole('complementary', { name: 'Slot bearbeiten' })).getByRole('button', { name: 'Schließen' }))
+  fireEvent.click(within(screen.getByRole('complementary', { name: 'Session bearbeiten' })).getByRole('button', { name: 'Schließen' }))
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Speichern' }))
-  await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Slot bearbeiten' })).toBeNull())
+  await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Session bearbeiten' })).toBeNull())
   expect(patches).toEqual([{ path: '/slots/1', body: expect.objectContaining({ description: 'Halb fertig' }) }])
   expect(screen.queryByRole('alertdialog')).toBeNull()
 })
@@ -92,7 +92,7 @@ it('warns before leaving the page with unsaved input', async () => {
 
 it('does not ask while the input is being saved', async () => {
   await editFirstDescription()
-  fireEvent.click(within(screen.getByRole('complementary', { name: 'Slot bearbeiten' })).getByRole('button', { name: 'Speichern' }))
+  fireEvent.click(within(screen.getByRole('complementary', { name: 'Session bearbeiten' })).getByRole('button', { name: 'Speichern' }))
   fireEvent.click(screen.getByRole('button', { name: 'Zweiter bearbeiten' }))
   expect(screen.queryByRole('alertdialog')).toBeNull()
   await waitFor(() => expect(patches).toHaveLength(1))

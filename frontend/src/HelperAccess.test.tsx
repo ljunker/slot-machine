@@ -34,7 +34,7 @@ it('shows helper read-only details and persists own signup and leave', async () 
   const fetch = mockApi()
   const { container } = render(<App currentUser={currentUser} />)
   await screen.findByRole('button', { name: 'Vortrag ansehen' })
-  for (const name of ['Slot hinzufügen', 'Dienst hinzufügen', 'Helfer hinzufügen', 'Redner hinzufügen', 'Session hinzufügen', 'Team verwalten', 'Alle Änderungs-Flags entfernen']) {
+  for (const name of ['Session hinzufügen', 'Dienst hinzufügen', 'Helfer hinzufügen', 'Redner hinzufügen', 'Ungeplante Session hinzufügen', 'Veranstaltung verwalten']) {
     expect(screen.queryByRole('button', { name })).toBeNull()
   }
   expect(container.querySelector('.slot-resize, .duty-resize')).toBeNull()
@@ -43,6 +43,7 @@ it('shows helper read-only details and persists own signup and leave', async () 
   expect(screen.getByLabelText('Sessiondetails').textContent).toContain('Details zum Vortrag')
   expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Helferplan' }))
   fireEvent.click(screen.getByText('0 / 1 Plätze belegt'))
   expect(screen.getByLabelText('Dienstdetails')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: 'Schließen' }))

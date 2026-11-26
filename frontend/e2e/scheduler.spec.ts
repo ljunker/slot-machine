@@ -2,8 +2,8 @@ import { expect, test } from './fixtures'
 
 test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Menü', exact: true }).click()
-  await page.getByRole('button', { name: '+ Veranstaltung' }).click()
+  await page.getByRole('button', { name: 'Veranstaltung verwalten' }).click()
+  await page.getByRole('button', { name: 'Neue Veranstaltung' }).click()
   await page.getByLabel('Name').fill('Browserkonferenz')
   await page.getByLabel('Startdatum').fill('2026-10-01')
   await page.getByLabel('Enddatum').fill('2026-10-02')
@@ -28,7 +28,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.getByLabel('Kurzbeschreibung').fill('Spricht über Planung.')
   await page.getByRole('button', { name: 'Speichern' }).click()
 
-  await page.getByRole('button', { name: 'Slot hinzufügen' }).click()
+  await page.getByRole('button', { name: 'Session hinzufügen', exact: true }).click()
   await page.getByLabel('Thema').fill('Eröffnung')
   await page.getByRole('checkbox', { name: 'Ada' }).check()
   await page.getByLabel('Beginn').fill('10:00')
@@ -58,7 +58,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.mouse.up()
   await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:45')
 
-  await page.getByRole('button', { name: 'Slot hinzufügen' }).click()
+  await page.getByRole('button', { name: 'Session hinzufügen', exact: true }).click()
   await page.getByLabel('Thema').fill('Paralleler Vortrag')
   await page.getByRole('checkbox', { name: 'Ada' }).check()
   await page.getByLabel('Beginn').fill('11:00')

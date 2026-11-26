@@ -41,7 +41,10 @@ for (const viewport of [
       const secondPage = await secondContext.newPage()
       await login(page, account.email, account.password)
       await login(secondPage, account.email, account.password)
+      // Auf schmalen Bildschirmen liegt die Tagesauswahl in der Schublade „Planung“.
+      if (viewport.width <= 600) await page.getByRole('button', { name: 'Planung', exact: true }).click()
       await page.getByRole('button', { name: /^2\. Oktober 2026/ }).click()
+      await expect(page.getByRole('navigation', { name: 'Planung' })).toBeVisible({ visible: viewport.width > 600 })
       await page.getByRole('button', { name: 'Helferplan', exact: true }).click()
       await expect(page.locator(`[data-duty-id="${duty.id}"]`)).toContainText('Ada Helferin')
       const opener = page.getByRole('button', { name: 'Menü', exact: true })

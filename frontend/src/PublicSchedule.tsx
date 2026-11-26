@@ -153,7 +153,7 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
           </div>
           {rooms.map((item, index) => <div className="room-column" key={item.id} style={{ height, gridColumn: index + 2, gridRow: 1 }}>
             {hours.map(minute => <div className="hour-line" key={minute} style={{ top: (minute - start) * PX_PER_MINUTE }} />)}
-            {item.slots.length === 0 && shared.length === 0 && <span className="empty-room">Keine Programmpunkte</span>}
+            {item.slots.length === 0 && shared.length === 0 && <span className="empty-room">Keine Sessions</span>}
             {layoutSlots([...item.slots, ...presentation.repeated]).map(({ slot, lane, lanes }) => card(slot, lane, lanes))}
           </div>)}
           <div className="shared-slot-layer" data-shared-layer style={{ gridColumn: `2 / ${rooms.length + 2}`, gridRow: 1, height }}>
@@ -185,7 +185,7 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
         >{item.name}</button>)}
       </div>
       {room && <section role="tabpanel" id="public-room-panel" aria-labelledby={`public-room-tab-${room.id}`} className="public-room-panel" ref={mobileRef}>
-        {mobileSlots.length === 0 ? <p className="public-state">In diesem Raum sind keine Programmpunkte geplant.</p> :
+        {mobileSlots.length === 0 ? <p className="public-state">In diesem Raum sind keine Sessions geplant.</p> :
           mobileSlots.map(slot => {
             const notice = activeNotice(slot, now)
             const previous = notice && previousPlanning(notice)

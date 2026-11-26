@@ -49,7 +49,7 @@ export default function HeaderMenu({ actions, label = 'Menü', panelLabel = 'Hea
     trigger.current?.focus()
   }}>
     <button ref={trigger} type="button" className={triggerClassName} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
-      {leading}{labelHidden ? <span className="visually-hidden">{label}</span> : label} <Icon name="chevron-down" className="header-menu-chevron" />
+      {leading}{labelHidden ? <span className="visually-hidden">{label}</span> : <span className="header-menu-label">{label}</span>} <Icon name="chevron-down" className="header-menu-chevron" />
     </button>
     <div id={panelId} className={`header-menu-panel${align === 'left' ? ' header-menu-panel-left' : ''}`} role="group" aria-label={panelLabel} hidden={!open}>
       {actions.map(action => {

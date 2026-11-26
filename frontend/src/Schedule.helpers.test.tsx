@@ -193,3 +193,19 @@ it.each(['program', 'helpers'] as const)('reorders parallel duties in %s without
     expect(onReorderDuties).toHaveBeenCalledTimes(1)
   } finally { Element.prototype.getBoundingClientRect = original }
 })
+
+it('hides duty columns in the program view and marks sessions that still need helpers', () => {
+  const slot = { id: 7, event_id: 1, day_id: 1, room_id: 1, scope: 'room' as const, topic: 'Vortrag', description: null,
+    start_time: '10:00:00', end_time: '11:00:00', speaker_ids: [], speakers: [], speaker_required: false,
+    category_ids: [], categories: [], is_cancelled: false, change_notice: null }
+  const withSlot = { ...schedule, rooms: [{ ...schedule.rooms[0], slots: [slot] }, schedule.rooms[1]] } as DaySchedule
+  const sessionDuty: Duty = { ...base, id: 4, kind: 'session', title: null, room_id: 1, slot_id: 7, session_topic: 'Vortrag',
+    capacity: 3, user_ids: [1], users: [ada], start_time: '10:00:00', end_time: '11:00:00' }
+  const { container } = render(<Schedule schedule={withSlot} helperPlan={{ duties: [base, sessionDuty], conflicts: [] }}
+    showDuties={false} onEdit={() => {}} onChange={async () => {}} />)
+  expect(container.querySelectorAll('.duty-column')).toHaveLength(0)
+  expect(screen.queryByText('Helferdienste')).toBeNull()
+  expect(screen.queryByText('Allgemeine Dienste')).toBeNull()
+  expect((container.querySelector('.schedule-grid') as HTMLElement).style.gridTemplateColumns).toBe('72px minmax(240px, 1fr) minmax(240px, 1fr)')
+  expect(container.querySelector('[data-slot-id="7"]')?.textContent).toContain('2 Helfer fehlen')
+})

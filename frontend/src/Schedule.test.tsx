@@ -21,7 +21,7 @@ afterEach(() => { cleanup(); vi.useRealTimers() })
 describe('schedule interactions', () => {
   it('shows empty room and collision marks', () => {
     const { container } = render(<Schedule schedule={schedule} onEdit={() => {}} onChange={async () => {}} />)
-    expect(screen.getByText('Noch keine Slots')).toBeTruthy()
+    expect(screen.getByText('Noch keine Sessions')).toBeTruthy()
     expect(container.querySelectorAll('.slot-card.collision')).toHaveLength(2)
     const first = container.querySelector('[data-slot-id="1"]') as HTMLElement
     const second = container.querySelector('[data-slot-id="2"]') as HTMLElement

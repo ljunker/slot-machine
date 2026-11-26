@@ -58,7 +58,7 @@ export default function SpeakerEditor({ speaker, onSave, onDelete, onDeletePhoto
   }
 
   async function remove() {
-    if (onDelete && await confirm({ title: 'Rednerprofil löschen?', message: 'Zugeordnete Slots verlieren diesen Redner.', confirmLabel: 'Rednerprofil löschen' })) {
+    if (onDelete && await confirm({ title: 'Rednerprofil löschen?', message: 'Zugeordnete Sessions verlieren diesen Redner.', confirmLabel: 'Rednerprofil löschen' })) {
       if (await onDelete()) onClose()
     }
   }
