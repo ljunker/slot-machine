@@ -1,0 +1,85 @@
+@import "@fontsource-variable/inter/wght.css";
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  line-height: 1.4;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.icon-button:disabled {
+  color: var(--muted);
+}
+time,
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Formularfelder: Grundstil einmal global, im Kontext nur noch Layout */
+input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"], [type="range"]),
+select,
+textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--input-text);
+  font-size: var(--text-md);
+}
+textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+}
+
+/* Icons: SVG im Stil der Linienicons, Größe aus dem Icon-Element */
+.icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: -0.15em;
+}
+
+.eyebrow {
+  color: var(--eyebrow);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+.duty-card:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}

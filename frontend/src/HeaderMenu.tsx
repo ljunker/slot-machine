@@ -1,4 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import Icon from './Icon'
+import type { IconName } from './Icon'
 
 export type HeaderMenuAction = {
   label: string
@@ -8,14 +11,19 @@ export type HeaderMenuAction = {
   download?: boolean
   disabled?: boolean
   separatorBefore?: boolean
+  icon?: IconName
 }
 
-export default function HeaderMenu({ actions, label = 'Menü', panelLabel = 'Header-Aktionen', triggerClassName = 'header-secondary', align = 'right' }: {
+export default function HeaderMenu({ actions, label = 'Menü', panelLabel = 'Header-Aktionen', triggerClassName = 'header-secondary', align = 'right', labelHidden = false, leading }: {
   actions: HeaderMenuAction[]
   label?: string
   panelLabel?: string
   triggerClassName?: string
   align?: 'left' | 'right'
+  /** Zeigt die Beschriftung nur für Screenreader (z. B. neben einem Avatar). */
+  labelHidden?: boolean
+  /** Inhalt vor der Beschriftung, z. B. ein Avatar. */
+  leading?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -41,17 +49,18 @@ export default function HeaderMenu({ actions, label = 'Menü', panelLabel = 'Hea
     trigger.current?.focus()
   }}>
     <button ref={trigger} type="button" className={triggerClassName} aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(value => !value)}>
-      {label} <svg className="header-menu-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+      {leading}{labelHidden ? <span className="visually-hidden">{label}</span> : label} <Icon name="chevron-down" className="header-menu-chevron" />
     </button>
     <div id={panelId} className={`header-menu-panel${align === 'left' ? ' header-menu-panel-left' : ''}`} role="group" aria-label={panelLabel} hidden={!open}>
       {actions.map(action => {
         const className = `header-menu-action${action.separatorBefore ? ' header-menu-separated' : ''}`
-        if (action.href) return <a key={action.label} className={className} href={action.href} download={action.download || undefined} onClick={() => setOpen(false)}>{action.label}</a>
+        const content = <>{action.icon && <Icon name={action.icon} />}{action.label}</>
+        if (action.href) return <a key={action.label} className={className} href={action.href} download={action.download || undefined} onClick={() => setOpen(false)}>{content}</a>
         return <button key={action.label} type="button" className={className} disabled={action.disabled} onClick={() => {
           setOpen(false)
           trigger.current?.focus()
           action.onClick?.()
-        }}>{action.label}</button>
+        }}>{content}</button>
       })}
     </div>
   </div>

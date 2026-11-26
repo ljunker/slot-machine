@@ -7,6 +7,7 @@ import Dialog from './Dialog'
 import PublicSessionDetails, { sessionPath } from './PublicSessionDetails'
 import { localDate } from './publicDay'
 import { sharedPresentation } from './sharedSessions'
+import NoticeBadge from './NoticeBadge'
 
 function speakerNames(slot: PublicSlot): string {
   return slot.speakers.map(speaker => speaker.name).join(', ')
@@ -101,7 +102,7 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
       <span className="public-slot-time">{running && <span className="public-running-dot" aria-hidden="true" />}{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}</span>
       {slot.speakers.length > 0 && <small>{speakerNames(slot)}</small>}
       {(slot.categories?.length || notice && !compactNotice) && <span className="public-slot-meta">
-        {notice && !compactNotice && <span className="change-badge">{noticeLabel(notice)}</span>}
+        {notice && !compactNotice && <NoticeBadge notice={notice} />}
         <CategoryLabels categories={slot.categories} />
       </span>}
     </button>
@@ -195,7 +196,7 @@ export default function PublicSchedule({ schedule }: { schedule: PublicDaySchedu
               <span className="public-mobile-time">{slot.start_time.slice(0, 5)}–{slot.end_time.slice(0, 5)}{running && <span className="public-running-badge">Läuft gerade</span>}</span>
               <strong>{slot.topic}</strong><CategoryLabels categories={slot.categories} />
               {slot.speakers.length > 0 && <span>{speakerNames(slot)}</span>}
-              {notice && <span className="change-badge">{noticeLabel(notice)}</span>}
+              {notice && <NoticeBadge notice={notice} />}
               {previous && <span className="previous-planning">Vorher: {previous}</span>}
             </>
             return <article className={`public-mobile-slot${notice ? ` notice-${notice.type}` : ''}${running ? ' is-running' : ''}`} key={slot.id}

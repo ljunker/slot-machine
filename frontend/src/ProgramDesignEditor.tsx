@@ -7,6 +7,7 @@ import type { Event, InfoBlock, PartnerLogo } from './types'
 import Dialog, { useConfirm } from './Dialog'
 import type { ConfirmOptions } from './Dialog'
 import InlineMessage from './InlineMessage'
+import Icon from './Icon'
 
 type ColorField = 'background_color' | 'text_color' | 'accent_color' | 'header_background_color' | 'card_color'
 type TextField = 'program_eyebrow' | 'program_subtitle' | 'website_url'
@@ -119,8 +120,8 @@ function PartnerRow({ eventId, partner, first, last, onChanged, onError, onMove,
       <ImageField label="Partnerlogo" url={partner.image_url} alt={`Logo von ${partner.name}`} path={`${base}/image`} field="image" onDone={onChanged} onError={onError} />
       <div className="design-item-actions">
         <button type="submit" className="secondary small">Partner speichern</button>
-        <button type="button" className="icon-button" aria-label={`${partner.name} nach oben`} disabled={first} onClick={() => onMove(-1)}>↑</button>
-        <button type="button" className="icon-button" aria-label={`${partner.name} nach unten`} disabled={last} onClick={() => onMove(1)}>↓</button>
+        <button type="button" className="icon-button" aria-label={`${partner.name} nach oben`} disabled={first} onClick={() => onMove(-1)}><Icon name="arrow-up" /></button>
+        <button type="button" className="icon-button" aria-label={`${partner.name} nach unten`} disabled={last} onClick={() => onMove(1)}><Icon name="arrow-down" /></button>
         <button type="button" className="danger small" onClick={() => void remove()}>Löschen</button>
       </div>
     </form>
@@ -157,8 +158,8 @@ function InfoRow({ eventId, block, first, last, onChanged, onError, onMove, conf
       <label>Text<textarea maxLength={4000} rows={3} value={body} onChange={event => setBody(event.target.value)} /></label>
       <div className="design-item-actions">
         <button type="submit" className="secondary small">Infoblock speichern</button>
-        <button type="button" className="icon-button" aria-label={`${block.title} nach oben`} disabled={first} onClick={() => onMove(-1)}>↑</button>
-        <button type="button" className="icon-button" aria-label={`${block.title} nach unten`} disabled={last} onClick={() => onMove(1)}>↓</button>
+        <button type="button" className="icon-button" aria-label={`${block.title} nach oben`} disabled={first} onClick={() => onMove(-1)}><Icon name="arrow-up" /></button>
+        <button type="button" className="icon-button" aria-label={`${block.title} nach unten`} disabled={last} onClick={() => onMove(1)}><Icon name="arrow-down" /></button>
         <button type="button" className="danger small" onClick={() => void remove()}>Löschen</button>
       </div>
     </form>

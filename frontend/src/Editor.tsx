@@ -6,6 +6,7 @@ import { activeNotice, noticeLabel, previousPlanning, useNoticeNow } from './cha
 import { formatDate } from './date'
 import { UnsavedBadge, useUnsavedChanges } from './unsavedChanges'
 import { useConfirm } from './Dialog'
+import { NoticeIcon } from './NoticeBadge'
 
 export type EditorKind = 'event' | 'day' | 'room' | 'slot'
 
@@ -153,7 +154,7 @@ export default function Editor({ kind, event, day, days, room, slot, rooms, spea
   return <aside className="editor" aria-label={`${title} ${existing ? 'bearbeiten' : 'anlegen'}`}>
     <div className="editor-heading"><h2>{title} {existing ? 'bearbeiten' : 'anlegen'}<UnsavedBadge dirty={dirty} /></h2><button type="button" className="text-button" onClick={onRequestClose}>Schließen</button></div>
     <form ref={form} onSubmit={submit}>
-      {kind === 'slot' && notice && <p className={`editor-notice notice-${notice.type}`}><strong>{noticeLabel(notice)}</strong>{previousPlanning(notice) && <span>Vorher: {previousPlanning(notice)}</span>}{notice.type === 'rescheduled' && onClearRescheduledNotice && <button type="button" className="text-button" disabled={clearingNotice} onClick={() => void clearRescheduledNotice()}>Verschoben entfernen</button>}</p>}
+      {kind === 'slot' && notice && <p className={`editor-notice notice-${notice.type}`}><strong><NoticeIcon notice={notice} />{noticeLabel(notice)}</strong>{previousPlanning(notice) && <span>Vorher: {previousPlanning(notice)}</span>}{notice.type === 'rescheduled' && onClearRescheduledNotice && <button type="button" className="text-button" disabled={clearingNotice} onClick={() => void clearRescheduledNotice()}>Verschoben entfernen</button>}</p>}
       {(kind === 'event' || kind === 'room') && <label>Name<input required maxLength={255} value={name} onChange={e => setName(e.target.value)} /></label>}
       {kind === 'event' && <>
         <label>Startdatum<input required type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>

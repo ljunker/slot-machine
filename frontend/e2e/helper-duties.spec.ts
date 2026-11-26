@@ -18,7 +18,7 @@ test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page,
   await expect(page.locator('.duty-column')).toHaveCount(3)
   await expect(page.getByText('Helferdienste', { exact: true })).toHaveCount(2)
 
-  await page.getByRole('button', { name: '+ Dienst' }).click()
+  await page.getByRole('button', { name: 'Dienst hinzufügen' }).click()
   await page.getByLabel('Titel (optional)').fill('Aufbau')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.locator('[data-duty-id]').first()).toContainText('Offen')
@@ -26,7 +26,7 @@ test('plant offene und mehrfach besetzte Dienste in Raumspalten', async ({ page,
   for (const name of ['Ada', 'Ben']) createTeamAccount(event.id, name)
   await page.reload()
   await page.getByLabel('Veranstaltung wählen').selectOption(String(event.id))
-  await page.getByRole('button', { name: '+ Dienst' }).click()
+  await page.getByRole('button', { name: 'Dienst hinzufügen' }).click()
   await page.getByLabel('Dienstart').selectOption('room')
   await page.getByLabel('Titel (optional)').fill('Einlass')
   await page.getByLabel('Höchstzahl Helfer').fill('2')
@@ -109,8 +109,8 @@ test('gibt parallelen Diensten im Helferplan Platz, auch bei schmalem Fenster', 
       dutyBeforeProgram: container.querySelector('[aria-label="Helferdienste Saal"]')!.getBoundingClientRect().right
         <= container.querySelector('[data-room-column]')!.getBoundingClientRect().left + 1,
       programWidth: container.querySelector('[data-room-column]')!.getBoundingClientRect().width,
-      timeBelowTitle: container.querySelector('.slot-grip strong')!.getBoundingClientRect().bottom
-        <= container.querySelector('.slot-grip span')!.getBoundingClientRect().top + 1,
+      timeBelowTitle: container.querySelector('.slot-grip .slot-title')!.getBoundingClientRect().bottom
+        <= container.querySelector('.slot-grip .slot-time')!.getBoundingClientRect().top + 1,
     }
   })
   expect(sizes.scrolls).toBe(true)
@@ -305,7 +305,7 @@ test('Helfer legt Namen fest und übernimmt Dienste ohne Bearbeitungsrechte', as
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('button', { name: 'Helferplan', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Menü', exact: true }).click()
-  for (const name of ['+ Dienst', '+ Slot', '+ Session', '+ Helfer', 'Team verwalten', 'Restore', 'Alle Änderungs-Flags entfernen']) {
+  for (const name of ['Dienst hinzufügen', 'Slot hinzufügen', 'Session hinzufügen', 'Helfer hinzufügen', 'Team verwalten', 'Restore', 'Alle Änderungs-Flags entfernen']) {
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
   }
   await page.getByRole('button', { name: 'Menü', exact: true }).click()

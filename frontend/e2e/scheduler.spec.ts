@@ -10,24 +10,25 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByRole('combobox', { name: 'Veranstaltung wählen' }).locator('option:checked')).toHaveText('Browserkonferenz')
 
-  await page.getByRole('button', { name: '+ Tag' }).click()
+  await page.getByRole('button', { name: 'Tag hinzufügen' }).click()
   await page.getByLabel('Datum').fill('2026-10-01')
   await page.getByRole('button', { name: 'Speichern' }).click()
   await expect(page.getByText('09:00–18:00 Uhr · 0 Räume')).toBeVisible()
 
-  for (const name of ['Saal A', 'Saal B']) {
-    await page.getByRole('button', { name: '+ Raum' }).click()
+  for (const [index, name] of ['Saal A', 'Saal B'].entries()) {
+    await page.getByRole('button', { name: 'Raum hinzufügen' }).click()
     await page.getByLabel('Name').fill(name)
     await page.getByRole('button', { name: 'Speichern' }).click()
+    await expect(page.locator('[data-room-column]')).toHaveCount(index + 1)
   }
   await expect(page.locator('[data-room-column]')).toHaveCount(2)
 
-  await page.getByRole('button', { name: '+ Redner' }).click()
+  await page.getByRole('button', { name: 'Redner hinzufügen' }).click()
   await page.getByLabel('Name').fill('Ada')
   await page.getByLabel('Kurzbeschreibung').fill('Spricht über Planung.')
   await page.getByRole('button', { name: 'Speichern' }).click()
 
-  await page.getByRole('button', { name: '+ Slot' }).click()
+  await page.getByRole('button', { name: 'Slot hinzufügen' }).click()
   await page.getByLabel('Thema').fill('Eröffnung')
   await page.getByRole('checkbox', { name: 'Ada' }).check()
   await page.getByLabel('Beginn').fill('10:00')
@@ -46,6 +47,8 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.mouse.up()
   await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toHaveCount(1)
   await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:30')
+  // Erfolgsmeldungen liegen unten rechts über dem Raster; vor dem Ziehen am unteren Kartenrand abwarten, bis sie weg sind.
+  await expect(page.locator('.toast')).toHaveCount(0, { timeout: 8000 })
   const resize = page.getByLabel('Eröffnung verlängern oder verkürzen')
   const edge = await resize.boundingBox()
   expect(edge).not.toBeNull()
@@ -55,7 +58,7 @@ test('plant Event und verschiebt Slot zwischen Räumen', async ({ page }) => {
   await page.mouse.up()
   await expect(page.locator('[data-room-column]').nth(1).locator('[data-slot-id]')).toContainText('10:30–11:45')
 
-  await page.getByRole('button', { name: '+ Slot' }).click()
+  await page.getByRole('button', { name: 'Slot hinzufügen' }).click()
   await page.getByLabel('Thema').fill('Paralleler Vortrag')
   await page.getByRole('checkbox', { name: 'Ada' }).check()
   await page.getByLabel('Beginn').fill('11:00')
