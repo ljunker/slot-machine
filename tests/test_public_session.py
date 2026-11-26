@@ -99,7 +99,8 @@ def test_public_responses_include_speaker_profiles(client, monkeypatch, tmp_path
     assert anonymous.get('/api/public/speakers/999999/photo').status_code == 404
 
 
-def test_session_calendar_export(client):
+def test_session_calendar_export(client, monkeypatch):
+    monkeypatch.delenv('PUBLIC_BASE_URL', raising=False)
     event, _, _, slot = _public_event(client)
     response = client.get(f"/api/events/{event['id']}/sessions/{slot['id']}.ics")
     assert response.status_code == 200
@@ -110,7 +111,7 @@ def test_session_calendar_export(client):
     unfolded = body.replace('\r\n ', '')
     assert 'DTSTART:20261001T100000\r\n' in unfolded
     assert 'DTEND:20261001T113000\r\n' in unfolded
-    assert 'SUMMARY:Vortrag\; Teil 1\\, mit Gästen\r\n' in unfolded
+    assert 'SUMMARY:Vortrag\\; Teil 1\\, mit Gästen\r\n' in unfolded
     assert 'Redner: Ada\\nZeile eins\\nZeile zwei\\n' in unfolded
     assert f"URL:http://testserver/programm/{event['id']}/sessions/{slot['id']}" in unfolded
     assert 'STATUS:CONFIRMED' in unfolded
@@ -121,7 +122,8 @@ def test_session_calendar_export(client):
     assert client.get(f"/api/events/{event['id']}/sessions/999999.ics").status_code == 404
 
 
-def test_page_meta_for_link_previews(client):
+def test_page_meta_for_link_previews(client, monkeypatch):
+    monkeypatch.delenv('PUBLIC_BASE_URL', raising=False)
     event, _, _, slot = _public_event(client, topic='Workshop "Kunst" & mehr')
     headers = {'x-forwarded-proto': 'https', 'host': 'programm.example'}
 
@@ -140,3 +142,20 @@ def test_page_meta_for_link_previews(client):
     assert '<title>Event Scheduler</title>' in client.get('/api/public/meta/programm/999999').text
     missing = client.get(f"/api/public/meta/programm/{event['id']}/sessions/999999").text
     assert '<title>Programm · Konferenz &lt;2026&gt;</title>' in missing
+
+
+def test_public_links_prefer_configured_base_url(client, monkeypatch):
+    event, _, _, slot = _public_event(client)
+    monkeypatch.setenv('PUBLIC_BASE_URL', 'https://programm.example.org/')
+    # Wie hinter Server-nginx + Container-nginx: Proto auf http überschrieben, Host intern.
+    headers = {'x-forwarded-proto': 'http', 'host': '127.0.0.1:5173'}
+    session_path = f"/programm/{event['id']}/sessions/{slot['id']}"
+
+    meta = client.get(f'/api/public/meta{session_path}', headers=headers).text
+    assert f'og:url" content="https://programm.example.org{session_path}"' in meta
+    calendar = client.get(f"/api/events/{event['id']}/sessions/{slot['id']}.ics", headers=headers).text
+    assert f'URL:https://programm.example.org{session_path}' in calendar.replace('\r\n ', '')
+
+    monkeypatch.setenv('PUBLIC_BASE_URL', '  ')
+    fallback = client.get(f'/api/public/meta{session_path}', headers={'x-forwarded-proto': 'https', 'host': 'via-header.example'}).text
+    assert f'og:url" content="https://via-header.example{session_path}"' in fallback

@@ -1,5 +1,6 @@
 """Open-Graph-Metadaten für die öffentlichen Seiten, die nginx per SSI in index.html einsetzt."""
 
+import os
 import re
 from datetime import date
 from html import escape
@@ -69,7 +70,15 @@ def page_meta(db: Session, path: str) -> dict[str, str | None]:
 
 
 def public_base_url(request: Request) -> str:
-    """Basis-URL, wie sie der Besucher sieht (hinter nginx aus den Forwarded-Headern)."""
+    """Basis-URL, wie sie der Besucher sieht.
+
+    Vorrang hat PUBLIC_BASE_URL (wie bei den Links in Einladungs-Mails): Hinter zwei
+    Proxys überschreibt das nginx im Frontend-Container X-Forwarded-Proto mit http.
+    Ohne die Variable gelten die Forwarded-Header.
+    """
+    configured = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if configured:
+        return configured
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
     host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
     return f"{scheme}://{host.split(',')[0].strip()}"
