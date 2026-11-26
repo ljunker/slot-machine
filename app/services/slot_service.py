@@ -45,8 +45,10 @@ class SlotService:
             raise NotFound("Session nicht gefunden")
         day = self.days.get_by_id(slot.day_id)
         room = self.rooms.get_by_id(slot.room_id) if slot.room_id is not None else None
+        public = PublicSlotResponse.model_validate(slot)
         return PublicSessionResponse.model_validate({
-            **PublicSlotResponse.model_validate(slot).model_dump(),
+            **public.model_dump(),
+            "speakers": public.speakers,
             "date": day.date,
             "room_name": "Alle Räume" if slot.scope == "all_rooms" else room.name,
         })

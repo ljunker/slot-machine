@@ -22,6 +22,7 @@ import { TeamManagement, UserManagement } from './TeamManagement'
 import type { Category, CurrentUser, DaySchedule, Duty, Event, EventDay, DutyParticipant, HelperPlan, Room, Slot, Speaker, UnplannedSession } from './types'
 import { PX_PER_MINUTE, SNAP_MINUTES, toMinutes, toTime } from './time'
 import { formatDate } from './date'
+import { pageTitle, usePageTitle } from './pageTitle'
 import UndoToast from './UndoToast'
 import { ToastRegion, useToasts } from './Toast'
 import { useConfirm } from './Dialog'
@@ -227,6 +228,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   }
 
   const selectedEvent = events.find(item => item.id === eventId)
+  usePageTitle(pageTitle(isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konflikte' : view === 'helpers' ? 'Helferplan' : 'Planung', selectedEvent?.name))
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot'

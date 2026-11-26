@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Slot } from './types'
-import { layoutSlots, movePatch, resizePatch, snappedDelta, toMinutes } from './time'
+import { isRunning, layoutSlots, minutesOfDay, movePatch, resizePatch, snappedDelta, toMinutes } from './time'
 
 const slot = (id: number, start_time: string, end_time: string): Slot => ({
   id, event_id: 1, day_id: 1, room_id: 1, topic: `Slot ${id}`, speaker_required: true, speaker_ids: [], speakers: [], description: null, start_time, end_time, is_cancelled: false, change_notice: null,
@@ -18,5 +18,17 @@ describe('timeline calculations', () => {
     expect(movePatch(slot(1, '10:00', '11:00'), -1000, 1, 540, 1080).start_time).toBe('09:00')
     expect(resizePatch(slot(1, '10:00', '11:00'), -1000, 1080).end_time).toBe('10:15')
     expect(toMinutes('13:45:00')).toBe(825)
+  })
+})
+
+describe('running sessions', () => {
+  it('detects running sessions by minute and ignores cancelled ones', () => {
+    const session = { start_time: '10:00:00', end_time: '11:00:00' }
+    expect(minutesOfDay(new Date(2099, 0, 1, 10, 30))).toBe(630)
+    expect(isRunning(session, 599)).toBe(false)
+    expect(isRunning(session, 600)).toBe(true)
+    expect(isRunning(session, 659)).toBe(true)
+    expect(isRunning(session, 660)).toBe(false)
+    expect(isRunning({ ...session, is_cancelled: true }, 630)).toBe(false)
   })
 })

@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.schemas.category import CategorySummary
 from app.schemas.speaker import SpeakerSummary
@@ -75,7 +75,16 @@ class PlannedSlotResponse(SlotResponse):
 class PublicSpeaker(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: int
     name: str
+    bio: str | None = None
+    website: str | None = None
+    photo_filename: str | None = Field(default=None, exclude=True)
+
+    @computed_field
+    @property
+    def photo_url(self) -> str | None:
+        return f"/api/public/speakers/{self.id}/photo" if self.photo_filename else None
 
 
 class PublicSlotResponse(BaseModel):

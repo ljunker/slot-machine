@@ -20,7 +20,7 @@ const schedule: PublicDaySchedule = {
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 describe('public program', () => {
-  it('loads selected event and changes day without write requests', async () => {
+  it('loads selected event and changes day via tabs without write requests', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, _options?: RequestInit) => {
       const path = String(input)
       const body = path.endsWith('/events/7') ? event : path.endsWith('/events/7/days') ? days : { ...schedule, day_id: path.endsWith('/12') ? 12 : 11 }
@@ -28,17 +28,37 @@ describe('public program', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     render(<PublicProgram eventId={7} />)
-    const picker = await screen.findByRole('combobox', { name: 'Veranstaltungstag' })
+    const tabs = await screen.findByRole('tablist', { name: 'Veranstaltungstage' })
     expect(screen.getByText('1. Juni 2099 bis 2. Juni 2099')).toBeTruthy()
     expect(screen.getByRole('heading', { name: '1. Juni 2099' })).toBeTruthy()
-    expect(within(picker).getByRole('option', { name: '2. Juni 2099' })).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: 'Veranstaltungstag' })).toBeNull()
+    const first = within(tabs).getByRole('tab', { name: '1. Juni 2099' })
+    expect(first.textContent).toBe('Mo 1.6.')
+    expect(first.getAttribute('aria-selected')).toBe('true')
     expect(screen.getByRole('link', { name: 'PDF-Programm herunterladen' }).getAttribute('href')).toBe('/api/events/7/program.pdf')
-    expect((picker as HTMLSelectElement).value).toBe('11')
+    expect(document.title).toBe('Programm · Konferenz')
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/public/events/7/days/11/schedule', expect.any(Object)))
-    fireEvent.change(picker, { target: { value: '12' } })
+    fireEvent.keyDown(first, { key: 'ArrowRight' })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/public/events/7/days/12/schedule', expect.any(Object)))
-    expect((picker as HTMLSelectElement).value).toBe('12')
+    expect(within(tabs).getByRole('tab', { name: '2. Juni 2099' }).getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(within(tabs).getByRole('tab', { name: '2. Juni 2099' }))
     expect(fetchMock.mock.calls.every(call => !call[1]?.method)).toBe(true)
+  })
+
+  it('switches to a select list from five days on', async () => {
+    const many = Array.from({ length: 5 }, (_, index) => ({ id: 30 + index, event_id: 7, date: `2099-06-0${index + 1}`, start_time: '09:00:00', end_time: '18:00:00' }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input)
+      const body = path.endsWith('/events/7') ? event : path.endsWith('/events/7/days') ? many : { ...schedule, day_id: Number(path.split('/').at(-2)) }
+      return new Response(JSON.stringify(body), { status: 200 })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<PublicProgram eventId={7} />)
+    const picker = await screen.findByRole('combobox', { name: 'Veranstaltungstag' })
+    expect(screen.queryByRole('tablist', { name: 'Veranstaltungstage' })).toBeNull()
+    expect(within(picker).getAllByRole('option')).toHaveLength(5)
+    fireEvent.change(picker, { target: { value: '33' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/public/events/7/days/33/schedule', expect.any(Object)))
   })
 
   it('shows mobile room tabs and expands slot description', () => {
@@ -80,7 +100,8 @@ describe('public program', () => {
     expect(within(panel).getByText('Vorher: 09:00–10:00 Uhr · Saal B')).toBeTruthy()
     expect(within(panel).getByText('Abgesagt')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Eröffnung.*Verschoben.*Details anzeigen/ }))
-    expect(screen.getByRole('region', { name: 'Session-Details' }).textContent).toContain('Vorher: 09:00–10:00 Uhr · Saal B')
-    expect(screen.getAllByRole('link', { name: 'Session-Seite öffnen' })[0].getAttribute('href')).toBe('/programm/7/sessions/21')
+    const drawer = screen.getByRole('dialog', { name: 'Eröffnung' })
+    expect(drawer.textContent).toContain('Vorher: 09:00–10:00 Uhr · Saal B')
+    expect(within(drawer).getByRole('link', { name: 'Session-Seite öffnen' }).getAttribute('href')).toBe('/programm/7/sessions/21')
   })
 })
