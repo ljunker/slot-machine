@@ -1,7 +1,7 @@
-import { Fragment, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react'
 import type { DaySchedule, Duty, HelperPlan, Slot } from './types'
-import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, snappedDelta, toMinutes, toTime } from './time'
+import { layoutSlots, movePatch, PX_PER_MINUTE, resizePatch, SNAP_MINUTES, snappedDelta, toMinutes, toTime } from './time'
 import { activeNotice, noticeLabel, useNoticeNow } from './changeNotice'
 import Icon from './Icon'
 import type { IconName } from './Icon'
@@ -80,7 +80,7 @@ export function cardDensity(minutes: number): CardDensity {
 }
 
 /** Zustände einer Karte mit Farbe (Klasse), Icon und Kurzlabel. Bedeutung siehe docs/designsystem.md. */
-export type CardStatus = { key: string; tone: 'conflict' | 'action' | 'change' | 'inactive'; icon: IconName; label: string }
+export type CardStatus = { key: string; tone: 'conflict' | 'action' | 'change' | 'inactive' | 'mine'; icon: IconName; label: string }
 
 export function StatusBadges({ statuses }: { statuses: CardStatus[] }) {
   if (!statuses.length) return null
@@ -89,6 +89,21 @@ export function StatusBadges({ statuses }: { statuses: CardStatus[] }) {
       <Icon name={status.icon} size={13} /><span className="status-label">{status.label}</span>
     </span>)}
   </span>
+}
+
+/** Tastenkürzel einer Karte im Plan, für `aria-keyshortcuts`. */
+const SLOT_SHORTCUTS = 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight Shift+Alt+ArrowUp Shift+Alt+ArrowDown'
+const DUTY_SHORTCUTS = 'Alt+ArrowUp Alt+ArrowDown Shift+Alt+ArrowUp Shift+Alt+ArrowDown'
+
+/** Welche Änderung ein Tastendruck auf einer Karte auslöst, oder null für andere Tasten. */
+export function keyboardAction(event: Pick<KeyboardEvent, 'key' | 'altKey' | 'shiftKey' | 'ctrlKey' | 'metaKey'>):
+  { kind: 'move' | 'resize'; delta: number } | { kind: 'room'; direction: -1 | 1 } | null {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return null
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    return { kind: event.shiftKey ? 'resize' : 'move', delta: event.key === 'ArrowUp' ? -SNAP_MINUTES : SNAP_MINUTES }
+  }
+  if (!event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) return { kind: 'room', direction: event.key === 'ArrowLeft' ? -1 : 1 }
+  return null
 }
 
 function dutyTitle(duty: Duty): string {
@@ -121,6 +136,19 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   const dutyDragRef = useRef<DutyDrag | null>(null)
   const suppressDutyClick = useRef<number | null>(null)
   const suppressSlotClick = useRef<number | null>(null)
+  /** Ansage für Screenreader nach einer Änderung per Tastatur. */
+  const [announcement, setAnnouncement] = useState('')
+  /** Karte, die nach einer Änderung per Tastatur den Fokus zurückbekommt (sie kann in eine andere Spalte gewandert sein). */
+  const pendingFocus = useRef<{ kind: 'slot' | 'duty'; id: number } | null>(null)
+  useEffect(() => {
+    const target = pendingFocus.current
+    if (!target) return
+    const element = document.querySelector<HTMLElement>(target.kind === 'slot'
+      ? `[data-slot-id="${target.id}"]:not(.ghost) .slot-title` : `[data-duty-id="${target.id}"]:not(.ghost)`)
+    if (!element) return
+    pendingFocus.current = null
+    if (document.activeElement !== element) element.focus()
+  })
   const shared = schedule.shared_slots ?? []
   const rooms = schedule.rooms.length || shared.length === 0 && !hasSharedBacklog ? schedule.rooms : [{ id: 0, event_id: 0, name: 'Alle Räume', sort_order: 0, slots: [] }]
   const helpersFocus = focus === 'helpers'
@@ -320,6 +348,52 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     window.addEventListener('pointercancel', cancel)
   }
 
+  function slotKeyDown(event: KeyboardEvent, slot: Slot) {
+    const action = readOnly ? null : keyboardAction(event)
+    if (!action) return
+    event.preventDefault()
+    event.stopPropagation()
+    const current = { start_time: slot.start_time.slice(0, 5), end_time: slot.end_time.slice(0, 5) }
+    let patch: SlotPatch = {}
+    if (action.kind === 'move') {
+      const moved = movePatch(slot, action.delta, 0, start, end)
+      patch = { room_id: slot.room_id, start_time: moved.start_time, end_time: moved.end_time }
+    } else if (action.kind === 'resize') {
+      patch = resizePatch(slot, action.delta, end)
+    } else if (action.kind === 'room' && slot.scope !== 'all_rooms') {
+      const next = schedule.rooms[schedule.rooms.findIndex(room => room.id === slot.room_id) + action.direction]
+      if (next) patch = { room_id: next.id, ...current }
+    }
+    const next = { room_id: patch.room_id ?? slot.room_id, start_time: patch.start_time ?? current.start_time, end_time: patch.end_time ?? current.end_time }
+    if (next.room_id === slot.room_id && next.start_time === current.start_time && next.end_time === current.end_time) {
+      setAnnouncement(`${slot.topic}: ${action.kind === 'room' ? 'kein weiterer Raum in dieser Richtung' : 'Grenze des Tages erreicht'}`)
+      return
+    }
+    const place = slot.scope === 'all_rooms' ? 'Alle Räume' : roomById.get(next.room_id!) ?? 'Raum'
+    setAnnouncement(`${slot.topic}, ${next.start_time}–${next.end_time}, ${place}`)
+    pendingFocus.current = { kind: 'slot', id: slot.id }
+    void onChange(slot.id, patch)
+  }
+
+  function dutyKeyDown(event: KeyboardEvent, duty: ActiveDuty): boolean {
+    const action = readOnly || !onChangeDuty ? null : keyboardAction(event)
+    if (!action || action.kind === 'room') return false
+    event.preventDefault()
+    const patch: DutyPatch = action.kind === 'move'
+      ? (({ start_time, end_time }) => ({ start_time, end_time }))(movePatch(duty, action.delta, 0, start, end))
+      : resizePatch(duty, action.delta, end)
+    const startTime = patch.start_time ?? duty.start_time.slice(0, 5)
+    const endTime = patch.end_time ?? duty.end_time.slice(0, 5)
+    if (startTime === duty.start_time.slice(0, 5) && endTime === duty.end_time.slice(0, 5)) {
+      setAnnouncement(`${dutyTitle(duty)}: Grenze des Tages erreicht`)
+      return true
+    }
+    setAnnouncement(`${dutyTitle(duty)}, ${startTime}–${endTime}`)
+    pendingFocus.current = { kind: 'duty', id: duty.id }
+    void onChangeDuty?.(duty, patch)
+    return true
+  }
+
   function slotStatuses(slot: Slot, notice: ReturnType<typeof activeNotice>): CardStatus[] {
     const statuses: CardStatus[] = []
     if (collisionIds.has(slot.id)) statuses.push({ key: 'room', tone: 'conflict', icon: 'conflict', label: 'Raumkonflikt' })
@@ -352,18 +426,20 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
         if (suppressSlotClick.current === slot.id) return
         onEdit(slot)
       }}
+      onKeyDown={ghost ? undefined : event => slotKeyDown(event, slot)}
     >
       <CategoryStripe categories={slot.categories} />
-      <div className="slot-grip" onPointerDown={ghost || readOnly ? undefined : event => begin(event, slot, 'move')} aria-label={readOnly ? undefined : `${slot.topic} verschieben`}>
+      <div className="slot-grip" onPointerDown={ghost || readOnly ? undefined : event => begin(event, slot, 'move')}>
         {ghost ? <strong className="slot-title">{title}</strong>
-          : <button type="button" className="slot-title" aria-label={`${slot.topic} ${readOnly ? 'ansehen' : 'bearbeiten'}`}>{title}</button>}
+          : <button type="button" className="slot-title" aria-label={`${slot.topic} ${readOnly ? 'ansehen' : 'bearbeiten'}`}
+            aria-keyshortcuts={readOnly ? undefined : SLOT_SHORTCUTS}>{title}</button>}
         <time className="slot-time">{time}</time>
       </div>
       <StatusBadges statuses={statuses} />
       {density === 'full' && slot.speakers.length > 0 && <small className="slot-speakers">{slot.speakers.map(speaker => speaker.name).join(', ')}</small>}
       {density === 'full' && <CategoryLabels categories={slot.categories} />}
-      {!ghost && !readOnly && <div className="slot-resize" title="Ziehen, um die Dauer zu ändern" onPointerDown={event => begin(event, slot, 'resize')}
-        onClick={event => event.stopPropagation()} aria-label={`${slot.topic} verlängern oder verkürzen`} />}
+      {!ghost && !readOnly && <div className="slot-resize" title="Ziehen, um die Dauer zu ändern (Tastatur: Umschalt + Alt + Pfeil)" onPointerDown={event => begin(event, slot, 'resize')}
+        onClick={event => event.stopPropagation()} aria-hidden="true" />}
     </article>
   }
 
@@ -388,7 +464,9 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     const conflictingHelperIds = ghost ? undefined : dutyConflictHelperIds.get(duty.id)
     const conflictingHelpers = duty.users.filter(helper => conflictingHelperIds?.has(helper.id))
     const density = cardDensity(toMinutes(duty.end_time) - toMinutes(duty.start_time))
+    const mine = !ghost && currentUserId !== undefined && duty.user_ids.includes(currentUserId)
     const statuses: CardStatus[] = []
+    if (mine) statuses.push({ key: 'mine', tone: 'mine', icon: 'user', label: 'Du' })
     if (!ghost && conflictingHelpers.length) statuses.push({ key: 'helper', tone: 'conflict', icon: 'users', label: 'Helferkonflikt' })
     // Bei großen Karten steht „Offen“ schon in der Helferzeile; das Badge braucht es dann nur für Restplätze.
     if (!ghost && duty.user_ids.length < duty.capacity && (density !== 'full' || duty.user_ids.length > 0)) statuses.push({ key: 'open', tone: 'action', icon: 'warning',
@@ -396,18 +474,21 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
     return <article
       key={duty.id}
       data-duty-id={duty.id}
-      className={`duty-card density-${density}${duty.user_ids.length === 0 ? ' duty-open' : ''}${conflictingHelpers.length ? ' helper-conflict' : ''}${ghost ? ' ghost' : ''}`}
+      className={`duty-card density-${density}${mine ? ' duty-mine' : ''}${duty.user_ids.length === 0 ? ' duty-open' : ''}${conflictingHelpers.length ? ' helper-conflict' : ''}${ghost ? ' ghost' : ''}`}
       style={{ top: (toMinutes(duty.start_time) - start) * pxPerMinute, height: (toMinutes(duty.end_time) - toMinutes(duty.start_time)) * pxPerMinute,
         left: `${lane * 100 / lanes}%`, width: `${100 / lanes}%`, '--status-count': statuses.length } as CSSProperties}
       role={ghost ? undefined : 'button'}
       tabIndex={ghost ? undefined : 0}
       aria-hidden={ghost ? true : undefined}
-      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}, ${duty.user_ids.length ? duty.users.map(helper => helper.name).join(', ') : 'Offen'}${conflictingHelpers.length ? `, Helferkonflikt: ${conflictingHelpers.map(helper => helper.name).join(', ')}` : ''}`}
+      aria-label={ghost ? undefined : `${dutyTitle(duty)}, ${duty.start_time.slice(0, 5)} bis ${duty.end_time.slice(0, 5)}${mine ? ', du bist eingeteilt' : ''}, ${duty.user_ids.length ? duty.users.map(helper => helper.name).join(', ') : 'Offen'}${conflictingHelpers.length ? `, Helferkonflikt: ${conflictingHelpers.map(helper => helper.name).join(', ')}` : ''}`}
       onClick={ghost ? undefined : () => {
         if (suppressDutyClick.current === duty.id) return
         onEditDuty?.(duty)
       }}
+      aria-keyshortcuts={ghost || readOnly || !onChangeDuty ? undefined : DUTY_SHORTCUTS}
       onKeyDown={ghost ? undefined : event => {
+        if (event.target !== event.currentTarget) return
+        if (dutyKeyDown(event, duty)) return
         if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onEditDuty?.(duty) }
       }}
     >
@@ -421,8 +502,8 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
       </div>
       <StatusBadges statuses={statuses} />
       {!ghost && currentUserId !== undefined && onSignup && <DutySignup duty={duty} currentUserId={currentUserId} onSignup={onSignup} />}
-      {!ghost && !readOnly && <div className="duty-resize" title="Ziehen, um die Dauer zu ändern" onPointerDown={event => beginDuty(event, duty, 'resize')}
-        onClick={event => event.stopPropagation()} aria-label={`${dutyTitle(duty)} verlängern oder verkürzen`} />}
+      {!ghost && !readOnly && <div className="duty-resize" title="Ziehen, um die Dauer zu ändern (Tastatur: Umschalt + Alt + Pfeil)" onPointerDown={event => beginDuty(event, duty, 'resize')}
+        onClick={event => event.stopPropagation()} aria-hidden="true" />}
     </article>
   }
 
@@ -440,6 +521,7 @@ export default function Schedule({ schedule, helperPlan = { duties: [], conflict
   }
 
   return <div className={`schedule-scroll${readOnly ? ' schedule-readonly' : ''}`} aria-label={helpersFocus ? 'Helferplan' : 'Tagesplan'}>
+    <p className="visually-hidden" aria-live="polite" aria-atomic="true">{announcement}</p>
     {schedule.speaker_conflicts.length > 0 && <section className="conflict-list-banner" aria-label="Rednerkonflikte">
       <h3><Icon name="user" />Rednerkonflikte</h3>
       <ul>{schedule.speaker_conflicts.map(conflict => {

@@ -83,6 +83,8 @@ test('zeigt Besucherprogramm auf Smartphone ohne Bearbeitung und horizontales Ra
   await page.goto('/')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await page.getByRole('combobox', { name: 'Veranstaltung wählen' }).selectOption(String(event.id))
+  // Auf dem Smartphone zeigt die Planung eine Liste pro Raum.
+  await page.getByRole('tab', { name: 'Saal B' }).click()
   await page.getByRole('button', { name: 'Eröffnung bearbeiten' }).click()
   await expect(page.getByRole('complementary', { name: 'Session bearbeiten' })).toContainText('Vorher: 10:00–11:00 Uhr · Saal A')
   await page.getByRole('checkbox', { name: 'Session abgesagt' }).check()

@@ -447,3 +447,38 @@ def test_helpers_are_absent_from_program_pdf(client, db):
     assert "Vortrag" in text
     assert "Geheime Helferin" not in text
     assert "Einlass" not in text
+
+
+def test_my_duties_calendar_lists_only_own_active_duties(client, db):
+    from test_auth import login_as
+
+    event, day, room = setup_event(client, "Sommerfest, 2026")
+    ada = helper(db, event["id"], "Ada")
+    ben = helper(db, event["id"], "Ben")
+    duty(client, event["id"], kind="room", title="Einlass", day_id=day["id"], room_id=room["id"],
+         start_time="09:00", end_time="10:00", user_ids=[ada["id"], ben["id"]])
+    duty(client, event["id"], kind="general", title="Kasse", day_id=day["id"],
+         start_time="11:00", end_time="12:00", user_ids=[ben["id"]])
+    slot = client.post("/api/slots", json={"event_id": event["id"], "topic": "Später"}).json()
+    duty(client, event["id"], kind="session", slot_id=slot["id"], title="Technik", user_ids=[ada["id"]])
+
+    response = login_as(ada["email"]).get(f"/api/events/{event['id']}/my-duties.ics")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/calendar")
+    body = response.text
+    assert body.count("BEGIN:VEVENT") == 1
+    assert "SUMMARY:Einlass" in body
+    assert "DTSTART:20261001T090000" in body
+    assert "LOCATION:Saal A · Sommerfest\\, 2026" in body
+    assert "Eingeteilt: Ada\\, Ben" in body
+    assert "Kasse" not in body and "Technik" not in body
+
+
+def test_my_duties_calendar_requires_membership(client, db):
+    from conftest import make_account
+    from test_auth import login_as
+
+    event, _, _ = setup_event(client)
+    other, _, _ = setup_event(client, "Andere")
+    outsider = make_account(db, other["id"], "Zoe")
+    assert login_as(outsider["email"]).get(f"/api/events/{event['id']}/my-duties.ics").status_code in (403, 404)

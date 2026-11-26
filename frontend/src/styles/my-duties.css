@@ -1,0 +1,97 @@
+/* Ansicht „Meine Dienste“: Listen statt Raster, gut lesbar auf dem Smartphone. */
+.my-duties {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 820px;
+}
+.my-duties-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.my-duties-head h3 {
+  margin: 0;
+}
+.my-duties .dashboard-panel h3 {
+  justify-content: flex-start;
+}
+.my-duty-day + .my-duty-day {
+  margin-top: var(--space-4);
+}
+.my-duty-day h4 {
+  margin: 0 0 var(--space-2);
+  color: var(--subtext);
+  font-size: var(--text-sm);
+}
+.my-duty-day ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.my-duty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+}
+.my-duty-own {
+  border-left: 4px solid var(--link);
+}
+.my-duty-inactive {
+  opacity: 0.75;
+}
+.my-duty-main {
+  display: grid;
+  flex: 1 1 260px;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.my-duty-main strong {
+  font-size: var(--text-base);
+}
+.my-duty-main:hover strong {
+  text-decoration: underline;
+}
+.my-duty-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.my-duty-meta .icon {
+  color: var(--subtext);
+}
+.my-duty-meta .icon + .icon,
+.my-duty-meta .icon:not(:first-child) {
+  margin-left: var(--space-2);
+}
+.my-duty-main small {
+  color: var(--subtext);
+  font-size: var(--text-xs);
+}
+.my-duty-main .status-badge {
+  justify-self: start;
+}
+.my-duty .duty-signup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}

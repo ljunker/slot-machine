@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import App from './App'
 import { AuthGate } from './Auth'
@@ -33,6 +33,15 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 it('shows helper read-only details and persists own signup and leave', async () => {
   const fetch = mockApi()
   const { container } = render(<App currentUser={currentUser} />)
+  await screen.findByRole('heading', { name: 'Meine Dienste' })
+  expect(screen.getByRole('button', { name: 'Meine Dienste' }).getAttribute('aria-pressed')).toBe('true')
+  const sidebar = screen.getByRole('navigation', { name: 'Planung' })
+  for (const section of ['Räume', 'Kategorien', 'Ungeplante Sessions', 'Dienste']) expect(within(sidebar).queryByText(section)).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Eintragen in Einlass' }))
+  await within(screen.getByRole('region', { name: /Wo bin ich eingeteilt/ })).findByText('Einlass')
+  fireEvent.click(screen.getByRole('button', { name: 'Austragen aus Einlass' }))
+  await within(screen.getByRole('region', { name: /Wo werden noch Leute gebraucht/ })).findByText('Einlass')
+  fireEvent.click(screen.getByRole('button', { name: 'Tagesplan' }))
   await screen.findByRole('button', { name: 'Vortrag ansehen' })
   for (const name of ['Session hinzufügen', 'Dienst hinzufügen', 'Helfer hinzufügen', 'Redner hinzufügen', 'Ungeplante Session hinzufügen', 'Veranstaltung verwalten']) {
     expect(screen.queryByRole('button', { name })).toBeNull()
@@ -59,13 +68,15 @@ it('shows helper read-only details and persists own signup and leave', async () 
 it('closes editing panels and removes editing controls when switching to helper event', async () => {
   mockApi()
   render(<App currentUser={currentUser} />)
-  await screen.findByRole('button', { name: 'Vortrag ansehen' })
+  await screen.findByRole('heading', { name: 'Meine Dienste' })
   fireEvent.change(screen.getByLabelText('Veranstaltung wählen'), { target: { value: '2' } })
   await screen.findByRole('button', { name: 'Dienst hinzufügen' })
   fireEvent.click(screen.getByRole('button', { name: 'Dienst hinzufügen' }))
   expect(screen.getByRole('heading', { name: 'Dienst anlegen' })).toBeTruthy()
+  await screen.findByRole('button', { name: 'Session hinzufügen' })
+  expect(screen.getByRole('button', { name: 'Tagesplan' }).getAttribute('aria-pressed')).toBe('true')
   fireEvent.change(screen.getByLabelText('Veranstaltung wählen'), { target: { value: '1' } })
-  await screen.findByRole('button', { name: 'Vortrag ansehen' })
+  await screen.findByRole('heading', { name: 'Meine Dienste' })
   expect(screen.queryByRole('heading', { name: 'Dienst anlegen' })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull()
 })

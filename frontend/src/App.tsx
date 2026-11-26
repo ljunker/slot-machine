@@ -8,7 +8,11 @@ import DutyEditor from './DutyEditor'
 import { DutyDetails, SlotDetails } from './ReadOnlyDetails'
 import ConflictOverview from './ConflictOverview'
 import Dashboard from './Dashboard'
+import MyDuties from './MyDuties'
+import { KeyboardHelp, PlanSessionDialog } from './PlanDialogs'
+import type { PlanTarget } from './PlanDialogs'
 import Schedule from './Schedule'
+import ScheduleList, { useMediaQuery } from './ScheduleList'
 import PlanLegend, { usePlanZoom, useShowDuties } from './PlanLegend'
 import { matches, SEARCH_THRESHOLD, SidebarSearch, SidebarSection, useCollapsedSections } from './SidebarSection'
 import Icon from './Icon'
@@ -65,13 +69,21 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const [helpers, setHelpers] = useState<DutyParticipant[]>([])
   const [helperPlan, setHelperPlan] = useState<HelperPlan>({ duties: [], conflicts: [] })
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
-  const [view, setView] = useState<'schedule' | 'helpers' | 'conflicts' | 'dashboard'>('schedule')
+  const [view, setView] = useState<'schedule' | 'helpers' | 'conflicts' | 'dashboard' | 'mine'>('schedule')
   const [overviewSchedules, setOverviewSchedules] = useState<DaySchedule[] | null>(null)
   const [overviewError, setOverviewError] = useState('')
   const [dashboardDayId, setDashboardDayId] = useState<number | null>(null)
   const [loadError, setLoadError] = useState('')
   const [unplanned, setUnplanned] = useState<UnplannedSession[]>([])
   const [backlogPreview, setBacklogPreview] = useState<BacklogPreview | null>(null)
+  /** Ungeplante Session, die gerade über den Dialog eingeplant wird (Alternative zum Ziehen). */
+  const [planning, setPlanning] = useState<UnplannedSession | null>(null)
+  const backlogDragged = useRef(false)
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
+  /** Auf schmalen Bildschirmen zeigt der Plan standardmäßig eine Liste pro Raum; das Raster bleibt wählbar. */
+  const narrow = useMediaQuery('(max-width: 600px)')
+  const [preferGrid, setPreferGrid] = useState(false)
+  const showPlanList = narrow && !preferGrid
   const [panel, setPanel] = useState<Panel | null>(null)
   const toast = useToasts()
   const showToast = toast.show
@@ -113,6 +125,9 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   const canPlan = isAdmin || (eventId !== null && currentUser.event_roles[String(eventId)] === 'editor')
   const isDashboard = view === 'dashboard' && isAdmin
   const isOverview = view === 'conflicts' || isDashboard
+  const isMine = view === 'mine' && eventId !== null
+  /** Ansichten ohne Tagesraster: Dashboard, Konflikte und „Meine Dienste“. */
+  const isList = isOverview || isMine
 
   /**
    * Loads the event's planning data. A quiet load keeps the current plan on screen
@@ -214,6 +229,21 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
 
   useEffect(() => { void loadAll(null, null) }, [])
 
+  /** `?` öffnet die Tastaturhilfe des Plans, außer beim Tippen und über offenen Dialogen. */
+  const keyboardHelpAvailable = canPlan && !isList && !loading && schedule !== null && !showPlanList
+  useEffect(() => {
+    if (!keyboardHelpAvailable) return
+    function open(event: KeyboardEvent) {
+      if (event.key !== '?' || event.ctrlKey || event.metaKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"], dialog')) return
+      event.preventDefault()
+      setShowKeyboardHelp(true)
+    }
+    window.addEventListener('keydown', open)
+    return () => window.removeEventListener('keydown', open)
+  }, [keyboardHelpAvailable])
+
   /** Schublade: Fokus hinein, Escape schließt, danach zurück zum Öffner (sofern er sichtbar ist). */
   const sidebarWasOpen = useRef(false)
   useEffect(() => {
@@ -243,6 +273,9 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   useEffect(() => {
     setDashboardDayId(null)
     setUndoEntry(null)
+    // Helfer starten in ihrer eigenen Übersicht, alle anderen im Tagesplan.
+    if (eventId !== null && !canPlan) setView('mine')
+    else setView(current => current === 'mine' ? 'schedule' : current)
   }, [eventId])
 
   useEffect(() => {
@@ -258,12 +291,12 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
 
   async function showOverviewEntry(targetDayId: number | null, kind: 'slot' | 'duty', id: number) {
     if (targetDayId !== null && !await loadAll(eventId, targetDayId, { quiet: true })) return
-    if (!isDashboard) setView('schedule')
+    if (view === 'conflicts') setView('schedule')
     setPanel({ kind, id })
   }
 
   const selectedEvent = events.find(item => item.id === eventId)
-  usePageTitle(pageTitle(isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konflikte' : view === 'helpers' ? 'Helferplan' : 'Planung', selectedEvent?.name))
+  usePageTitle(pageTitle(isDashboard ? 'Dashboard' : isMine ? 'Meine Dienste' : view === 'conflicts' ? 'Konflikte' : view === 'helpers' ? 'Helferplan' : 'Planung', selectedEvent?.name))
   const selectedDay = days.find(item => item.id === dayId)
   const selectedRoom = panel?.kind === 'room' ? rooms.find(item => item.id === panel.id) : undefined
   const selectedSlot = panel?.kind === 'slot'
@@ -413,18 +446,29 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     } catch (cause) { setError((cause as Error).message) }
   }
 
-  /** Sends a change, shows it right away and reloads quietly; on failure the server state returns. */
+  /** Änderungen aus dem Plan gehen nacheinander an den Server, damit schnelle Tastendrücke in ihrer Reihenfolge ankommen. */
+  const changeQueue = useRef<Promise<unknown>>(Promise.resolve())
+  const pendingChanges = useRef(0)
+
+  /**
+   * Sends a change, shows it right away and reloads quietly once no other change is waiting;
+   * on failure the server state returns.
+   */
   async function applyChange(send: () => Promise<unknown>, preview?: () => void): Promise<boolean> {
     preview?.()
+    pendingChanges.current += 1
+    const run = changeQueue.current.then(send)
+    changeQueue.current = run.catch(() => undefined)
+    let saved = true
     try {
-      await send()
-      await refresh()
-      return true
+      await run
     } catch (cause) {
-      await refresh()
+      saved = false
       setError((cause as Error).message)
-      return false
     }
+    pendingChanges.current -= 1
+    if (pendingChanges.current === 0) await refresh()
+    return saved
   }
 
   function changeSlot(slotId: number, patch: Record<string, unknown>): Promise<boolean> {
@@ -486,9 +530,19 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
     offerUndo('Dienste neu angeordnet.', () => reorderDuties(selectedDayId, roomId, previous))
   }
 
+  async function planSession(session: UnplannedSession, target: PlanTarget): Promise<boolean> {
+    if (target.day_id !== dayId && !await loadAll(eventId, target.day_id, { quiet: true })) return false
+    if (!await changeSlot(session.id, target)) return false
+    offerUndo(`„${session.topic}“ eingeplant.`, () => changeSlot(session.id, { day_id: null, room_id: null, start_time: null, end_time: null }))
+    return true
+  }
+
   function beginBacklogDrag(event: PointerEvent, session: UnplannedSession) {
+    backlogDragged.current = false
     if (event.button !== 0 || !schedule || dayId === null) return
     event.preventDefault()
+    const originX = event.clientX
+    const originY = event.clientY
     const dayStart = toMinutes(schedule.start_time)
     const dayEnd = toMinutes(schedule.end_time)
 
@@ -507,7 +561,10 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
       return null
     }
 
-    function move(pointer: globalThis.PointerEvent) { setBacklogPreview(position(pointer)) }
+    function move(pointer: globalThis.PointerEvent) {
+      if (Math.abs(pointer.clientX - originX) > 3 || Math.abs(pointer.clientY - originY) > 3) backlogDragged.current = true
+      setBacklogPreview(position(pointer))
+    }
     function cleanup() {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', finish)
@@ -550,6 +607,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
   if (isSuperadmin) manageActions.push({ label: 'Neue Veranstaltung', icon: 'plus', separatorBefore: manageActions.length > 0, disabled: loading,
     onClick: () => openPanel({ kind: 'event', id: null }) })
 
+  const myDutiesButton = <button type="button" aria-pressed={isMine} onClick={() => guard(() => { setPanel(null); setView('mine') })}>Meine Dienste</button>
   const visibleDuties = dutiesAllDays ? helperPlan.duties : helperPlan.duties.filter(duty => duty.day_id === null || duty.day_id === dayId)
   const visibleSpeakers = speakers.filter(person => matches(speakerQuery, person.name))
   const visibleUnplanned = unplanned.filter(session => matches(unplannedQuery, session.topic, ...session.speakers.map(speaker => speaker.name)))
@@ -581,21 +639,22 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         {selectedEvent && <SidebarSection title="Tage" {...sectionProps('days')} action={isAdmin && <button className="text-button" aria-label="Tag hinzufügen" onClick={() => openPanel({ kind: 'day', id: null })}><Icon name="plus" />Tag</button>}>
           {days.length === 0 && <p className="muted">Noch keine Tage</p>}
           <div className="day-list">{days.map(day => <div className={`day-row${day.id === dayId ? ' active' : ''}`} key={day.id}>
-            <button type="button" aria-current={day.id === dayId ? 'date' : undefined} onClick={() => guard(() => { setPanel(null); setSidebarOpen(false); if (isOverview) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) })}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
+            <button type="button" aria-current={day.id === dayId ? 'date' : undefined} onClick={() => guard(() => { setPanel(null); setSidebarOpen(false); if (isList) setView('schedule'); void loadAll(eventId, day.id, { quiet: true }) })}>{formatDate(day.date)}<small>{day.start_time.slice(0, 5)}–{day.end_time.slice(0, 5)}</small></button>
             {isAdmin && <button type="button" className="icon-button" aria-label={`${formatDate(day.date)} bearbeiten`} title="Tag bearbeiten" onClick={() => openPanel({ kind: 'day', id: day.id })}><Icon name="edit" /></button>}
           </div>)}</div>
         </SidebarSection>}
-        {selectedEvent && <SidebarSection title="Ungeplante Sessions" count={unplanned.length} {...sectionProps('unplanned')} action={canPlan && <button className="text-button" aria-label="Ungeplante Session hinzufügen" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}><Icon name="plus" />Session</button>}>
+        {selectedEvent && canPlan && <SidebarSection title="Ungeplante Sessions" count={unplanned.length} {...sectionProps('unplanned')} action={canPlan && <button className="text-button" aria-label="Ungeplante Session hinzufügen" onClick={() => openPanel({ kind: 'slot', id: null, createUnplanned: true })}><Icon name="plus" />Session</button>}>
           {unplanned.length === 0 && <p className="muted">Keine ungeplanten Sessions</p>}
           {unplanned.length > SEARCH_THRESHOLD && <SidebarSearch label="Ungeplante Sessions durchsuchen" value={unplannedQuery} onChange={setUnplannedQuery} />}
           <div className="unplanned-list">{visibleUnplanned.map(session => <div className="unplanned-row" key={session.id}>
-            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} title="In einen Raum ziehen" onPointerDown={event => beginBacklogDrag(event, session)}><Icon name="grip" /></button>}
+            {canPlan && <button type="button" className="unplanned-grip" aria-label={`${session.topic} einplanen`} aria-haspopup="dialog" title="Klicken zum Einplanen oder in einen Raum ziehen" onPointerDown={event => beginBacklogDrag(event, session)}
+              onClick={() => { if (backlogDragged.current) { backlogDragged.current = false; return } setSidebarOpen(false); setPlanning(session) }}><Icon name="grip" /></button>}
             <button type="button" className="unplanned-name" onClick={() => openPanel({ kind: 'slot', id: session.id })}>{session.topic}<small>{session.speakers.map(speaker => speaker.name).join(', ')}</small><CategoryLabels categories={session.categories} /></button>
           </div>)}</div>
           {unplanned.length > 0 && visibleUnplanned.length === 0 && <p className="muted">Keine Treffer</p>}
-          {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen in einen Raum ziehen oder Session bearbeiten.</p>}
+          {canPlan && unplanned.length > 0 && <p className="muted">Zum Einplanen auf den Griff klicken oder ihn in einen Raum ziehen.</p>}
         </SidebarSection>}
-        {selectedEvent && <SidebarSection title="Räume" {...sectionProps('rooms')} action={isAdmin && <button className="text-button" aria-label="Raum hinzufügen" onClick={() => openPanel({ kind: 'room', id: null })}><Icon name="plus" />Raum</button>}>
+        {selectedEvent && canPlan && <SidebarSection title="Räume" {...sectionProps('rooms')} action={isAdmin && <button className="text-button" aria-label="Raum hinzufügen" onClick={() => openPanel({ kind: 'room', id: null })}><Icon name="plus" />Raum</button>}>
           {rooms.length === 0 && <p className="muted">Noch keine Räume</p>}
           <div className="room-list">{rooms.map((room, index) => <div className="room-row" key={room.id}>
             {isAdmin ? <button type="button" className="room-name" onClick={() => openPanel({ kind: 'room', id: room.id })}>{room.name}</button> : <span className="room-name">{room.name}</span>}
@@ -603,7 +662,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
             {isAdmin && <button type="button" className="icon-button" aria-label={`${room.name} nach unten`} title={index === rooms.length - 1 ? 'Steht bereits ganz unten' : 'Nach unten verschieben'} disabled={index === rooms.length - 1} onClick={() => void reorder(room.id, 1)}><Icon name="arrow-down" /></button>}
           </div>)}</div>
         </SidebarSection>}
-        {selectedEvent && <SidebarSection title="Kategorien" {...sectionProps('categories')} action={isAdmin && <button className="text-button" aria-label="Kategorie hinzufügen" onClick={() => openPanel({ kind: 'category', id: null })}><Icon name="plus" />Kategorie</button>}>
+        {selectedEvent && canPlan && <SidebarSection title="Kategorien" {...sectionProps('categories')} action={isAdmin && <button className="text-button" aria-label="Kategorie hinzufügen" onClick={() => openPanel({ kind: 'category', id: null })}><Icon name="plus" />Kategorie</button>}>
           {categories.length === 0 && <p className="muted">Noch keine Kategorien</p>}
           <div className="room-list">{categories.map(category => <div className="room-row" key={category.id}>
             {isAdmin ? <button type="button" className="room-name category-name" onClick={() => openPanel({ kind: 'category', id: category.id })}><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</button> : <span className="room-name category-name"><span className="category-dot" style={{ backgroundColor: category.color }} />{category.name}</span>}
@@ -617,7 +676,7 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
           </div>)}</div>
           {speakers.length > 0 && visibleSpeakers.length === 0 && <p className="muted">Keine Treffer</p>}
         </SidebarSection>}
-        {selectedEvent && <SidebarSection title="Dienste" count={visibleDuties.length} {...sectionProps('duties')}>
+        {selectedEvent && canPlan && <SidebarSection title="Dienste" count={visibleDuties.length} {...sectionProps('duties')}>
           {days.length > 1 && <label className="sidebar-filter"><input type="checkbox" checked={dutiesAllDays} onChange={event => setDutiesAllDays(event.target.checked)} />Alle Tage zeigen</label>}
           {visibleDuties.length === 0 && <p className="muted">{helperPlan.duties.length === 0 ? 'Noch keine Dienste' : 'Keine Dienste an diesem Tag'}</p>}
           <div className="duty-list">{visibleDuties.map(duty => <button type="button" key={duty.id} onClick={() => openPanel({ kind: 'duty', id: duty.id })}>
@@ -631,25 +690,36 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         {selectedEvent && <button ref={sidebarOpener} type="button" className="secondary sidebar-toggle" aria-expanded={sidebarOpen} aria-controls="planning-sidebar" onClick={() => setSidebarOpen(true)}><Icon name="menu" />Planung</button>}
         {selectedEvent && <div className="planning-views" role="group" aria-label="Planungsansicht">
           {isAdmin && <button type="button" aria-pressed={isDashboard} onClick={() => guard(() => { setPanel(null); setView('dashboard') })}>Dashboard</button>}
+          {!canPlan && myDutiesButton}
           <button type="button" aria-pressed={view === 'schedule'} onClick={() => setView('schedule')}>Tagesplan</button>
           <button type="button" aria-pressed={view === 'helpers'} onClick={() => setView('helpers')}>Helferplan</button>
           <button type="button" aria-pressed={view === 'conflicts'} onClick={() => guard(() => { setPanel(null); setView('conflicts') })}>Konflikte</button>
+          {canPlan && myDutiesButton}
         </div>}
-        <div className="plan-heading"><div className="plan-title"><h2>{isDashboard ? 'Dashboard' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatWeekdayDate(selectedDay.date) : 'Programm'}</h2><p>{isOverview ? 'Gesamte Veranstaltung' : selectedDay ? <><time>{selectedDay.start_time.slice(0, 5)}–{selectedDay.end_time.slice(0, 5)}</time> Uhr · {rooms.length} {rooms.length === 1 ? 'Raum' : 'Räume'}</> : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
+        <div className="plan-heading"><div className="plan-title"><h2>{isDashboard ? 'Dashboard' : isMine ? 'Meine Dienste' : view === 'conflicts' ? 'Konfliktübersicht' : selectedDay ? formatWeekdayDate(selectedDay.date) : 'Programm'}</h2><p>{isList ? 'Gesamte Veranstaltung' : selectedDay ? <><time>{selectedDay.start_time.slice(0, 5)}–{selectedDay.end_time.slice(0, 5)}</time> Uhr · {rooms.length} {rooms.length === 1 ? 'Raum' : 'Räume'}</> : 'Wähle oder erstelle einen Veranstaltungstag.'}</p></div>
           <div className="plan-actions">
             {selectedEvent && <a className="program-link" href={`/programm/${selectedEvent.id}`}>Besucherprogramm ansehen</a>}
             {selectedEvent && days.length > 0 && <HeaderMenu label="Exportieren" panelLabel="Export" triggerClassName="secondary menu-trigger" actions={[
               { label: 'PDF-Programm herunterladen', icon: 'download', href: `/api/events/${selectedEvent.id}/program.pdf`, download: true },
               { label: 'Programm als JSON', icon: 'download', href: `/api/events/${selectedEvent.id}/program.json`, download: true },
             ]} />}
-            {selectedEvent && canPlan && !isOverview && <button className="secondary" aria-label="Dienst hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}><Icon name="plus" />Dienst</button>}
-            {selectedDay && canPlan && !isOverview && <button className="primary" aria-label="Session hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}><Icon name="plus" />Session</button>}
+            {selectedEvent && canPlan && !isList && <button className="secondary" aria-label="Dienst hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'duty', id: null })}><Icon name="plus" />Dienst</button>}
+            {selectedDay && canPlan && !isList && <button className="primary" aria-label="Session hinzufügen" disabled={loading} onClick={() => openPanel({ kind: 'slot', id: null })}><Icon name="plus" />Session</button>}
           </div>
         </div>
-        {!isOverview && loading && <p className="state-message">Lade Programm …</p>}
-        {!isOverview && !loading && schedule && <PlanLegend canPlan={canPlan} zoom={zoom} onZoom={setZoom} showDuties={showDuties} onShowDuties={view === 'schedule' ? setShowDuties : undefined} />}
-        {!isOverview && !loading && schedule && <Schedule key={schedule.day_id} pxPerMinute={zoom} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} showDuties={showDuties} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
-        {!isOverview && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
+        {!isList && loading && <p className="state-message">Lade Programm …</p>}
+        {!isList && !loading && schedule && narrow && <div className="plan-view-toggle" role="group" aria-label="Darstellung des Plans">
+          <button type="button" aria-pressed={showPlanList} onClick={() => setPreferGrid(false)}>Liste</button>
+          <button type="button" aria-pressed={!showPlanList} onClick={() => setPreferGrid(true)}>Raster</button>
+        </div>}
+        {!isList && !loading && schedule && showPlanList && <ScheduleList key={schedule.day_id} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'}
+          readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} />}
+        {!isList && !loading && schedule && !showPlanList && <PlanLegend canPlan={canPlan} zoom={zoom} onZoom={setZoom} showDuties={showDuties} onShowDuties={view === 'schedule' ? setShowDuties : undefined} onKeyboardHelp={canPlan ? () => setShowKeyboardHelp(true) : undefined} />}
+        {!isList && !loading && schedule && !showPlanList && <Schedule key={schedule.day_id} pxPerMinute={zoom} readOnly={!canPlan} currentUserId={currentUser.id} onSignup={signup} schedule={schedule} helperPlan={helperPlan} focus={view === 'helpers' ? 'helpers' : 'program'} showDuties={showDuties} backlogPreview={backlogPreview} hasSharedBacklog={unplanned.some(session => session.scope === 'all_rooms')} onEdit={slot => openPanel({ kind: 'slot', id: slot.id })} onEditDuty={duty => openPanel({ kind: 'duty', id: duty.id })} onChange={dragSlot} onChangeDuty={dragDuty} onReorderDuties={dragDutyOrder} />}
+        {!isList && !loading && !schedule && <div className="empty-state">{events.length === 0 ? 'Erstelle zuerst eine Veranstaltung.' : 'Lege einen Tag und mindestens einen Raum an.'}</div>}
+        {isMine && loading && <p className="state-message" role="status">Lade Dienste …</p>}
+        {isMine && !loading && selectedEvent && <MyDuties eventId={selectedEvent.id} helperPlan={helperPlan} rooms={rooms} currentUserId={currentUser.id} onSignup={signup}
+          onOpenDuty={duty => duty.day_id === null ? openPanel({ kind: 'duty', id: duty.id }) : openOverviewEntry(duty.day_id, 'duty', duty.id)} />}
         {isDashboard && selectedEvent && <Dashboard
           days={days} rooms={rooms} speakerCount={speakers.length} schedules={overviewSchedules}
           helperPlan={helperPlan} unplanned={unplanned}
@@ -715,6 +785,9 @@ export default function App({ currentUser, onLogout, onProfileChange, onPassword
         onClose={() => setPanel(current => current === panel ? null : current)}
         onRequestClose={() => openPanel(null)}
       />}
+      {planning && canPlan && <PlanSessionDialog session={planning} days={days} rooms={rooms} initialDayId={dayId}
+        onPlan={target => planSession(planning, target)} onClose={() => setPlanning(null)} />}
+      {showKeyboardHelp && <KeyboardHelp onClose={() => setShowKeyboardHelp(false)} />}
       {showRestore && isAdmin && <BackupRestore events={events} selectedEventId={eventId} downloadEvent={selectedEvent} allowCreate={isSuperadmin} onComplete={async (restoredId, warnings = []) => {
         setPanel(null)
         if (await loadAll(restoredId, null)) { setShowRestore(false); showSuccess(['Sicherung wiederhergestellt.', ...warnings].join(' ')) }
